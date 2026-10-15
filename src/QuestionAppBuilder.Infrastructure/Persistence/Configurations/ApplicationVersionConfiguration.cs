@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using QuestionAppBuilder.Domain.Entities;
+using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Infrastructure.Persistence.Configurations;
 
@@ -16,7 +17,7 @@ public class ApplicationVersionConfiguration : IEntityTypeConfiguration<Applicat
             .IsRequired();
         builder.HasIndex(v => new { v.ApplicationId, v.VersionNumber }).IsUnique();
 
-        builder.HasOne<Application>()
+        builder.HasOne<ApplicationEntity>()
             .WithMany()
             .HasForeignKey(v => v.ApplicationId)
             .OnDelete(DeleteBehavior.Cascade);

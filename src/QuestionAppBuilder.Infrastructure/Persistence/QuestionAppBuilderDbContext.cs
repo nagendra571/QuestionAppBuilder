@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Domain.Entities;
+using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Infrastructure.Persistence;
 
@@ -11,7 +12,7 @@ public class QuestionAppBuilderDbContext : DbContext
     }
 
     public DbSet<ApplicationType> ApplicationTypes => Set<ApplicationType>();
-    public DbSet<Application> Applications => Set<Application>();
+    public DbSet<ApplicationEntity> Applications => Set<ApplicationEntity>();
     public DbSet<ApplicationVersion> ApplicationVersions => Set<ApplicationVersion>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Element> Elements => Set<Element>();

@@ -2,12 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using QuestionAppBuilder.Domain;
 using QuestionAppBuilder.Domain.Entities;
+using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Infrastructure.Persistence.Configurations;
 
-public class ApplicationConfiguration : IEntityTypeConfiguration<Application>
+public class ApplicationConfiguration : IEntityTypeConfiguration<ApplicationEntity>
 {
-    public void Configure(EntityTypeBuilder<Application> builder)
+    public void Configure(EntityTypeBuilder<ApplicationEntity> builder)
     {
         builder.ToTable("Applications");
         builder.HasKey(a => a.Id);

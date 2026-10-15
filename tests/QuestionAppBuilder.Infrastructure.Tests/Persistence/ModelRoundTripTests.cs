@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Infrastructure.Persistence;
+using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Infrastructure.Tests.Persistence;
 
@@ -19,7 +20,7 @@ public class ModelRoundTripTests
 
         var model = context.Model;
 
-        model.FindEntityType(typeof(Application))!.FindProperty(nameof(Application.Name))!
+        model.FindEntityType(typeof(ApplicationEntity))!.FindProperty(nameof(ApplicationEntity.Name))!
             .GetMaxLength().Should().Be(200);
         model.FindEntityType(typeof(ApplicationType))!.FindProperty(nameof(ApplicationType.Name))!
             .GetMaxLength().Should().Be(100);
@@ -45,7 +46,7 @@ public class ModelRoundTripTests
 
         using (var context = new QuestionAppBuilderDbContext(options))
         {
-            var application = new Application
+            var application = new ApplicationEntity
             {
                 Name = "Annual Grant Survey",
                 ApplicationTypeId = 1,

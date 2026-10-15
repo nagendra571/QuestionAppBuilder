@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using QuestionAppBuilder.Domain.Entities;
+using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Infrastructure.Persistence.Configurations;
 
@@ -11,7 +12,7 @@ public class SubmissionConfiguration : IEntityTypeConfiguration<Submission>
         builder.ToTable("Submissions");
         builder.HasKey(s => s.Id);
 
-        builder.HasOne<Application>()
+        builder.HasOne<ApplicationEntity>()
             .WithMany()
             .HasForeignKey(s => s.ApplicationId)
             .OnDelete(DeleteBehavior.Restrict);
