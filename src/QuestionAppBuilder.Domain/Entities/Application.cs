@@ -11,4 +11,5 @@ public class Application
     public DateTime UpdatedUtc { get; set; }
     public ApplicationType ApplicationType { get; set; } = null!;
     public ApplicationVersion? CurrentVersion { get; set; }
+    public List<ApplicationVersion> Versions { get; set; } = new();
 }

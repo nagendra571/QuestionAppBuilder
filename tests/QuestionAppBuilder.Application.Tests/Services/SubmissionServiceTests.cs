@@ -342,6 +342,34 @@ public class SubmissionServiceTests
         stored.TotalScore.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Duplicate_selected_option_ids_are_rejected()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Design.CreateApplicationAsync("Duplicate selections", ctx.ApplicationTypeId);
+        var category = await ctx.Design.AddCategoryAsync(application.Id, "Standard");
+        var question = await ctx.Design.AddQuestionAsync(category.Id, "Pick all that apply", AnswerType.Checkboxes);
+        var option = await ctx.Design.AddOptionAsync(question.Id, "First", "first");
+
+        var versionId = (await ctx.Design.GetDraftGraphAsync(application.Id)).Version.Id;
+        await ctx.Design.PublishAsync(application.Id);
+
+        Func<Task> act = () => ctx.Submissions.SubmitAsync(new SubmitRequest(
+            application.Id,
+            versionId,
+            new Dictionary<int, AnswerValue>
+            {
+                [question.Id] = new(null, null, new[] { option.Id, option.Id })
+            }));
+
+        var exception = await act.Should().ThrowAsync<AnswerValidationException>();
+        exception.Which.QuestionIds.Should().BeEquivalentTo(new[] { question.Id });
+
+        using var fresh = ctx.CreateFreshContext();
+        fresh.Submissions.Should().BeEmpty();
+        fresh.Answers.Should().BeEmpty();
+    }
+
     private sealed class TestContext : IDisposable
     {
         public TestContext()

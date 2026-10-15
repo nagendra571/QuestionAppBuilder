@@ -39,18 +39,14 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             UpdatedUtc = now
         };
 
-        _repository.Add(application);
-        await _repository.SaveChangesAsync(ct);
-
-        var version = new ApplicationVersion
+        application.Versions.Add(new ApplicationVersion
         {
-            ApplicationId = application.Id,
             VersionNumber = 1,
             Status = VersionStatus.Draft,
             CreatedUtc = now
-        };
+        });
 
-        _repository.AddGraph(new ApplicationVersionGraph { Version = version, Categories = version.Categories });
+        _repository.Add(application);
         await _repository.SaveChangesAsync(ct);
 
         return application;
@@ -212,9 +208,19 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         switch (family)
         {
             case RuleFamily.Selection:
+                if (membershipOperator is null)
+                {
+                    throw new DefinitionValidationException("A Selection rule needs a membership operator.");
+                }
+
                 if (optionIds is null || optionIds.Count == 0)
                 {
                     throw new DefinitionValidationException("A Selection rule needs at least one option id.");
+                }
+
+                if (optionIds.Distinct().Count() != optionIds.Count)
+                {
+                    throw new DefinitionValidationException("A Selection rule cannot reference the same option more than once.");
                 }
 
                 var sourceOptionIds = sourceQuestion.Options.Select(o => o.Id).ToHashSet();
@@ -236,6 +242,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                 if (minValue is null && maxValue is null)
                 {
                     throw new DefinitionValidationException("A NumericRange rule needs a minimum and/or a maximum value.");
+                }
+
+                if (minValue is not null && maxValue is not null && minValue > maxValue)
+                {
+                    throw new DefinitionValidationException("A NumericRange rule needs MinValue to be less than or equal to MaxValue.");
                 }
 
                 break;
@@ -587,6 +598,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
     private static void EnsureMaxLength(string value, int maxLength, string fieldName)
     {
+        ArgumentException.ThrowIfNullOrEmpty(value);
+
         if (value.Length > maxLength)
         {
             throw new DefinitionValidationException($"{fieldName} must be at most {maxLength} characters.");
@@ -595,9 +608,14 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
     private static void EnsureOptionalMaxLength(string? value, int maxLength, string fieldName)
     {
-        if (value is not null)
+        if (value is null)
         {
-            EnsureMaxLength(value, maxLength, fieldName);
+            return;
+        }
+
+        if (value.Length > maxLength)
+        {
+            throw new DefinitionValidationException($"{fieldName} must be at most {maxLength} characters.");
         }
     }
 

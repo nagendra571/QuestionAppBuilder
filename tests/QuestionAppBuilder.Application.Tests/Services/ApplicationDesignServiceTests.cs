@@ -260,6 +260,134 @@ public class ApplicationDesignServiceTests
             .Which.QuestionOptionId.Should().Be(firstOption.Id);
     }
 
+    [Fact]
+    public async Task Selection_rule_without_membership_operator_is_rejected()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Operatorless", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Pick one", AnswerType.Dropdown);
+        var option = await ctx.Service.AddOptionAsync(question.Id, "Yes", "yes");
+
+        Func<Task> act = () => ctx.Service.AddRuleAsync(
+            question.Id, RuleFamily.Selection, 5, membershipOperator: null, optionIds: new[] { option.Id });
+
+        await act.Should().ThrowAsync<DefinitionValidationException>();
+
+        var graph = await ctx.Service.GetDraftGraphAsync(application.Id);
+        var storedQuestion = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        storedQuestion.Rules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Numeric_range_rule_with_min_above_max_is_rejected()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Bad range", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "How many?", AnswerType.Number);
+
+        Func<Task> act = () => ctx.Service.AddRuleAsync(
+            question.Id, RuleFamily.NumericRange, 3, minValue: 10m, maxValue: 5m);
+
+        await act.Should().ThrowAsync<DefinitionValidationException>();
+
+        var graph = await ctx.Service.GetDraftGraphAsync(application.Id);
+        var storedQuestion = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        storedQuestion.Rules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Null_required_string_arguments_are_rejected_with_argument_exception()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Null guards", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Basics");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Name", AnswerType.Textbox);
+
+        Func<Task> create = () => ctx.Service.CreateApplicationAsync(null!, ctx.ApplicationTypeId);
+        Func<Task> addCategory = () => ctx.Service.AddCategoryAsync(application.Id, null!);
+        Func<Task> updateCategory = () => ctx.Service.UpdateCategoryAsync(category.Id, null!, isIndependent: false);
+        Func<Task> addContent = () => ctx.Service.AddContentElementAsync(category.Id, null!);
+        Func<Task> addQuestion = () => ctx.Service.AddQuestionAsync(category.Id, null!, AnswerType.Textbox);
+        Func<Task> addOptionLabel = () => ctx.Service.AddOptionAsync(question.Id, null!, "value");
+        Func<Task> addOptionValue = () => ctx.Service.AddOptionAsync(question.Id, "Label", null!);
+
+        await create.Should().ThrowAsync<ArgumentException>();
+        await addCategory.Should().ThrowAsync<ArgumentException>();
+        await updateCategory.Should().ThrowAsync<ArgumentException>();
+        await addContent.Should().ThrowAsync<ArgumentException>();
+        await addQuestion.Should().ThrowAsync<ArgumentException>();
+        await addOptionLabel.Should().ThrowAsync<ArgumentException>();
+        await addOptionValue.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task Duplicate_rule_option_ids_are_rejected()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Double option", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Pick all that apply", AnswerType.Checkboxes);
+        var option = await ctx.Service.AddOptionAsync(question.Id, "First", "first");
+
+        Func<Task> act = () => ctx.Service.AddRuleAsync(
+            question.Id, RuleFamily.Selection, 4, MembershipOperator.AnyOf, new[] { option.Id, option.Id });
+
+        await act.Should().ThrowAsync<DefinitionValidationException>();
+
+        var graph = await ctx.Service.GetDraftGraphAsync(application.Id);
+        var storedQuestion = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        storedQuestion.Rules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Add_rule_to_published_question_clones_with_relinked_options()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Post-publish rules", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Pick all that apply", AnswerType.Checkboxes);
+        var firstOption = await ctx.Service.AddOptionAsync(question.Id, "First", "first");
+        var secondOption = await ctx.Service.AddOptionAsync(question.Id, "Second", "second");
+        await ctx.Service.AddRuleAsync(question.Id, RuleFamily.Presence, 1);
+
+        var publishedVersionId = (await ctx.Service.GetDraftGraphAsync(application.Id)).Version.Id;
+        await ctx.Service.PublishAsync(application.Id);
+
+        var rule = await ctx.Service.AddRuleAsync(
+            question.Id, RuleFamily.Selection, 5, MembershipOperator.AnyOf, new[] { firstOption.Id, secondOption.Id });
+
+        var draft = await ctx.Service.GetDraftGraphAsync(application.Id);
+        draft.Version.VersionNumber.Should().Be(2);
+        draft.Version.Status.Should().Be(VersionStatus.Draft);
+
+        var clonedQuestion = draft.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        clonedQuestion.Id.Should().NotBe(question.Id);
+        var clonedFirst = clonedQuestion.Options.Single(o => o.Value == "first");
+        var clonedSecond = clonedQuestion.Options.Single(o => o.Value == "second");
+        clonedFirst.Id.Should().NotBe(firstOption.Id);
+        clonedSecond.Id.Should().NotBe(secondOption.Id);
+        clonedFirst.Label.Should().Be("First");
+
+        var clonedRule = clonedQuestion.Rules.Single(r => r.Id == rule.Id);
+        clonedRule.Family.Should().Be(RuleFamily.Selection);
+        clonedRule.Points.Should().Be(5);
+        clonedRule.MembershipOperator.Should().Be(MembershipOperator.AnyOf);
+        clonedRule.Options.Select(o => o.QuestionOptionId).Should().BeEquivalentTo(new[] { clonedFirst.Id, clonedSecond.Id });
+
+        using var freshContext = new QuestionAppBuilderDbContext(ctx.Options);
+        var published = await new ApplicationRepository(freshContext).GetVersionGraphAsync(publishedVersionId);
+        published.Version.Status.Should().Be(VersionStatus.Published);
+        var publishedQuestion = published.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        publishedQuestion.Id.Should().Be(question.Id);
+        publishedQuestion.Options.Select(o => o.Id).Should().BeEquivalentTo(new[] { firstOption.Id, secondOption.Id });
+        var publishedRule = publishedQuestion.Rules.Should().ContainSingle().Subject;
+        publishedRule.Family.Should().Be(RuleFamily.Presence);
+        publishedRule.Points.Should().Be(1);
+        publishedRule.Options.Should().BeEmpty();
+    }
+
     private sealed class TestContext : IDisposable
     {
         public TestContext()

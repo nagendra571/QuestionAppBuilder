@@ -18,7 +18,7 @@ public class ApplicationVersionConfiguration : IEntityTypeConfiguration<Applicat
         builder.HasIndex(v => new { v.ApplicationId, v.VersionNumber }).IsUnique();
 
         builder.HasOne<ApplicationEntity>()
-            .WithMany()
+            .WithMany(a => a.Versions)
             .HasForeignKey(v => v.ApplicationId)
             .OnDelete(DeleteBehavior.Cascade);
     }

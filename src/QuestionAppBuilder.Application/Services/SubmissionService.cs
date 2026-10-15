@@ -158,6 +158,11 @@ public sealed class SubmissionService : ISubmissionService
 
     private static bool IsValidSelection(Question question, IReadOnlyCollection<int> selectedOptionIds, bool allowMultiple)
     {
+        if (selectedOptionIds.Distinct().Count() != selectedOptionIds.Count)
+        {
+            return false;
+        }
+
         if (!allowMultiple && selectedOptionIds.Count > 1)
         {
             return false;
