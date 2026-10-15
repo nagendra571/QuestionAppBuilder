@@ -260,6 +260,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Option, optionId, g => FindOption(g, optionId), ct);
 
+        if (IsOptionReferencedByAnyRule(editable.Graph, editable.Target))
+        {
+            throw new DefinitionValidationException($"Option {optionId} is used by a scoring rule; remove or change the rule first.");
+        }
+
         var question = FindQuestionContainingOption(editable.Graph, editable.Target)
             ?? throw new NotFoundException($"Option {optionId} was not found.");
         question.Options.Remove(editable.Target);
@@ -338,6 +343,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         }
 
         var application = await GetApplicationAsync(graph.Version.ApplicationId, ct);
+        if (graph.Version.Id != application.CurrentVersionId)
+        {
+            throw new NotFoundException($"{kind} {childId} belongs to version {graph.Version.Id}, which is no longer the current published version.");
+        }
+
         if (await _repository.GetDraftGraphAsync(application.Id, ct) is not null)
         {
             throw new DefinitionValidationException($"Application {application.Id} already has a draft; it must be published before editing the published version.");
@@ -537,6 +547,27 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         }
 
         return null;
+    }
+
+    private static bool IsOptionReferencedByAnyRule(ApplicationVersionGraph graph, QuestionOption option)
+    {
+        foreach (var question in graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question))
+        {
+            if (question is null)
+            {
+                continue;
+            }
+
+            foreach (var rule in question.Rules)
+            {
+                if (rule.Options.Any(o => o.QuestionOptionId == option.Id))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static Question? FindQuestionContainingRule(ApplicationVersionGraph graph, ScoringRule rule)

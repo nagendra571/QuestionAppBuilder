@@ -214,15 +214,61 @@ public class ApplicationDesignServiceTests
         stillPublished.Categories.Select(c => c.Name).Should().BeEquivalentTo(new[] { "Original" });
     }
 
+    [Fact]
+    public async Task Clone_via_child_id_relinks_rule_options()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Relink", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Pick all that apply", AnswerType.Checkboxes);
+        var firstOption = await ctx.Service.AddOptionAsync(question.Id, "First", "first");
+        await ctx.Service.AddOptionAsync(question.Id, "Second", "second");
+        await ctx.Service.AddRuleAsync(question.Id, RuleFamily.Selection, 4, MembershipOperator.AnyOf, new[] { firstOption.Id });
+
+        var publishedVersionId = (await ctx.Service.GetDraftGraphAsync(application.Id)).Version.Id;
+        await ctx.Service.PublishAsync(application.Id);
+
+        await ctx.Service.UpdateCategoryAsync(category.Id, "renamed", isIndependent: false);
+
+        var draft = await ctx.Service.GetDraftGraphAsync(application.Id);
+        draft.Version.VersionNumber.Should().Be(2);
+        draft.Version.Status.Should().Be(VersionStatus.Draft);
+
+        var clonedCategory = draft.Categories.Should().ContainSingle().Subject;
+        clonedCategory.Id.Should().NotBe(category.Id);
+        clonedCategory.Name.Should().Be("renamed");
+
+        var clonedQuestion = clonedCategory.Elements.Select(e => e.Question).Single(q => q is not null)!;
+        clonedQuestion.Options.Select(o => o.Value).Should().BeEquivalentTo(new[] { "first", "second" });
+        var clonedFirst = clonedQuestion.Options.Single(o => o.Value == "first");
+        clonedFirst.Id.Should().NotBe(firstOption.Id);
+        clonedFirst.Label.Should().Be("First");
+        clonedFirst.Value.Should().Be("first");
+
+        var clonedRule = clonedQuestion.Rules.Should().ContainSingle().Subject;
+        clonedRule.Options.Should().ContainSingle().Which.QuestionOptionId.Should().Be(clonedFirst.Id);
+
+        using var freshContext = new QuestionAppBuilderDbContext(ctx.Options);
+        var published = await new ApplicationRepository(freshContext).GetVersionGraphAsync(publishedVersionId);
+        published.Version.Status.Should().Be(VersionStatus.Published);
+        var publishedQuestion = published.Categories.SelectMany(c => c.Elements).Select(e => e.Question).Single(q => q is not null)!;
+        publishedQuestion.Options.Should().HaveCount(2);
+        var publishedFirst = publishedQuestion.Options.Single(o => o.Value == "first");
+        publishedFirst.Id.Should().Be(firstOption.Id);
+        publishedFirst.Label.Should().Be("First");
+        publishedQuestion.Rules.Should().ContainSingle().Which.Options.Should().ContainSingle()
+            .Which.QuestionOptionId.Should().Be(firstOption.Id);
+    }
+
     private sealed class TestContext : IDisposable
     {
         public TestContext()
         {
-            var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>()
+            Options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>()
                 .UseInMemoryDatabase($"application-design-{Guid.NewGuid():N}")
                 .Options;
 
-            Context = new QuestionAppBuilderDbContext(options);
+            Context = new QuestionAppBuilderDbContext(Options);
             Repository = new ApplicationRepository(Context);
             Service = new ApplicationDesignService(Repository);
 
@@ -232,6 +278,7 @@ public class ApplicationDesignServiceTests
             ApplicationTypeId = applicationType.Id;
         }
 
+        public DbContextOptions<QuestionAppBuilderDbContext> Options { get; }
         public QuestionAppBuilderDbContext Context { get; }
         public IApplicationRepository Repository { get; }
         public IApplicationDesignService Service { get; }
