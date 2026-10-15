@@ -41,7 +41,7 @@ public sealed class ScoringEngine : IScoringEngine
             ? found
             : new AnswerValue(null, null, null);
 
-        var isAnswered = IsAnswered(question.AnswerType, answer);
+        var isAnswered = AnswerSemantics.IsAnswered(question.AnswerType, answer);
 
         var points = 0;
         foreach (var rule in question.Rules)
@@ -62,14 +62,6 @@ public sealed class ScoringEngine : IScoringEngine
 
         return points;
     }
-
-    private static bool IsAnswered(AnswerType answerType, AnswerValue answer) => answerType switch
-    {
-        AnswerType.Textbox or AnswerType.Textarea => !string.IsNullOrWhiteSpace(answer.Text),
-        AnswerType.Number => answer.Number.HasValue,
-        AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes => answer.SelectedOptionIds is { Count: > 0 },
-        _ => false
-    };
 
     private static bool SelectionSatisfied(ScoringRule rule, AnswerValue answer)
     {

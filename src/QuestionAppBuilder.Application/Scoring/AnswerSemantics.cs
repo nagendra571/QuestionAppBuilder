@@ -1,0 +1,14 @@
+using QuestionAppBuilder.Domain.Enums;
+
+namespace QuestionAppBuilder.Application.Scoring;
+
+internal static class AnswerSemantics
+{
+    public static bool IsAnswered(AnswerType answerType, AnswerValue? answer) => answerType switch
+    {
+        AnswerType.Textbox or AnswerType.Textarea => !string.IsNullOrWhiteSpace(answer?.Text),
+        AnswerType.Number => answer?.Number is not null,
+        AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes => answer?.SelectedOptionIds is { Count: > 0 },
+        _ => false
+    };
+}
