@@ -1,0 +1,7 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\QuestionAppBuilder.Domain\QuestionAppBuilder.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
