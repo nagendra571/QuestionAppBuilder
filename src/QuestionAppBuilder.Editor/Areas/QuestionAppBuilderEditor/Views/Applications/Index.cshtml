@@ -3,28 +3,52 @@
     ViewData["Title"] = "Applications";
 }
 
-<h1>Applications</h1>
+<style>
+    .editor-page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+    .editor-page-head h1 { margin: 0; }
+    .editor-new-link { display: inline-block; background: #005EA2; color: #fff; font-size: 14px; font-weight: 700; padding: 10px 18px; border-radius: 4px; text-decoration: none; }
+    .editor-new-link:hover { background: #1A4480; }
+    .editor-new-link:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .editor-app-table { width: 100%; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+    .editor-app-table th { background: #F6F7F8; color: #565C65; font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; padding: 0.7rem 0.9rem; border-bottom: 1px solid #D5DAE0; }
+    .editor-app-table td { padding: 0.9rem; vertical-align: middle; border-bottom: 1px solid #D5DAE0; }
+    .editor-app-table tbody tr:last-child td { border-bottom: 0; }
+    .editor-app-name { font-weight: 700; text-decoration: none; }
+    .editor-app-name:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .editor-type-chip { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; color: #1A4480; border: 1px solid #1A4480; border-radius: 4px; padding: 2px 8px; white-space: nowrap; }
+    .editor-empty { color: #565C65; }
+</style>
 
-<p><a href="#">New application</a></p>
+<div class="editor-page-head">
+    <h1>Applications</h1>
+    <a class="editor-new-link" href="@Url.Action("Create", "Applications", new { area = EditorArea.Name })">New application</a>
+</div>
 
-<table>
+<table class="editor-app-table">
     <thead>
         <tr>
             <th scope="col">Name</th>
+            <th scope="col">Type</th>
         </tr>
     </thead>
     <tbody>
         @if (Model.Count == 0)
         {
             <tr>
-                <td>No applications yet.</td>
+                <td class="editor-empty" colspan="2">No applications yet.</td>
             </tr>
         }
         @foreach (var application in Model)
         {
             <tr>
                 <td>
-                    <a href="@Url.Action("Detail", "Applications", new { area = EditorArea.Name, id = application.Id })">@application.Name</a>
+                    <a class="editor-app-name" href="@Url.Action("Detail", "Applications", new { area = EditorArea.Name, id = application.Id })">@application.Name</a>
+                </td>
+                <td>
+                    @if (!string.IsNullOrEmpty(application.TypeName))
+                    {
+                        <span class="editor-type-chip">@application.TypeName</span>
+                    }
                 </td>
             </tr>
         }

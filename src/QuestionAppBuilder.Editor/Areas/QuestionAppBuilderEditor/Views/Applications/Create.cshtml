@@ -1,0 +1,41 @@
+@model ApplicationCreateViewModel
+@{
+    ViewData["Title"] = "New application";
+}
+
+<style>
+    .editor-back { font-size: 13.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    .editor-create-panel { background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 1.5rem; max-width: 36rem; margin-top: 1rem; }
+    .editor-create-panel .editor-field { margin-bottom: 1.1rem; }
+    .editor-create-panel label { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 0.35rem; }
+    .editor-create-panel input[type="text"],
+    .editor-create-panel select { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid #565C65; border-radius: 4px; font: inherit; color: #1B1B1B; background: #fff; }
+    .editor-create-panel input[type="text"]:focus-visible,
+    .editor-create-panel select:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .editor-field-error { display: block; color: #B50909; font-size: 13px; margin-top: 0.3rem; }
+    .editor-validation { color: #B50909; font-weight: 600; }
+    .editor-validation ul { margin: 0 0 1rem; padding-left: 1.25rem; font-weight: 400; }
+    .editor-create-actions button { background: #005EA2; color: #fff; border: 0; border-radius: 4px; padding: 10px 18px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .editor-create-actions button:hover { background: #1A4480; }
+    .editor-create-actions button:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+</style>
+
+<a class="editor-back" href="@Url.Action("Index", "Applications", new { area = EditorArea.Name })">&#8592; All applications</a>
+<h1>New application</h1>
+
+<form asp-action="Create" method="post" class="editor-create-panel">
+    <div asp-validation-summary="All" class="editor-validation"></div>
+    <div class="editor-field">
+        <label asp-for="Name"></label>
+        <input asp-for="Name" maxlength="200" />
+        <span asp-validation-for="Name" class="editor-field-error"></span>
+    </div>
+    <div class="editor-field">
+        <label asp-for="ApplicationTypeId">Application type</label>
+        <select asp-for="ApplicationTypeId" asp-items="@(new SelectList(Model.Types, "Id", "Name"))"></select>
+        <span asp-validation-for="ApplicationTypeId" class="editor-field-error"></span>
+    </div>
+    <div class="editor-create-actions">
+        <button type="submit">Create application</button>
+    </div>
+</form>
