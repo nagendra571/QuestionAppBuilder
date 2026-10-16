@@ -1,0 +1,46 @@
+@using QuestionAppBuilder.Domain.Entities
+@model (ApplicationDetailViewModel Detail, Category Category)
+@{
+    var category = Model.Category;
+    var editable = Model.Detail.IsEditable;
+    var applicationId = Model.Detail.Application.Id;
+}
+
+<section class="cv-card">
+    <header class="cv-chead">
+        <div class="cv-chead-title">
+            <h2>@category.Name</h2>
+            @if (category.IsIndependent)
+            {
+                <span class="cv-badge cv-independent">Independent</span>
+            }
+        </div>
+        @if (editable)
+        {
+            <div class="cv-cact">
+                <details class="cv-rename">
+                    <summary class="cv-btn-ghost">Rename</summary>
+                    <form method="post" asp-controller="Categories" asp-action="Update" asp-route-id="@category.Id" class="cv-rename-form">
+                        <input type="hidden" name="applicationId" value="@applicationId" />
+                        <div class="cv-field">
+                            <label for="category-name-@category.Id">Name</label>
+                            <input id="category-name-@category.Id" name="Name" type="text" value="@category.Name" maxlength="200" />
+                        </div>
+                        <div class="cv-field cv-field-inline">
+                            <input id="category-independent-@category.Id" name="IsIndependent" type="checkbox" value="true" checked="@category.IsIndependent" />
+                            <label for="category-independent-@category.Id">Independent category</label>
+                        </div>
+                        <button type="submit" class="cv-btn">Save</button>
+                    </form>
+                </details>
+                <form method="post" asp-controller="Categories" asp-action="Remove" asp-route-id="@category.Id">
+                    <input type="hidden" name="applicationId" value="@applicationId" />
+                    <button type="submit" class="cv-btn-ghost cv-danger">Remove</button>
+                </form>
+            </div>
+        }
+    </header>
+    <div class="cv-cbody cv-elements">
+        @* Element list is rendered here in Task 5. *@
+    </div>
+</section>

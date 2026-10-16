@@ -1,0 +1,128 @@
+@model ApplicationDetailViewModel
+@using System.Globalization
+@using QuestionAppBuilder.Domain.Entities
+@{
+    ViewData["Title"] = Model.Application.Name;
+    var graph = Model.IsEditable ? Model.DraftGraph : Model.PublishedGraph;
+    var categories = graph?.Categories.OrderBy(category => category.SortOrder).ThenBy(category => category.Id).ToArray()
+        ?? Array.Empty<Category>();
+    var publishedVersionNumber = Model.DraftGraph is not null && Model.Application.CurrentVersionId is not null
+        ? Model.DraftGraph.Version.VersionNumber - 1
+        : 0;
+}
+
+<style>
+    .cv-back { font-size: 13.5px; color: #005EA2; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    .cv-back:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .cv-alert { margin-top: 14px; background: #fff; border: 1px solid #B50909; border-left: 6px solid #B50909; border-radius: 4px; color: #B50909; font-size: 14px; font-weight: 600; padding: 12px 16px; }
+    .cv-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin: 14px 0 4px; }
+    .cv-head h1 { font-size: 26px; font-weight: 700; line-height: 1.25; margin: 0; }
+    .cv-statusline { margin-top: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .cv-badge { font-size: 12.5px; font-weight: 700; padding: 4px 12px; border-radius: 4px; }
+    .cv-draft { background: #E7EDF5; color: #1A4480; }
+    .cv-published { background: #EAF3EB; color: #2E8540; }
+    .cv-independent { background: #E7EDF5; color: #1A4480; }
+    .cv-note { font-size: 13px; color: #565C65; }
+    .cv-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 16px 0 20px; }
+    .cv-type { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid #1A4480; color: #1A4480; border-radius: 4px; padding: 2px 8px; }
+    .cv-updated { font-size: 13px; color: #565C65; }
+    .cv-btn { font-family: inherit; font-size: 14px; font-weight: 700; background: #005EA2; color: #fff; border: 0; border-radius: 4px; padding: 10px 18px; cursor: pointer; }
+    .cv-btn:hover { background: #1A4480; }
+    .cv-btn:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .cv-btn-ghost { font-family: inherit; font-size: 13px; font-weight: 600; color: #005EA2; background: #fff; border: 1px solid #005EA2; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+    .cv-btn-ghost:hover { background: #F1F4F7; }
+    .cv-btn-ghost:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .cv-danger { color: #B50909; border-color: #B50909; }
+    .cv-card { background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; margin-bottom: 24px; }
+    .cv-chead { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid #D5DAE0; }
+    .cv-chead h2 { font-size: 18px; font-weight: 700; margin: 0; }
+    .cv-chead-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .cv-cact { display: flex; gap: 10px; align-items: flex-start; }
+    .cv-cbody { padding: 6px 24px 20px; }
+    .cv-readonly { padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .cv-readonly p { margin: 0; color: #565C65; font-size: 14px; }
+    .cv-field { margin-bottom: 12px; }
+    .cv-field label { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
+    .cv-field input[type="text"] { width: 100%; max-width: 24rem; padding: 8px 10px; border: 1px solid #565C65; border-radius: 4px; font: inherit; color: #1B1B1B; background: #fff; }
+    .cv-field input[type="text"]:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .cv-field-inline { display: flex; align-items: center; gap: 8px; }
+    .cv-field-inline label { display: inline; margin: 0; font-weight: 400; }
+    .cv-rename { position: relative; }
+    .cv-rename summary { list-style: none; display: inline-block; }
+    .cv-rename summary::-webkit-details-marker { display: none; }
+    .cv-rename-form { position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; width: 320px; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 16px; }
+</style>
+
+<a class="cv-back" asp-controller="Applications" asp-action="Index">&#8592; All applications</a>
+
+@if (TempData["EditorError"] is string editorError)
+{
+    <div class="cv-alert" role="alert">@editorError</div>
+}
+
+<div class="cv-head">
+    <h1>@Model.Application.Name</h1>
+</div>
+
+<div class="cv-statusline">
+    @if (Model.IsEditable && Model.DraftGraph is not null)
+    {
+        <span class="cv-badge cv-draft">Draft version @Model.DraftGraph.Version.VersionNumber</span>
+        @if (publishedVersionNumber >= 1)
+        {
+            <span class="cv-note">Published v@(publishedVersionNumber) exists &mdash; editing a draft copy</span>
+        }
+    }
+    else if (Model.PublishedGraph is not null)
+    {
+        <span class="cv-badge cv-published">Published version @Model.PublishedGraph.Version.VersionNumber &mdash; read-only</span>
+    }
+</div>
+
+<div class="cv-toolbar">
+    @if (!string.IsNullOrEmpty(Model.TypeName))
+    {
+        <span class="cv-type">@Model.TypeName</span>
+    }
+    <span class="cv-updated">Updated @Model.Application.UpdatedUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</span>
+</div>
+
+@if (!Model.IsEditable)
+{
+    <section class="cv-card">
+        <div class="cv-cbody cv-readonly">
+            <p>This version is published and read-only. Start editing to work on a draft copy.</p>
+            <form method="post" asp-controller="Applications" asp-action="StartDraft" asp-route-id="@Model.Application.Id">
+                <button type="submit" class="cv-btn">Start editing</button>
+            </form>
+        </div>
+    </section>
+}
+
+@foreach (var category in categories)
+{
+    <partial name="_CategoryPanel" model="(Detail: Model, Category: category)" />
+}
+
+@if (Model.IsEditable)
+{
+    <section class="cv-card">
+        <header class="cv-chead">
+            <h2>Add category</h2>
+        </header>
+        <div class="cv-cbody">
+            <form method="post" asp-controller="Categories" asp-action="Add">
+                <input type="hidden" name="applicationId" value="@Model.Application.Id" />
+                <div class="cv-field">
+                    <label for="new-category-name">Name</label>
+                    <input id="new-category-name" name="Name" type="text" maxlength="200" />
+                </div>
+                <div class="cv-field cv-field-inline">
+                    <input id="new-category-independent" name="IsIndependent" type="checkbox" value="true" />
+                    <label for="new-category-independent">Independent category</label>
+                </div>
+                <button type="submit" class="cv-btn">Add category</button>
+            </form>
+        </div>
+    </section>
+}

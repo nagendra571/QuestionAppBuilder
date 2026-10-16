@@ -49,6 +49,54 @@ public class ApplicationsController : EditorControllerBase
         return View(viewModel);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id, CancellationToken ct)
+    {
+        try
+        {
+            var application = await _designService.GetApplicationAsync(id, ct);
+            var draftGraph = await _designService.TryGetDraftGraphAsync(id, ct);
+            var publishedGraph = draftGraph is null
+                ? await _designService.GetLatestPublishedGraphAsync(id, ct)
+                : null;
+            var types = await _designService.ListApplicationTypesAsync(ct);
+
+            var viewModel = new ApplicationDetailViewModel
+            {
+                Application = application,
+                DraftGraph = draftGraph,
+                PublishedGraph = publishedGraph,
+                TypeName = types.FirstOrDefault(type => type.Id == application.ApplicationTypeId)?.Name ?? string.Empty,
+            };
+
+            return View(viewModel);
+        }
+        catch (NotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartDraft(int id, CancellationToken ct)
+    {
+        try
+        {
+            await _designService.OpenDraftAsync(id, ct);
+        }
+        catch (NotFoundException)
+        {
+            return NotFound();
+        }
+        catch (DefinitionValidationException exception)
+        {
+            SetEditorError(exception.Message);
+        }
+
+        return RedirectToAction("Detail", new { id });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(ApplicationCreateViewModel viewModel, CancellationToken ct)
