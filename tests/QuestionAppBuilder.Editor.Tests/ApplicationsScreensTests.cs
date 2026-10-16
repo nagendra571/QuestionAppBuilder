@@ -146,6 +146,31 @@ public class ApplicationsScreensTests : IDisposable
         row.Value.Should().Contain("RFA");
     }
 
+    [Fact]
+    public async Task Create_with_unknown_type_id_is_friendly_error()
+    {
+        await SeedApplicationTypesAsync();
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, CreateUrl);
+
+        var response = await client.PostAsync(
+            CreateUrl,
+            BuildCreateForm("Endowment Expansion", 9999, token));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Select an application type.");
+
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            var applicationCount = await database.Applications.CountAsync();
+
+            applicationCount.Should().Be(0);
+            return true;
+        });
+    }
+
     private async Task SeedApplicationTypesAsync()
     {
         await _factory.WithScopeAsync(async services =>

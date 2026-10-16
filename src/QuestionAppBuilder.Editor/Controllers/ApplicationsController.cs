@@ -53,9 +53,16 @@ public class ApplicationsController : EditorControllerBase
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(ApplicationCreateViewModel viewModel, CancellationToken ct)
     {
+        viewModel.Types = await _designService.ListApplicationTypesAsync(ct);
+
+        if (!viewModel.Types.Any(type => type.Id == viewModel.ApplicationTypeId))
+        {
+            ModelState.AddModelError(nameof(viewModel.ApplicationTypeId), "Select an application type.");
+        }
+
         if (!ModelState.IsValid)
         {
-            return await RerenderCreateAsync(viewModel, ct);
+            return View(viewModel);
         }
 
         try
@@ -72,12 +79,6 @@ public class ApplicationsController : EditorControllerBase
             ModelState.AddModelError(nameof(viewModel.Name), exception.Message);
         }
 
-        return await RerenderCreateAsync(viewModel, ct);
-    }
-
-    private async Task<IActionResult> RerenderCreateAsync(ApplicationCreateViewModel viewModel, CancellationToken ct)
-    {
-        viewModel.Types = await _designService.ListApplicationTypesAsync(ct);
         return View(viewModel);
     }
 }
