@@ -12,7 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration["QuestionAppBuilder:ConnectionString"] ?? string.Empty;
 
 builder.Services.AddQuestionAppBuilder(o => o.ConnectionString = connectionString);
-builder.Services.AddQuestionAppBuilderEditor(o => o.DesignerRole = "Designer");
+builder.Services.AddQuestionAppBuilderEditor(o =>
+{
+    o.BasePath = builder.Configuration["QuestionAppBuilderEditor:BasePath"] ?? o.BasePath;
+    o.DesignerRole = builder.Configuration["QuestionAppBuilderEditor:DesignerRole"] ?? o.DesignerRole;
+});
 builder.Services.AddSingleton<DevUserStore>();
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

@@ -99,6 +99,26 @@ public class ApplicationsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Publish(int id, CancellationToken ct)
+    {
+        try
+        {
+            await _designService.PublishAsync(id, ct);
+        }
+        catch (NotFoundException)
+        {
+            return NotFound();
+        }
+        catch (DefinitionValidationException exception)
+        {
+            SetEditorError(exception.Message);
+        }
+
+        return RedirectToAction("Detail", new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(ApplicationCreateViewModel viewModel, CancellationToken ct)
     {
         viewModel.Types = await _designService.ListApplicationTypesAsync(ct);
