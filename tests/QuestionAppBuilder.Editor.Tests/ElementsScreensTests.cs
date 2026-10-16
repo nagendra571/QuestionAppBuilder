@@ -269,6 +269,38 @@ public class ElementsScreensTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task Unknown_answer_type_value_is_friendly_error()
+    {
+        var (applicationId, categoryId) = await CreateApplicationWithCategoryAsync();
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
+
+        var response = await client.PostAsync(
+            AddQuestionUrl(categoryId),
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
+                ["Label"] = "Should not be persisted",
+                ["AnswerType"] = "999",
+                ["__RequestVerificationToken"] = token,
+            }));
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Found);
+        var body = await client.GetStringAsync(response.Headers.Location!.ToString());
+        body.Should().Contain("role=\"alert\"");
+
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            var elementCount = await database.Elements.CountAsync(e => e.Label == "Should not be persisted");
+
+            elementCount.Should().Be(0);
+            return true;
+        });
+    }
+
     private static string DetailUrl(int applicationId)
         => $"/ConfigureApp/Applications/Detail/{applicationId}";
 

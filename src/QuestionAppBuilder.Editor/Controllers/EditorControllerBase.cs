@@ -19,6 +19,21 @@ public abstract class EditorControllerBase : Controller
         TempData["EditorError"] = message;
     }
 
+    protected IActionResult RedirectToDetail(int applicationId)
+        => RedirectToAction("Detail", "Applications", new { id = applicationId });
+
+    protected IActionResult RedirectToDetailWithValidationErrors(int applicationId)
+    {
+        var messages = ModelState.Values
+            .SelectMany(entry => entry.Errors)
+            .Select(error => error.ErrorMessage)
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Distinct();
+
+        SetEditorError(string.Join(" ", messages));
+        return RedirectToDetail(applicationId);
+    }
+
     public override void OnActionExecuting(ActionExecutingContext context)
     {
         ViewData["QuestionAppBuilderLayout"] = EditorOptions.LayoutName;

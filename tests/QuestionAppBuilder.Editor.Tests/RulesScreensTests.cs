@@ -185,6 +185,78 @@ public class RulesScreensTests : IDisposable
     }
 
     [Fact]
+    public async Task Unknown_family_value_is_friendly_error()
+    {
+        var (applicationId, _, questionId, _) = await CreateQuestionAsync(AnswerType.Textbox);
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
+
+        var response = await client.PostAsync(
+            AddRuleUrl(questionId),
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
+                ["Family"] = "999",
+                ["Points"] = "1",
+                ["__RequestVerificationToken"] = token,
+            }));
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Found);
+        var body = await client.GetStringAsync(response.Headers.Location!.ToString());
+        body.Should().Contain("role=\"alert\"");
+
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            var ruleCount = await database.ScoringRules.CountAsync(r => r.QuestionId == questionId);
+
+            ruleCount.Should().Be(0);
+            return true;
+        });
+    }
+
+    [Fact]
+    public async Task Selection_with_invalid_operator_value_is_friendly_error()
+    {
+        var (applicationId, _, questionId, _) = await CreateQuestionAsync(AnswerType.RadioGroup);
+        var optionId = await _factory.WithScopeAsync(async services =>
+        {
+            var designService = services.GetRequiredService<IApplicationDesignService>();
+            var option = await designService.AddOptionAsync(questionId, "Previously funded", "yes-prev");
+            return option.Id;
+        });
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
+
+        var response = await client.PostAsync(
+            AddRuleUrl(questionId),
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
+                ["Family"] = nameof(RuleFamily.Selection),
+                ["Points"] = "5",
+                ["MembershipOperator"] = "999",
+                ["OptionIds"] = optionId.ToString(CultureInfo.InvariantCulture),
+                ["__RequestVerificationToken"] = token,
+            }));
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Found);
+        var body = await client.GetStringAsync(response.Headers.Location!.ToString());
+        body.Should().Contain("role=\"alert\"");
+
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            var ruleCount = await database.ScoringRules.CountAsync(r => r.QuestionId == questionId);
+
+            ruleCount.Should().Be(0);
+            return true;
+        });
+    }
+
+    [Fact]
     public async Task Numeric_range_with_min_above_max_is_friendly_error()
     {
         var (applicationId, _, questionId, _) = await CreateQuestionAsync(AnswerType.Number);

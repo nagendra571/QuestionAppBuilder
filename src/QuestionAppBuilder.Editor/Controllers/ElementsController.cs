@@ -92,19 +92,4 @@ public class ElementsController : EditorControllerBase
 
         return RedirectToDetail(applicationId);
     }
-
-    private IActionResult RedirectToDetail(int applicationId)
-        => RedirectToAction("Detail", "Applications", new { id = applicationId });
-
-    private IActionResult RedirectToDetailWithValidationErrors(int applicationId)
-    {
-        var messages = ModelState.Values
-            .SelectMany(entry => entry.Errors)
-            .Select(error => error.ErrorMessage)
-            .Where(message => !string.IsNullOrWhiteSpace(message))
-            .Distinct();
-
-        SetEditorError(string.Join(" ", messages));
-        return RedirectToDetail(applicationId);
-    }
 }

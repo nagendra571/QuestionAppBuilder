@@ -9,6 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\QuestionAppBuilder.Application\QuestionAppBuilder.Application.csproj" />
   </ItemGroup>
 

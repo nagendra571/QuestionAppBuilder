@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain.Exceptions;
 using QuestionAppBuilder.Editor.Options;
@@ -92,6 +93,14 @@ public class ApplicationsController : EditorControllerBase
         catch (DefinitionValidationException exception)
         {
             SetEditorError(exception.Message);
+        }
+        catch (DbUpdateException)
+        {
+            var draft = await _designService.TryGetDraftGraphAsync(id, ct);
+            if (draft is null)
+            {
+                throw;
+            }
         }
 
         return RedirectToAction("Detail", new { id });
