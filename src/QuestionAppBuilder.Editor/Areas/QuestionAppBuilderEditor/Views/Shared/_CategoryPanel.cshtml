@@ -1,10 +1,23 @@
 @using QuestionAppBuilder.Domain.Entities
+@using QuestionAppBuilder.Domain.Enums
 @model (ApplicationDetailViewModel Detail, Category Category)
 @{
     var category = Model.Category;
     var editable = Model.Detail.IsEditable;
     var applicationId = Model.Detail.Application.Id;
+    var elements = category.Elements.OrderBy(element => element.SortOrder).ThenBy(element => element.Id).ToArray();
 }
+
+<style>
+    .cv-add { display: flex; gap: 10px; padding-top: 18px; }
+    .cv-add-form { position: relative; }
+    .cv-add-form > summary { list-style: none; display: inline-block; }
+    .cv-add-form > summary::-webkit-details-marker { display: none; }
+    .cv-add-form form { position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: 360px; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 16px; }
+    .cv-add-form select, .cv-add-form textarea { width: 100%; padding: 8px 10px; border: 1px solid #565C65; border-radius: 4px; font: inherit; color: #1B1B1B; background: #fff; }
+    .cv-add-form textarea { min-height: 4.5rem; resize: vertical; }
+    .cv-add-form select:focus-visible, .cv-add-form textarea:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+</style>
 
 <section class="cv-card">
     <header class="cv-chead">
@@ -41,6 +54,58 @@
         }
     </header>
     <div class="cv-cbody cv-elements">
-        @* Element list is rendered here in Task 5. *@
+        @foreach (var element in elements)
+        {
+            <partial name="_ElementRow" model="(Detail: Model.Detail, Element: element)" />
+        }
+        @if (editable)
+        {
+            <div class="cv-add">
+                <details class="cv-add-form">
+                    <summary class="cv-btn-ghost">Add question</summary>
+                    <form method="post" asp-controller="Elements" asp-action="AddQuestion" asp-route-id="@category.Id">
+                        <input type="hidden" name="applicationId" value="@applicationId" />
+                        <div class="cv-field">
+                            <label for="question-label-@category.Id">Question</label>
+                            <input id="question-label-@category.Id" name="Label" type="text" maxlength="500" />
+                        </div>
+                        <div class="cv-field">
+                            <label for="question-type-@category.Id">Answer type</label>
+                            <select id="question-type-@category.Id" name="AnswerType">
+                                @foreach (var answerType in Enum.GetValues<AnswerType>())
+                                {
+                                    <option value="@answerType">@QuestionFormViewModel.SplitPascalCase(answerType.ToString())</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="cv-field cv-field-inline">
+                            <input id="question-required-@category.Id" name="IsRequired" type="checkbox" value="true" checked="checked" />
+                            <input type="hidden" name="IsRequired" value="false" />
+                            <label for="question-required-@category.Id">Required</label>
+                        </div>
+                        <div class="cv-field">
+                            <label for="question-help-@category.Id">Help text (optional)</label>
+                            <textarea id="question-help-@category.Id" name="HelpText" maxlength="2000"></textarea>
+                        </div>
+                        <button type="submit" class="cv-btn">Add question</button>
+                    </form>
+                </details>
+                <details class="cv-add-form">
+                    <summary class="cv-btn-ghost">Add content</summary>
+                    <form method="post" asp-controller="Elements" asp-action="AddContent" asp-route-id="@category.Id">
+                        <input type="hidden" name="applicationId" value="@applicationId" />
+                        <div class="cv-field">
+                            <label for="content-label-@category.Id">Label</label>
+                            <input id="content-label-@category.Id" name="Label" type="text" maxlength="500" />
+                        </div>
+                        <div class="cv-field">
+                            <label for="content-help-@category.Id">Help text (optional)</label>
+                            <textarea id="content-help-@category.Id" name="HelpText" maxlength="2000"></textarea>
+                        </div>
+                        <button type="submit" class="cv-btn">Add content</button>
+                    </form>
+                </details>
+            </div>
+        }
     </div>
 </section>
