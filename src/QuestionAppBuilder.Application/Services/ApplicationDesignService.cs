@@ -66,6 +66,38 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return graph;
     }
 
+    public async Task<ApplicationVersionGraph?> TryGetDraftGraphAsync(int applicationId, CancellationToken ct = default)
+        => await _repository.GetDraftGraphAsync(applicationId, ct);
+
+    public async Task<ApplicationVersionGraph> GetLatestPublishedGraphAsync(int applicationId, CancellationToken ct = default)
+    {
+        var application = await GetApplicationAsync(applicationId, ct);
+        if (application.CurrentVersionId is not int currentVersionId)
+        {
+            throw new NotFoundException($"Application {applicationId} has no published version.");
+        }
+
+        return await _repository.GetVersionGraphAsync(currentVersionId, ct);
+    }
+
+    public async Task<ApplicationVersionGraph> OpenDraftAsync(int applicationId, CancellationToken ct = default)
+    {
+        var draft = await TryGetDraftGraphAsync(applicationId, ct);
+        if (draft is not null)
+        {
+            return draft;
+        }
+
+        var application = await GetApplicationAsync(applicationId, ct);
+        var published = await GetPublishedGraphAsync(application, ct);
+        var (cloneGraph, cloneMap) = CloneGraph(published, published.Version.VersionNumber + 1);
+        _repository.AddGraph(cloneGraph);
+        LinkClonedRuleOptions(cloneMap);
+        await _repository.SaveChangesAsync(ct);
+
+        return cloneGraph;
+    }
+
     public async Task<Category> AddCategoryAsync(int applicationId, string name, bool isIndependent = false, CancellationToken ct = default)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Category name");
@@ -313,7 +345,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         await _repository.SaveChangesAsync(ct);
     }
 
-    private async Task<ApplicationEntity> GetApplicationAsync(int applicationId, CancellationToken ct)
+    public async Task<ApplicationEntity> GetApplicationAsync(int applicationId, CancellationToken ct = default)
     {
         var application = await _repository.GetAsync(applicationId, ct);
         if (application is null)

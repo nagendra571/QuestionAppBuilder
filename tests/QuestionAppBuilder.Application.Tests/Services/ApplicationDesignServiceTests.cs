@@ -388,6 +388,86 @@ public class ApplicationDesignServiceTests
         publishedRule.Options.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task TryGetDraftGraph_returns_null_after_publish()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Published only", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Basics");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Scorable?", AnswerType.Textbox);
+        await ctx.Service.AddRuleAsync(question.Id, RuleFamily.Presence, 1);
+        await ctx.Service.PublishAsync(application.Id);
+
+        var draft = await ctx.Service.TryGetDraftGraphAsync(application.Id);
+
+        draft.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLatestPublishedGraph_returns_published_content()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Published read", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Published category");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Scorable?", AnswerType.Textbox);
+        await ctx.Service.AddRuleAsync(question.Id, RuleFamily.Presence, 1);
+        await ctx.Service.PublishAsync(application.Id);
+
+        var graph = await ctx.Service.GetLatestPublishedGraphAsync(application.Id);
+
+        graph.Version.Status.Should().Be(VersionStatus.Published);
+        graph.Categories.Should().ContainSingle().Which.Name.Should().Be("Published category");
+    }
+
+    [Fact]
+    public async Task GetLatestPublishedGraph_throws_when_never_published()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Draft only", ctx.ApplicationTypeId);
+
+        Func<Task> act = () => ctx.Service.GetLatestPublishedGraphAsync(application.Id);
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task OpenDraft_clones_published_once()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Open draft", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Scorable?", AnswerType.Textbox);
+        await ctx.Service.AddRuleAsync(question.Id, RuleFamily.Presence, 1);
+        await ctx.Service.PublishAsync(application.Id);
+
+        var first = await ctx.Service.OpenDraftAsync(application.Id);
+        var second = await ctx.Service.OpenDraftAsync(application.Id);
+
+        first.Version.Id.Should().BePositive();
+        first.Version.Id.Should().Be(second.Version.Id);
+        first.Version.Status.Should().Be(VersionStatus.Draft);
+        first.Version.VersionNumber.Should().Be(2);
+        first.Categories.Should().ContainSingle().Which.Name.Should().Be("Scoring");
+
+        using var freshContext = new QuestionAppBuilderDbContext(ctx.Options);
+        var storedVersions = await freshContext.ApplicationVersions.ToListAsync();
+        storedVersions.Should().HaveCount(2);
+
+        var storedDraft = await new ApplicationRepository(freshContext).GetVersionGraphAsync(first.Version.Id);
+        storedDraft.Version.Status.Should().Be(VersionStatus.Draft);
+        storedDraft.Categories.Should().ContainSingle().Which.Name.Should().Be("Scoring");
+    }
+
+    [Fact]
+    public async Task GetApplication_throws_for_unknown_id()
+    {
+        using var ctx = new TestContext();
+
+        Func<Task> act = () => ctx.Service.GetApplicationAsync(999_999);
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
     private sealed class TestContext : IDisposable
     {
         public TestContext()

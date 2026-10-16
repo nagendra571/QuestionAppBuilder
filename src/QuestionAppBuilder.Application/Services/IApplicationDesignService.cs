@@ -10,7 +10,11 @@ public interface IApplicationDesignService
     Task<IReadOnlyList<ApplicationType>> ListApplicationTypesAsync(CancellationToken ct = default);
     Task<ApplicationEntity> CreateApplicationAsync(string name, int applicationTypeId, CancellationToken ct = default);
     Task<IReadOnlyList<ApplicationEntity>> ListApplicationsAsync(CancellationToken ct = default);
+    Task<ApplicationEntity> GetApplicationAsync(int applicationId, CancellationToken ct = default);
     Task<ApplicationVersionGraph> GetDraftGraphAsync(int applicationId, CancellationToken ct = default);
+    Task<ApplicationVersionGraph?> TryGetDraftGraphAsync(int applicationId, CancellationToken ct = default);
+    Task<ApplicationVersionGraph> GetLatestPublishedGraphAsync(int applicationId, CancellationToken ct = default);
+    Task<ApplicationVersionGraph> OpenDraftAsync(int applicationId, CancellationToken ct = default);
     Task<Category> AddCategoryAsync(int applicationId, string name, bool isIndependent = false, CancellationToken ct = default);
     Task UpdateCategoryAsync(int categoryId, string name, bool isIndependent, CancellationToken ct = default);
     Task RemoveCategoryAsync(int categoryId, CancellationToken ct = default);
