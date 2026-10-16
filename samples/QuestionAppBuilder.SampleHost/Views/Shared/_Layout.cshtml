@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - QuestionAppBuilder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <style>
+        :root {
+            --qab-navy: #1A4480;
+            --qab-ground: #F1F4F7;
+            --qab-panel: #FFFFFF;
+            --qab-border: #D5DAE0;
+            --qab-primary: #005EA2;
+            --qab-focus: #2491FF;
+            --qab-danger: #B50909;
+            --qab-text: #1B1B1B;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: "Public Sans", "Helvetica Neue", Arial, sans-serif; color: var(--qab-text); background: var(--qab-ground); }
+        .qab-host-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--qab-navy); color: #fff; padding: 0.75rem 1.5rem; }
+        .qab-host-bar a { color: #fff; text-decoration: none; font-weight: 600; }
+        .qab-host-bar form { display: flex; align-items: center; gap: 0.75rem; margin: 0; }
+        .qab-host-bar button { background: transparent; border: 1px solid #fff; }
+        main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+        h1 { font-size: 26px; font-weight: 700; margin: 0 0 1rem; }
+        a { color: var(--qab-primary); }
+        a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--qab-focus); outline-offset: 1px; }
+        table { width: 100%; border-collapse: collapse; background: var(--qab-panel); border: 1px solid var(--qab-border); border-radius: 4px; }
+        th, td { border-bottom: 1px solid var(--qab-border); padding: 0.6rem 0.75rem; text-align: left; }
+        th { font-weight: 600; }
+        button { background: var(--qab-primary); color: #fff; border: 0; border-radius: 4px; padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
+        .field { margin-bottom: 0.9rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+        input[type="text"], input[type="password"] { width: 100%; max-width: 24rem; padding: 0.5rem; border: 1px solid var(--qab-border); border-radius: 4px; font: inherit; background: var(--qab-panel); }
+        .validation-summary-errors { color: var(--qab-danger); }
+        .validation-summary-errors ul { margin: 0.25rem 0 1rem; padding-left: 1.25rem; }
+    </style>
+</head>
+<body>
+    <header class="qab-host-bar">
+        <a href="/">QuestionAppBuilder</a>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <form method="post" action="/Account/Logout">
+                @Html.AntiForgeryToken()
+                <span>@User.Identity.Name</span>
+                <button type="submit">Sign out</button>
+            </form>
+        }
+    </header>
+    <main>
+        @RenderBody()
+    </main>
+</body>
+</html>

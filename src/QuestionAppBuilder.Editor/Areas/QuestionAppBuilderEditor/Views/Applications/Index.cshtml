@@ -1,0 +1,32 @@
+@model IReadOnlyList<ApplicationRowViewModel>
+@{
+    ViewData["Title"] = "Applications";
+}
+
+<h1>Applications</h1>
+
+<p><a href="#">New application</a></p>
+
+<table>
+    <thead>
+        <tr>
+            <th scope="col">Name</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Count == 0)
+        {
+            <tr>
+                <td>No applications yet.</td>
+            </tr>
+        }
+        @foreach (var application in Model)
+        {
+            <tr>
+                <td>
+                    <a href="@Url.Action("Detail", "Applications", new { area = EditorArea.Name, id = application.Id })">@application.Name</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
