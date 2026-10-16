@@ -7,6 +7,8 @@
     var applicationId = Model.Detail.Application.Id;
     var options = question.Options.OrderBy(option => option.SortOrder).ThenBy(option => option.Id).ToArray();
     var acceptsOptions = question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes;
+    var rules = question.Rules.OrderBy(rule => rule.Id).ToArray();
+    var ruleForm = new RuleFormViewModel { Options = options };
 }
 
 <style>
@@ -19,9 +21,15 @@
     .cv-add-option > summary { list-style: none; display: inline-block; }
     .cv-add-option > summary::-webkit-details-marker { display: none; }
     .cv-add-option form { position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: 320px; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 16px; }
+    .cv-add-rule { position: relative; display: block; margin-top: 12px; }
+    .cv-add-rule > summary { list-style: none; display: inline-block; }
+    .cv-add-rule > summary::-webkit-details-marker { display: none; }
+    .cv-add-rule form { position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: 360px; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 16px; }
+    .cv-add-rule select, .cv-add-rule input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid #565C65; border-radius: 4px; font: inherit; color: #1B1B1B; background: #fff; }
+    .cv-add-rule select:focus-visible, .cv-add-rule input[type="number"]:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
+    .cv-add-rule fieldset { border: 0; margin: 0 0 12px; padding: 0; }
+    .cv-add-rule legend { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; padding: 0; }
 </style>
-
-@* Scoring rules are rendered here in Task 6. *@
 
 @if (options.Length > 0 || (editable && acceptsOptions))
 {
@@ -56,6 +64,70 @@
                         <input id="option-value-@question.Id" name="Value" type="text" maxlength="100" />
                     </div>
                     <button type="submit" class="cv-btn">Add option</button>
+                </form>
+            </details>
+        }
+    </div>
+}
+
+@if (rules.Length > 0 || editable)
+{
+    <div class="cv-rules">
+        @foreach (var rule in rules)
+        {
+            <partial name="_RuleRow" model="(Detail: Model.Detail, Question: question, Rule: rule)" />
+        }
+        @if (editable)
+        {
+            <details class="cv-add-rule">
+                <summary class="cv-link">Add scoring rule</summary>
+                <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id">
+                    <input type="hidden" name="applicationId" value="@applicationId" />
+                    <div class="cv-field">
+                        <label for="rule-family-@question.Id">Rule family</label>
+                        <select id="rule-family-@question.Id" name="Family">
+                            @foreach (var family in ruleForm.Families)
+                            {
+                                <option value="@family">@QuestionFormViewModel.SplitPascalCase(family.ToString())</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="cv-field">
+                        <label for="rule-points-@question.Id">Points</label>
+                        <input id="rule-points-@question.Id" name="Points" type="number" step="1" value="1" />
+                    </div>
+                    <div class="cv-field">
+                        <label for="rule-min-@question.Id">Min value</label>
+                        <input id="rule-min-@question.Id" name="MinValue" type="number" step="any" />
+                    </div>
+                    <div class="cv-field">
+                        <label for="rule-max-@question.Id">Max value</label>
+                        <input id="rule-max-@question.Id" name="MaxValue" type="number" step="any" />
+                    </div>
+                    @if (acceptsOptions)
+                    {
+                        <div class="cv-field">
+                            <label for="rule-operator-@question.Id">Membership operator</label>
+                            <select id="rule-operator-@question.Id" name="MembershipOperator">
+                                <option value="">Select an operator</option>
+                                @foreach (var membershipOperator in ruleForm.MembershipOperators)
+                                {
+                                    <option value="@membershipOperator">@QuestionFormViewModel.SplitPascalCase(membershipOperator.ToString())</option>
+                                }
+                            </select>
+                        </div>
+                        <fieldset class="cv-field">
+                            <legend>Options</legend>
+                            @foreach (var option in ruleForm.Options)
+                            {
+                                <div class="cv-field cv-field-inline">
+                                    <input id="rule-option-@question.Id-@option.Id" name="OptionIds" type="checkbox" value="@option.Id" />
+                                    <label for="rule-option-@question.Id-@option.Id">@option.Label</label>
+                                </div>
+                            }
+                        </fieldset>
+                    }
+                    <button type="submit" class="cv-btn">Add rule</button>
                 </form>
             </details>
         }

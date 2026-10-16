@@ -1,0 +1,60 @@
+@using System.Globalization
+@using QuestionAppBuilder.Domain.Entities
+@using QuestionAppBuilder.Domain.Enums
+@model (ApplicationDetailViewModel Detail, Question Question, ScoringRule Rule)
+@{
+    var rule = Model.Rule;
+    var editable = Model.Detail.IsEditable;
+    var applicationId = Model.Detail.Application.Id;
+    var familyLabel = QuestionFormViewModel.SplitPascalCase(rule.Family.ToString());
+    var optionIds = rule.Options.Select(ruleOption => ruleOption.QuestionOptionId).ToHashSet();
+    var optionLabels = Model.Question.Options
+        .Where(option => optionIds.Contains(option.Id))
+        .OrderBy(option => option.SortOrder).ThenBy(option => option.Id)
+        .Select(option => option.Label)
+        .ToArray();
+    var operatorLabel = rule.MembershipOperator is MembershipOperator membershipOperator
+        ? QuestionFormViewModel.SplitPascalCase(membershipOperator.ToString())
+        : null;
+    string? boundsLabel = null;
+    if (rule.Family == RuleFamily.NumericRange)
+    {
+        var min = rule.MinValue?.ToString("0.##", CultureInfo.InvariantCulture);
+        var max = rule.MaxValue?.ToString("0.##", CultureInfo.InvariantCulture);
+        boundsLabel = (min, max) switch
+        {
+            (not null, not null) => $"{min}\u2013{max} (inclusive)",
+            (not null, null) => $"at least {min}",
+            (null, not null) => $"at most {max}",
+            _ => null
+        };
+    }
+}
+
+<style>
+    .cv-rule { margin-top: 14px; background: #F6F7F8; border: 1px solid #E4E8EC; border-radius: 4px; padding: 10px 14px; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+    .cv-rule b { color: #1B1B1B; }
+    .cv-rule .cv-remove { margin-left: auto; }
+</style>
+
+<div class="cv-rule">
+    <span>
+        <b>Scoring rule:</b> @familyLabel
+        @if (rule.Family == RuleFamily.Selection)
+        {
+            <text> &middot; @operatorLabel @string.Join(", ", optionLabels)</text>
+        }
+        else if (boundsLabel is not null)
+        {
+            <text> &middot; @boundsLabel</text>
+        }
+        <text> &rarr; </text><b>+@rule.Points points</b>
+    </span>
+    @if (editable)
+    {
+        <form method="post" asp-controller="Rules" asp-action="Remove" asp-route-id="@rule.Id" class="cv-remove">
+            <input type="hidden" name="applicationId" value="@applicationId" />
+            <button type="submit" class="cv-link">Remove</button>
+        </form>
+    }
+</div>
