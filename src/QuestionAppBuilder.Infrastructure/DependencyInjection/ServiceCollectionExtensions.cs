@@ -40,10 +40,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IScoringEngine, ScoringEngine>();
         services.AddSingleton<IDefinitionEvaluator, DefinitionEvaluator>();
         services.AddScoped<IApplicationDesignService, ApplicationDesignService>();
-        services.AddScoped<ISubmissionService, SubmissionService>();
         services.AddScoped<IDraftService, DraftService>();
         services.TryAddScoped<IRespondentContext, UnconfiguredRespondentContext>();
         services.AddScoped<IResponseService, ResponseService>();
+        services.AddScoped<ISubmissionCoordinator, SubmissionCoordinator>();
+        services.AddScoped<IAvailabilityService, AvailabilityService>();
+        services.TryAddScoped<ITrustedActorContext, UnconfiguredTrustedActorContext>();
 
         return services;
     }

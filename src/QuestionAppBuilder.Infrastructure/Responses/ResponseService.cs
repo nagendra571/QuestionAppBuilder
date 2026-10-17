@@ -31,28 +31,36 @@ public sealed class ResponseService : IResponseService
             if (granted.ApplicationId != applicationId) throw new NotFoundException("The response was not found.");
             return granted;
         }
-        await using var db = await _factory.CreateDbContextAsync(ct);
-        var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, ct)
-            ?? throw new NotFoundException($"Application {applicationId} was not found.");
-        if (!application.AcceptNewResponses || application.CurrentVersionId is not int currentVersionId)
-            throw new NotFoundException($"Application {applicationId} is not accepting new responses.");
-        if (identity.GrantedVersionId is int grantedVersion && grantedVersion != currentVersionId)
-            throw new NotFoundException("The response start was not found.");
-        var version = await db.ApplicationVersions.SingleOrDefaultAsync(v => v.Id == currentVersionId
-            && v.ApplicationId == application.Id && v.Status == VersionStatus.Published, ct)
-            ?? throw new NotFoundException("The published definition was not found.");
         if (string.IsNullOrWhiteSpace(identity.OwnerKey) || identity.OwnerKey.Length > 256)
             throw new InvalidOperationException("Respondent identity is not configured correctly.");
-        var now = DateTime.UtcNow;
-        var response = new ResponseDraft
+        await using var strategyContext = await _factory.CreateDbContextAsync(ct);
+        var strategy = strategyContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            Id = Guid.NewGuid(), ApplicationId = application.Id, ApplicationVersionId = version.Id,
-            OwnerKey = identity.OwnerKey, Status = ResponseStatus.InProgress, CreatedUtc = now, UpdatedUtc = now
-        };
-        db.ResponseDrafts.Add(response);
-        await db.SaveChangesAsync(ct);
-        var graph = await LoadGraphAsync(db, version.Id, ct);
-        return Snapshot(response, graph, new Dictionary<int, AnswerValue>(), application);
+            await using var db = await _factory.CreateDbContextAsync(ct);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await SqlApplicationLock.AcquireAsync(db, applicationId, ct);
+            var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, ct)
+                ?? throw new NotFoundException($"Application {applicationId} was not found.");
+            if (!application.AcceptNewResponses || application.CurrentVersionId is not int currentVersionId)
+                throw new NotFoundException($"Application {applicationId} is not accepting new responses.");
+            if (identity.GrantedVersionId is int grantedVersion && grantedVersion != currentVersionId)
+                throw new NotFoundException("The response start was not found.");
+            var version = await db.ApplicationVersions.SingleOrDefaultAsync(v => v.Id == currentVersionId
+                && v.ApplicationId == application.Id && v.Status == VersionStatus.Published, ct)
+                ?? throw new NotFoundException("The published definition was not found.");
+            var now = DateTime.UtcNow;
+            var response = new ResponseDraft
+            {
+                Id = Guid.NewGuid(), ApplicationId = application.Id, ApplicationVersionId = version.Id,
+                OwnerKey = identity.OwnerKey, Status = ResponseStatus.InProgress, CreatedUtc = now, UpdatedUtc = now
+            };
+            db.ResponseDrafts.Add(response);
+            await db.SaveChangesAsync(ct);
+            var graph = await LoadGraphAsync(db, version.Id, ct);
+            await transaction.CommitAsync(ct);
+            return Snapshot(response, graph, new Dictionary<int, AnswerValue>(), application);
+        });
     }
 
     public async Task<ResponseSnapshot> GetAsync(Guid responseId, CancellationToken ct = default)
@@ -152,8 +160,11 @@ public sealed class ResponseService : IResponseService
             response.RevisionNonce.ToByteArray(), response.UpdatedUtc, application.AcceptNewResponses, application.AcceptSubmissions);
 
     private static Dictionary<int, AnswerValue> ToValues(IEnumerable<ResponseAnswer> answers)
-        => answers.ToDictionary(answer => answer.QuestionId, answer => new AnswerValue(answer.TextValue, answer.NumberValue,
-            answer.SelectedOptions.Select(option => option.QuestionOptionId).ToArray()));
+        => answers.ToDictionary(answer => answer.QuestionId, answer =>
+        {
+            var selected = answer.SelectedOptions.Select(option => option.QuestionOptionId).ToArray();
+            return new AnswerValue(answer.TextValue, answer.NumberValue, selected.Length == 0 ? null : selected);
+        });
 
     private static bool HasValue(AnswerValue value) => !string.IsNullOrWhiteSpace(value.Text) || value.Number is not null || value.SelectedOptionIds is { Count: > 0 };
 

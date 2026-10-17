@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // These tests pin the retired compatibility adapter; production DI no longer exposes it.
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Scoring;
@@ -434,3 +435,4 @@ public class SubmissionServiceTests
         public void Dispose() => Context.Dispose();
     }
 }
+#pragma warning restore CS0618

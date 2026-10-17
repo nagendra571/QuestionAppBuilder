@@ -7,6 +7,8 @@ using QuestionAppBuilder.Domain.Interfaces;
 
 namespace QuestionAppBuilder.Application.Services;
 
+/// <summary>Legacy evaluator adapter retained for compatibility; production hosts must use ISubmissionCoordinator.</summary>
+[Obsolete("Use ISubmissionCoordinator with an owned, persisted response.")]
 public sealed class SubmissionService : ISubmissionService
 {
     private readonly IApplicationRepository _applicationRepository;
