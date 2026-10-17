@@ -1,0 +1,10 @@
+@model object
+@{
+    var errors = Model switch { ResponsePageModel response => response.FieldErrors, ReviewPageModel review => review.FieldErrors, _ => null };
+    var message = Model switch { ResponsePageModel response => response.SummaryMessage, ReviewPageModel review => review.SummaryMessage, _ => null };
+    ViewData["FieldErrors"] = errors;
+}
+<section class="qab-error-summary" role="alert" tabindex="-1" aria-labelledby="error-summary-title" data-error-summary>
+    <h2 id="error-summary-title">@(message ?? "Complete the required fields before continuing.")</h2>
+    @if (errors is not null && errors.Count > 0) { <ul>@foreach (var error in errors) { <li><a href="#question-@error.Key">@error.Value</a></li> }</ul> }
+</section>

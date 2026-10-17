@@ -1,0 +1,20 @@
+@model ReceiptPageModel
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
+<main class="qab-runtime qab-receipt" data-submission-id="@Model.Receipt.SubmissionId">
+    <p class="qab-eyebrow">Response submitted</p>
+    <h1>Thank you</h1>
+    <p>@Model.Receipt.ConfirmationText</p>
+    @if (Model.Receipt.Total is int total)
+    {
+        <section class="qab-score" aria-labelledby="score-heading"><h2 id="score-heading">Your score</h2>
+            <p class="qab-score-total" data-total-score="@total">@total</p>
+            <p>This is the score earned from your submitted answers.</p>
+            @if (Model.Receipt.Categories is not null)
+            {
+                <h3>Category scores</h3>
+                <ul>@foreach (var score in Model.Receipt.Categories) { <li>Category @score.CategoryId <strong>@score.Score</strong></li> }</ul>
+            }
+        </section>
+    }
+    <p class="qab-footer-note">Your submitted response is saved.</p>
+</main>

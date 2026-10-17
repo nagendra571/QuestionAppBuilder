@@ -22,6 +22,15 @@ public sealed class ResponseService : IResponseService
         _respondentContext = respondentContext ?? throw new ArgumentNullException(nameof(respondentContext));
     }
 
+    public async Task<ResponseLandingSnapshot?> GetLandingAsync(int applicationId, CancellationToken ct = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var application = await db.Applications.AsNoTracking().SingleOrDefaultAsync(a => a.Id == applicationId, ct);
+        if (application?.CurrentVersionId is not int versionId) return null;
+        var graph = await LoadGraphAsync(db, versionId, ct);
+        return new ResponseLandingSnapshot(application.Id, application.Name, graph, application.AcceptNewResponses, application.AcceptSubmissions);
+    }
+
     public async Task<ResponseSnapshot> StartAsync(int applicationId, CancellationToken ct = default)
     {
         var identity = RequiredIdentity();
@@ -74,6 +83,9 @@ public sealed class ResponseService : IResponseService
             var version = await db.ApplicationVersions.SingleOrDefaultAsync(v => v.Id == versionId
                 && v.ApplicationId == application.Id && v.Status == VersionStatus.Published, ct)
                 ?? throw new NotFoundException("The published definition was not found.");
+            if (version.RespondentAccessMode == RespondentAccessMode.EmailLink && accessToken is null
+                || version.RespondentAccessMode == RespondentAccessMode.HostSignIn && accessToken is not null)
+                throw new NotFoundException("This questionnaire uses a different access method.");
             var now = DateTime.UtcNow;
             var response = new ResponseDraft
             {

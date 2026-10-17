@@ -1,0 +1,9 @@
+@model RenderCategory
+<section class="qab-category" aria-labelledby="category-title">
+    <h2 id="category-title">@Model.Name</h2>
+    @foreach (var element in Model.Elements)
+    {
+        if (element.Question is null) { <div class="qab-content-panel">@element.Label</div> }
+        else { @await Html.PartialAsync("_Question", element.Question) }
+    }
+</section>

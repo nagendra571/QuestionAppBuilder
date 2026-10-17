@@ -1,0 +1,41 @@
+@model RenderQuestion
+@{
+    var error = (ViewData["FieldErrors"] as IReadOnlyDictionary<int, string>)?.GetValueOrDefault(Model.Id);
+    var helpId = $"help-question-{Model.Id}";
+    var errorId = $"error-question-{Model.Id}";
+    var describedBy = error is null ? (Model.HelpText is null ? null : helpId) : (Model.HelpText is null ? errorId : $"{helpId} {errorId}");
+    var inputValues = ViewData["InputValues"] as IReadOnlyDictionary<int, AnswerFormInput>;
+    var input = inputValues?.GetValueOrDefault(Model.Id);
+    var textValue = input?.Text ?? Model.Value?.Text;
+    var numberValue = input?.Number ?? Model.Value?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    var selectedValues = input?.SelectedOptionIds ?? Model.Value?.SelectedOptionIds;
+}
+<fieldset class="qab-question" id="question-@Model.Id" data-question-id="@Model.Id">
+    <legend>@Model.Label <span class="qab-required">@(Model.Required ? "Required" : "Optional")</span></legend>
+    @if (!string.IsNullOrWhiteSpace(Model.HelpText)) { <p class="qab-help" id="@helpId">@Model.HelpText</p> }
+    @switch (Model.AnswerType)
+    {
+        case AnswerType.Textbox:
+            <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" type="text" value="@textValue" maxlength="@Model.MaxLength" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
+            break;
+        case AnswerType.Textarea:
+            <textarea class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" maxlength="@Model.MaxLength" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy">@textValue</textarea>
+            break;
+        case AnswerType.Number:
+            <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Number" type="number" step="any" value="@numberValue" min="@Model.MinValue" max="@Model.MaxValue" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
+            break;
+        case AnswerType.Dropdown:
+            <select class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].SelectedOptionIds" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy">
+                <option value="">Choose an option</option>
+                @foreach (var option in Model.Options) { <option value="@option.Id" selected="@(selectedValues?.Contains(option.Id) == true)">@option.Label</option> }
+            </select>
+            break;
+        case AnswerType.RadioGroup:
+            @foreach (var option in Model.Options) { <label class="qab-choice"><input type="radio" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" required="@(Model.Required ? "required" : null)" /> @option.Label</label> }
+            break;
+        case AnswerType.Checkboxes:
+            @foreach (var option in Model.Options) { <label class="qab-choice"><input type="checkbox" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" /> @option.Label</label> }
+            break;
+    }
+    @if (error is not null) { <p class="qab-field-error" id="@errorId">@error</p> }
+</fieldset>

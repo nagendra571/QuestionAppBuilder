@@ -1,0 +1,31 @@
+@model ReviewPageModel
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
+<main class="qab-runtime qab-review" data-response-id="@Model.Response.Id">
+    <p class="qab-eyebrow">Review</p>
+    <h1>Review your answers</h1>
+    @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
+    @foreach (var category in Model.Questionnaire.Categories)
+    {
+        <section class="qab-review-category"><h2>@category.Name</h2>
+            @foreach (var element in category.Elements.Where(e => e.Question is not null))
+            {
+                var answer = element.Question!.Value;
+                var shownValue = answer?.Text ?? answer?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Join(", ", answer?.SelectedOptionIds ?? Array.Empty<int>());
+                <dl><dt>@element.Question.Label</dt><dd>@shownValue</dd></dl>
+            }
+        </section>
+    }
+    <form method="post" action="@ViewData["SubmitUrl"]" data-runtime-form>
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="ExpectedRevision" value="@Model.ExpectedRevision" />
+        <input type="hidden" name="RequestId" value="@Model.RequestId" />
+        @foreach (var answer in Model.Response.Answers)
+        {
+            if (answer.Value.Text is not null) { <input type="hidden" name="Answers[@answer.Key].Text" value="@answer.Value.Text" /> }
+            if (answer.Value.Number is not null) { <input type="hidden" name="Answers[@answer.Key].Number" value="@answer.Value.Number.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> }
+            foreach (var optionId in answer.Value.SelectedOptionIds ?? Array.Empty<int>()) { <input type="hidden" name="Answers[@answer.Key].SelectedOptionIds" value="@optionId" /> }
+        }
+        <div class="qab-action-bar"><a class="qab-button qab-button-secondary" href="@ViewData["EditUrl"]">Back to answers</a>
+            <button class="qab-button qab-button-primary" type="submit">@Model.Questionnaire.SubmitLabel</button></div>
+    </form>
+</main>

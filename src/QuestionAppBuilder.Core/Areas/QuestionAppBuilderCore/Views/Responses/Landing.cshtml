@@ -1,0 +1,28 @@
+@model LandingPageModel
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
+<main class="qab-runtime qab-landing" data-app-id="@Model.ApplicationId">
+    <p class="qab-eyebrow">Questionnaire</p>
+    <h1>@(Model.Landing?.ApplicationName ?? "Questionnaire")</h1>
+    @if (Model.Landing is null || !Model.Landing.AcceptingNewResponses)
+    {
+        <p>This questionnaire is not currently accepting new responses.</p>
+    }
+    else
+    {
+        <p>@Model.Landing.Definition.Version.DisplayName</p>
+        @if (Model.Landing.Definition.Version.RespondentAccessMode == RespondentAccessMode.EmailLink)
+        {
+            <form method="post" action="@ViewData["AccessRequestUrl"]" data-runtime-form>
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="applicationId" value="@Model.ApplicationId" />
+                <label for="access-email">Email address</label>
+                <input class="qab-input" id="access-email" name="email" type="email" autocomplete="email" required />
+                <button class="qab-button qab-button-secondary" type="submit">Email me an access link</button>
+            </form>
+        }
+        <form method="post" action="@ViewData["StartUrl"]" data-runtime-form>
+            @Html.AntiForgeryToken()
+            <button class="qab-button qab-button-primary" type="submit">Start questionnaire</button>
+        </form>
+    }
+</main>

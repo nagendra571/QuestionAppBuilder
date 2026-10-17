@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="7.*" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\src\QuestionAppBuilder.Core\wwwroot\**\*"
+             Link="CoreAssets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\QuestionAppBuilder.Runtime.Tests\QuestionAppBuilder.Runtime.Tests.csproj" />
+    <ProjectReference Include="..\..\src\QuestionAppBuilder.Core\QuestionAppBuilder.Core.csproj" />
+  </ItemGroup>
+</Project>

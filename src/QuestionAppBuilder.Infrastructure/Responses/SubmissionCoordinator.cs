@@ -99,6 +99,21 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
         });
     }
 
+    public async Task<SubmissionReceipt> GetReceiptAsync(Guid responseId, CancellationToken cancellationToken = default)
+    {
+        var identity = _identity.GetRequiredIdentity();
+        if (string.IsNullOrWhiteSpace(identity.OwnerKey)) throw new InvalidOperationException("A respondent identity is required.");
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var response = await db.ResponseDrafts.AsNoTracking().SingleOrDefaultAsync(r => r.Id == responseId, cancellationToken);
+        if (response is null || !StringComparer.Ordinal.Equals(response.OwnerKey, identity.OwnerKey) && identity.GrantedResponseId != response.Id)
+            throw new NotFoundException("The response was not found.");
+        var submission = await db.Submissions.AsNoTracking().Include(s => s.CategoryScores)
+            .SingleOrDefaultAsync(s => s.ResponseId == responseId, cancellationToken)
+            ?? throw new NotFoundException("The receipt was not found.");
+        var version = await db.ApplicationVersions.AsNoTracking().SingleAsync(v => v.Id == submission.ApplicationVersionId, cancellationToken);
+        return Receipt(submission, version);
+    }
+
     private static SubmissionReceipt Receipt(Submission s, ApplicationVersion v) => v.ResultVisibility switch
     {
         ResultVisibility.ConfirmationOnly => new(s.Id, s.ResponseId!.Value, s.SubmittedUtc, v.ConfirmationText, null, null),

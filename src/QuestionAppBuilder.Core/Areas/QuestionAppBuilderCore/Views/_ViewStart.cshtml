@@ -1,0 +1,2 @@
+@inject Microsoft.Extensions.Options.IOptions<QuestionAppBuilder.Core.Options.QuestionAppBuilderRuntimeOptions> RuntimeOptions
+@{ Layout = RuntimeOptions.Value.LayoutName; }

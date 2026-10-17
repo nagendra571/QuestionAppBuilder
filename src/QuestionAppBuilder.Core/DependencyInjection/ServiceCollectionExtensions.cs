@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Access;
 using QuestionAppBuilder.Application.Responses;
+using QuestionAppBuilder.Core.Rendering;
 using QuestionAppBuilder.Core.Access;
 using QuestionAppBuilder.Core.Options;
 
@@ -60,6 +61,7 @@ public static class ServiceCollectionExtensions
             services.Replace(ServiceDescriptor.Scoped<IResponseAccessLinkBuilder, ResponseAccessLinkBuilder>());
         else services.TryAddScoped<IResponseAccessLinkBuilder, ResponseAccessLinkBuilder>();
         services.TryAddScoped<ResponseGrantHandler>();
+        services.TryAddSingleton<IQuestionnaireRenderer, QuestionnaireRenderModelFactory>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddAuthentication().AddCookie(ResponseGrantHandler.Scheme, cookie =>
         {

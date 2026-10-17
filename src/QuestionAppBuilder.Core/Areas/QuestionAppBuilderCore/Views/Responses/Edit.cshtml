@@ -1,0 +1,54 @@
+@model ResponsePageModel
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
+<script src="~/_content/QuestionAppBuilder.Core/js/runtime.js" defer></script>
+<main class="qab-runtime" data-response-id="@Model.Response.Id" data-save-url="@ViewData["SaveUrl"]" data-save-delay="600">
+    <header class="qab-header">
+        <p class="qab-eyebrow">@(Model.Questionnaire.Preview ? "Preview" : "Questionnaire")</p>
+        <h1>@Model.Questionnaire.Title</h1>
+        <p class="qab-save-status" role="status" aria-live="polite">@(Model.SaveStatus ?? "Your answers save as you go.")</p>
+    </header>
+    @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
+    <nav class="qab-tabs" aria-label="Questionnaire categories">
+        @foreach (var category in Model.Questionnaire.Categories)
+        {
+            <a class="qab-tab @(category.Index == Model.CurrentCategoryIndex ? "is-current" : "")"
+               href="?category=@category.Index" aria-current="@(category.Index == Model.CurrentCategoryIndex ? "step" : null)">
+                <span>@category.Name</span><span class="qab-tab-number">@(category.Index + 1)</span>
+            </a>
+        }
+    </nav>
+    <p class="qab-progress">Category @(Model.CurrentCategoryIndex + 1) of @Model.Questionnaire.Categories.Count</p>
+    <form method="post" action="@ViewData["NavigateUrl"]" class="qab-form" data-runtime-form>
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="ExpectedRevision" value="@Model.ExpectedRevision" />
+        <input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
+        @{
+            var category = Model.Questionnaire.Categories[Model.CurrentCategoryIndex];
+            var renderedQuestionIds = category.Elements.Where(e => e.Question is not null).Select(e => e.Question!.Id).ToHashSet();
+            ViewData["FieldErrors"] = Model.FieldErrors;
+            ViewData["InputValues"] = Model.InputValues;
+        }
+        @foreach (var answer in Model.Response.Answers.Where(a => !renderedQuestionIds.Contains(a.Key)))
+        {
+            if (answer.Value.Text is not null) { <input type="hidden" name="Answers[@answer.Key].Text" value="@answer.Value.Text" /> }
+            if (answer.Value.Number is not null) { <input type="hidden" name="Answers[@answer.Key].Number" value="@answer.Value.Number.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> }
+            foreach (var optionId in answer.Value.SelectedOptionIds ?? Array.Empty<int>()) { <input type="hidden" name="Answers[@answer.Key].SelectedOptionIds" value="@optionId" /> }
+        }
+        @await Html.PartialAsync("_Category", category)
+        <div class="qab-action-bar">
+            @if (Model.CurrentCategoryIndex > 0)
+            {
+                <button class="qab-button qab-button-secondary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex - 1)">Back</button>
+            }
+            @if (Model.CurrentCategoryIndex < Model.Questionnaire.Categories.Count - 1)
+            {
+                <button class="qab-button qab-button-primary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex + 1)">Save &amp; Continue</button>
+            }
+            else
+            {
+                <button class="qab-button qab-button-primary" type="submit" name="Intent" value="Review">Review your answers</button>
+            }
+        </div>
+    </form>
+    <p class="qab-footer-note">You can leave and return to this response from the same account or access link.</p>
+</main>
