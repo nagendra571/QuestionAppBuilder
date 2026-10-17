@@ -8,33 +8,11 @@
         <p class="qab-save-status" role="status" aria-live="polite">@(Model.SaveStatus ?? "Your answers save as you go.")</p>
     </header>
     @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
-    <nav class="qab-tabs" aria-label="Questionnaire categories">
-        @foreach (var category in Model.Questionnaire.Categories)
-        {
-            <a class="qab-tab @(category.Index == Model.CurrentCategoryIndex ? "is-current" : "")"
-               href="?category=@category.Index" aria-current="@(category.Index == Model.CurrentCategoryIndex ? "step" : null)">
-                <span>@category.Name</span><span class="qab-tab-number">@(category.Index + 1)</span>
-            </a>
-        }
-    </nav>
-    <p class="qab-progress">Category @(Model.CurrentCategoryIndex + 1) of @Model.Questionnaire.Categories.Count</p>
     <form method="post" action="@ViewData["NavigateUrl"]" class="qab-form" data-runtime-form>
         @Html.AntiForgeryToken()
         <input type="hidden" name="ExpectedRevision" value="@Model.ExpectedRevision" />
         <input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
-        @{
-            var category = Model.Questionnaire.Categories[Model.CurrentCategoryIndex];
-            var renderedQuestionIds = category.Elements.Where(e => e.Question is not null).Select(e => e.Question!.Id).ToHashSet();
-            ViewData["FieldErrors"] = Model.FieldErrors;
-            ViewData["InputValues"] = Model.InputValues;
-        }
-        @foreach (var answer in Model.Response.Answers.Where(a => !renderedQuestionIds.Contains(a.Key)))
-        {
-            if (answer.Value.Text is not null) { <input type="hidden" name="Answers[@answer.Key].Text" value="@answer.Value.Text" /> }
-            if (answer.Value.Number is not null) { <input type="hidden" name="Answers[@answer.Key].Number" value="@answer.Value.Number.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)" /> }
-            foreach (var optionId in answer.Value.SelectedOptionIds ?? Array.Empty<int>()) { <input type="hidden" name="Answers[@answer.Key].SelectedOptionIds" value="@optionId" /> }
-        }
-        @await Html.PartialAsync("_Category", category)
+        <div data-live-content>@await Html.PartialAsync("_LiveContent", Model)</div>
         <div class="qab-action-bar">
             @if (Model.CurrentCategoryIndex > 0)
             {

@@ -65,7 +65,8 @@ public sealed class ResponseService : IResponseService
                 {
                     var existing = await db.ResponseDrafts.Include(r => r.Answers).ThenInclude(a => a.SelectedOptions)
                         .SingleOrDefaultAsync(r => r.Id == existingResponseId, ct);
-                    if (existing is null || !CanAccess(identity, existing)) throw new NotFoundException("The response was not found.");
+                    if (existing is null || existing.OwnerKey != identity.OwnerKey || accessToken.ResponseId != existing.Id)
+                        throw new NotFoundException("The response was not found.");
                     var existingGraph = await LoadGraphAsync(db, existing.ApplicationVersionId, ct);
                     await transaction.CommitAsync(ct);
                     return Snapshot(existing, existingGraph, ToValues(existing.Answers), application);
@@ -108,7 +109,7 @@ public sealed class ResponseService : IResponseService
         var response = await db.ResponseDrafts.AsNoTracking()
             .Include(r => r.Answers).ThenInclude(a => a.SelectedOptions)
             .SingleOrDefaultAsync(r => r.Id == responseId, ct);
-        if (response is null || !CanAccess(identity, response)) throw new NotFoundException("The response was not found.");
+        if (response is null || !await CanAccessAsync(db, identity, response, ct)) throw new NotFoundException("The response was not found.");
         var application = await db.Applications.AsNoTracking().SingleAsync(a => a.Id == response.ApplicationId, ct);
         var graph = await LoadGraphAsync(db, response.ApplicationVersionId, ct);
         return Snapshot(response, graph, ToValues(response.Answers), application);
@@ -124,7 +125,7 @@ public sealed class ResponseService : IResponseService
         await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
         var response = await db.ResponseDrafts.Include(r => r.Answers).ThenInclude(a => a.SelectedOptions)
             .SingleOrDefaultAsync(r => r.Id == request.ResponseId, ct);
-        if (response is null || !CanAccess(identity, response)) throw new NotFoundException("The response was not found.");
+        if (response is null || !await CanAccessAsync(db, identity, response, ct)) throw new NotFoundException("The response was not found.");
         if (response.Status != ResponseStatus.InProgress) throw new ResponseConflictException();
         if (!response.RevisionNonce.ToByteArray().AsSpan().SequenceEqual(request.ExpectedRevision)) throw new ResponseConflictException();
         var graph = await LoadGraphAsync(db, response.ApplicationVersionId, ct);
@@ -159,6 +160,14 @@ public sealed class ResponseService : IResponseService
         var identity = RequiredIdentity();
         await using var db = await _factory.CreateDbContextAsync(ct);
         var query = db.ResponseDrafts.AsNoTracking().Where(r => r.OwnerKey == identity.OwnerKey);
+        if (identity.AccessTokenId is Guid accessTokenId)
+        {
+            var responseId = await db.ResponseAccessTokens.AsNoTracking()
+                .Where(token => token.Id == accessTokenId && token.OwnerKey == identity.OwnerKey && token.ConsumedUtc != null)
+                .Select(token => token.ResponseId).SingleOrDefaultAsync(ct);
+            if (responseId is null) return Array.Empty<ResponseSummary>();
+            query = query.Where(response => response.Id == responseId.Value);
+        }
         if (beforeUtc is DateTime cursorUtc && beforeId is Guid cursorId)
             query = query.Where(r => r.UpdatedUtc < cursorUtc || r.UpdatedUtc == cursorUtc && r.Id.CompareTo(cursorId) < 0);
         else if (beforeUtc is not null || beforeId is not null)
@@ -177,9 +186,14 @@ public sealed class ResponseService : IResponseService
         return identity;
     }
 
-    private static bool CanAccess(RespondentIdentity identity, ResponseDraft response)
-        => StringComparer.Ordinal.Equals(identity.OwnerKey, response.OwnerKey)
-            || identity.GrantedResponseId == response.Id && (identity.GrantedVersionId is null || identity.GrantedVersionId == response.ApplicationVersionId);
+    private static async Task<bool> CanAccessAsync(QuestionAppBuilderDbContext db, RespondentIdentity identity,
+        ResponseDraft response, CancellationToken cancellationToken)
+    {
+        if (!StringComparer.Ordinal.Equals(identity.OwnerKey, response.OwnerKey)) return false;
+        if (identity.AccessTokenId is not Guid accessTokenId) return true;
+        return await db.ResponseAccessTokens.AsNoTracking().AnyAsync(token => token.Id == accessTokenId
+            && token.OwnerKey == identity.OwnerKey && token.ResponseId == response.Id && token.ConsumedUtc != null, cancellationToken);
+    }
 
     private static async Task<ApplicationVersionGraph> LoadGraphAsync(QuestionAppBuilderDbContext db, int versionId, CancellationToken ct)
     {

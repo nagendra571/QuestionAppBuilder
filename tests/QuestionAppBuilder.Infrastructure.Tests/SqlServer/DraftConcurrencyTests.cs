@@ -18,7 +18,7 @@ public class DraftConcurrencyTests
     public async Task Publish_racing_save_never_publishes_an_unreviewed_revision()
     {
         await using var database = await SqlServerDatabase.CreateAsync();
-        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator());
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), actor: new TestActor());
         await SeedDraftAsync(database);
         var reviewed = await drafts.GetAsync(1);
         var edit = await drafts.GetAsync(1);
@@ -37,7 +37,7 @@ public class DraftConcurrencyTests
     {
         await using var database = await SqlServerDatabase.CreateAsync();
         await SeedDraftAsync(database, includeOverlappingRules: true);
-        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator());
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), actor: new TestActor());
         var reviewed = await drafts.GetAsync(1);
         var review = await drafts.ReviewAsync(1);
         review.Warnings.Select(x => x.Code).Should().Contain("overlapping-numeric-rules");
@@ -54,7 +54,7 @@ public class DraftConcurrencyTests
     {
         await using var database = await SqlServerDatabase.CreateAsync();
         await SeedDraftAsync(database);
-        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator());
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), actor: new TestActor());
         var snapshot = await drafts.GetAsync(1);
         await drafts.PublishAsync(new PublishRequest(1, snapshot.Revision, new HashSet<string>()));
         snapshot.Definition.Version.DisplayName = "Tampered";
@@ -70,7 +70,7 @@ public class DraftConcurrencyTests
     {
         await using var database = await SqlServerDatabase.CreateAsync();
         await SeedDraftAsync(database);
-        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator());
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), actor: new TestActor());
         var firstView = await drafts.GetAsync(1);
         var staleView = await drafts.GetAsync(1);
         firstView.Definition.Categories[0].Name = "Winner";
@@ -91,10 +91,27 @@ public class DraftConcurrencyTests
     {
         await using var database = await SqlServerDatabase.CreateAsync();
         await SeedDraftAsync(database, accessMode: RespondentAccessMode.EmailLink);
-        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), emailSenderConfigured: false);
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), emailSenderConfigured: false, actor: new TestActor());
         var snapshot = await drafts.GetAsync(1);
         Func<Task> publish = () => drafts.PublishAsync(new PublishRequest(1, snapshot.Revision, new HashSet<string>()));
         await publish.Should().ThrowAsync<DefinitionValidationException>().WithMessage("*email sender*");
+    }
+
+    [SqlServerFact]
+    public async Task Email_mode_publishes_when_sender_is_configured_and_records_actor()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await SeedDraftAsync(database, accessMode: RespondentAccessMode.EmailLink);
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), emailSenderConfigured: true, actor: new TestActor());
+        var snapshot = await drafts.GetAsync(1);
+
+        await drafts.PublishAsync(new PublishRequest(1, snapshot.Revision, new HashSet<string>()));
+
+        await using var verify = database.CreateContext();
+        (await verify.ApplicationVersions.SingleAsync(version => version.ApplicationId == 1)).Status.Should().Be(VersionStatus.Published);
+        var audit = await verify.ApplicationAuditEvents.SingleAsync(item => item.ApplicationId == 1);
+        audit.ActorKey.Should().Be("designer:test");
+        audit.EventType.Should().Be("DefinitionPublished");
     }
 
     private static async Task SeedDraftAsync(SqlServerDatabase database, bool includeOverlappingRules = false,
@@ -131,5 +148,10 @@ public class DraftConcurrencyTests
         public QuestionAppBuilderDbContext CreateDbContext() => database.CreateContext();
         public Task<QuestionAppBuilderDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(database.CreateContext());
+    }
+
+    private sealed class TestActor : ITrustedActorContext
+    {
+        public string GetRequiredActorKey() => "designer:test";
     }
 }

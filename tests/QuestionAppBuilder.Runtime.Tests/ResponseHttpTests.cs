@@ -94,6 +94,73 @@ public sealed class ResponseHttpTests
     }
 
     [Fact]
+    public async Task Stale_revision_conflict_keeps_rejected_revision_and_offers_explicit_reload()
+    {
+        var runtime = new TestHostFixture.FakeRuntime();
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await StartAsync(host);
+        var responsePath = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}";
+        var staleForm = await CsrfAsync(host.Client, responsePath);
+
+        await runtime.SaveAsync(new QuestionAppBuilder.Application.Responses.SaveResponseRequest(
+            TestHostFixture.FakeRuntime.ResponseId, Convert.FromBase64String(staleForm.Revision),
+            new Dictionary<int, AnswerValue>
+            {
+                [1] = new("winner's saved answer", null, null)
+            }));
+
+        var stalePost = await staleForm.PostAsync(host.Client, $"{responsePath}/Save",
+            new Dictionary<string, string> { ["Answers[1].Text"] = "stale typed answer" });
+        stalePost.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await stalePost.Content.ReadAsStringAsync();
+        body.Should().Contain("stale typed answer").And.Contain("Reload latest saved answers");
+        Regex.Match(body, "name=\\\"ExpectedRevision\\\" value=\\\"([^\\\"]+)\\\"").Groups[1].Value
+            .Should().Be(staleForm.Revision);
+        Regex.Match(body, "href=\\\"([^\\\"]+)\\\">Reload latest saved answers").Groups[1].Value
+            .Should().Contain($"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}");
+
+        var repeatedStalePost = await staleForm.PostAsync(host.Client, $"{responsePath}/Save",
+            new Dictionary<string, string> { ["Answers[1].Text"] = "stale typed answer" });
+        repeatedStalePost.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await runtime.GetAsync(TestHostFixture.FakeRuntime.ResponseId)).Answers[1].Text.Should().Be("winner's saved answer");
+    }
+
+    [Fact]
+    public async Task Autosave_returns_authoritative_same_category_branch_markup()
+    {
+        var graph = TestHostFixture.FakeRuntime.BuildGraph();
+        var condition = new QuestionAppBuilder.Domain.Entities.VisibilityCondition
+        { Id = 99, ApplicationVersionId = graph.Version.Id, Junction = QuestionAppBuilder.Domain.Enums.ConditionJunction.All };
+        condition.Predicates.Add(new QuestionAppBuilder.Domain.Entities.VisibilityPredicate
+        { Id = 99, SourceQuestionId = 1, Operator = QuestionAppBuilder.Domain.Enums.ConditionOperator.Answered });
+        graph.Version.VisibilityConditions.Add(condition);
+        graph.Categories[0].Elements.Add(new QuestionAppBuilder.Domain.Entities.Element
+        {
+            Id = 99, Kind = QuestionAppBuilder.Domain.Enums.ElementKind.Question, Label = "Follow-up", SortOrder = 2,
+            LogicalKey = Guid.NewGuid(), VisibilityConditionId = condition.Id, VisibilityCondition = condition,
+            Question = new QuestionAppBuilder.Domain.Entities.Question { Id = 99, AnswerType = QuestionAppBuilder.Domain.Enums.AnswerType.Textbox }
+        });
+        var runtime = new TestHostFixture.FakeRuntime { Graph = graph };
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await StartAsync(host);
+        var responsePath = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}";
+        var initial = await GetAsync(host.Client, responsePath);
+        (await initial.Content.ReadAsStringAsync()).Should().NotContain("name=\"Answers[99].Text\"");
+        var csrf = await CsrfAsync(host.Client, responsePath);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Https($"{responsePath}/Save"))
+        {
+            Content = csrf.Content(new Dictionary<string, string> { ["Answers[1].Text"] = "show branch" })
+        };
+        request.Headers.Add("Cookie", csrf.Cookie);
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Add("X-Requested-With", "QuestionAppBuilder");
+        var saved = await host.Client.SendAsync(request);
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await saved.Content.ReadAsStringAsync();
+        json.Should().Contain("liveContentHtml").And.Contain("Answers[99].Text");
+    }
+
+    [Fact]
     public async Task Retry_receipt_does_not_duplicate()
     {
         var runtime = new TestHostFixture.FakeRuntime();

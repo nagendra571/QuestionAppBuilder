@@ -95,6 +95,55 @@ public sealed class AuthoringJourneyTests
         await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
         (await displayName.InputValueAsync()).Should().Be("Saved from a real browser");
 
+        await page.Locator("[name='elementLabel']").FillAsync("Requested amount");
+        await page.Locator("[name='elementType']").SelectOptionAsync("Number");
+        var addNumberResponseTask = page.WaitForResponseAsync(response => response.Request.Method == "POST"
+            && response.Url.Contains("/Structure/AddElement", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add element" }).ClickAsync();
+        var addNumberResponse = await addNumberResponseTask;
+        addNumberResponse.Status.Should().Be((int)HttpStatusCode.Redirect);
+        await page.GetByText("Requested amount").First.WaitForAsync();
+        var numericQuestionId = await page.Locator("#structure-question option").Last.GetAttributeAsync("value");
+        numericQuestionId.Should().NotBeNullOrWhiteSpace();
+        await page.Locator("#structure-question").SelectOptionAsync(numericQuestionId!);
+        await page.Locator("select[name='family']").SelectOptionAsync("NumericRange");
+        await page.Locator("input[name='points']").FillAsync("1");
+        await page.Locator("input[name='minValue']").FillAsync("0");
+        await page.Locator("input[name='maxValue']").FillAsync("10");
+        await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
+        var firstRuleResponseTask = page.WaitForResponseAsync(response => response.Request.Method == "POST"
+            && response.Url.Contains("/Structure/AddRule", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule" }).ClickAsync();
+        (await firstRuleResponseTask).Status.Should().Be((int)HttpStatusCode.Redirect);
+        await page.GetByText("No scoring rules are defined.").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await page.Locator("#structure-question").SelectOptionAsync(numericQuestionId!);
+        await page.Locator("select[name='family']").SelectOptionAsync("NumericRange");
+        await page.Locator("input[name='points']").FillAsync("2");
+        await page.Locator("input[name='minValue']").FillAsync("5");
+        await page.Locator("input[name='maxValue']").FillAsync("15");
+        await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
+        var secondRuleResponseTask = page.WaitForResponseAsync(response => response.Request.Method == "POST"
+            && response.Url.Contains("/Structure/AddRule", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule" }).ClickAsync();
+        (await secondRuleResponseTask).Status.Should().Be((int)HttpStatusCode.Redirect);
+        await page.WaitForTimeoutAsync(300);
+        var afterRules = await page.Locator("body").InnerTextAsync();
+        afterRules.Should().Contain("Numeric rules overlap; only the first matching rule contributes.", $"workspace after adding overlapping rules: {afterRules}");
+        var acknowledgments = page.Locator("#publish-draft input[name='AcknowledgedWarningCodes']");
+        await acknowledgments.First.CheckAsync();
+        (await acknowledgments.First.IsCheckedAsync()).Should().BeTrue();
+
+        var refreshedReadiness = page.WaitForResponseAsync(response => response.Url.Contains("/Drafts/", StringComparison.Ordinal)
+            && response.Url.Contains("/Readiness", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        var updatedName = page.Locator("[name='Version.DisplayName']");
+        await updatedName.FillAsync("Changed after acknowledging warnings");
+        var readinessResponse = await refreshedReadiness;
+        readinessResponse.Status.Should().Be((int)HttpStatusCode.OK);
+        await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
+        (await acknowledgments.CountAsync()).Should().Be(1);
+        (await acknowledgments.First.IsCheckedAsync()).Should().BeFalse("a warning acknowledgment applies only to the revision that was reviewed");
+        (await page.Locator("[data-readiness-status]").InnerTextAsync()).Should().Contain("Readiness checked against the saved revision");
+
         await page.RouteAsync("**/ConfigureApp/Drafts/*/Save", route => route.FulfillAsync(new RouteFulfillOptions
         {
             Status = (int)HttpStatusCode.Conflict,

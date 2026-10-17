@@ -15,12 +15,15 @@ public sealed class DraftService : IDraftService
     private readonly IDbContextFactory<QuestionAppBuilderDbContext> _factory;
     private readonly DefinitionValidator _validator;
     private readonly bool _hasEmailSender;
+    private readonly ITrustedActorContext _actor;
 
-    public DraftService(IDbContextFactory<QuestionAppBuilderDbContext> factory, IDefinitionEvaluator evaluator, bool emailSenderConfigured = false)
+    public DraftService(IDbContextFactory<QuestionAppBuilderDbContext> factory, IDefinitionEvaluator evaluator,
+        bool emailSenderConfigured = false, ITrustedActorContext? actor = null)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
-        _validator = new DefinitionValidator(evaluator);
+        _validator = new DefinitionValidator(evaluator, emailSenderConfigured);
         _hasEmailSender = emailSenderConfigured;
+        _actor = actor ?? new UnconfiguredTrustedActorContext();
     }
 
     public async Task<DraftSnapshot> GetAsync(int applicationId, CancellationToken ct = default)
@@ -62,6 +65,9 @@ public sealed class DraftService : IDraftService
     public async Task<int> PublishAsync(PublishRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var actorKey = _actor.GetRequiredActorKey();
+        if (string.IsNullOrWhiteSpace(actorKey) || actorKey.Length > 256)
+            throw new InvalidOperationException("A trusted actor identity is required to publish a definition.");
         return await ExecuteAsync(async db =>
         {
             await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
@@ -81,6 +87,11 @@ public sealed class DraftService : IDraftService
             graph.Version.Status = VersionStatus.Published;
             graph.Version.PublishedUtc = DateTime.UtcNow;
             graph.Version.RevisionNonce = Guid.NewGuid();
+            db.ApplicationAuditEvents.Add(new ApplicationAuditEvent
+            {
+                ApplicationId = application.Id, ApplicationVersionId = graph.Version.Id, ActorKey = actorKey,
+                EventType = "DefinitionPublished", OccurredUtc = graph.Version.PublishedUtc.Value
+            });
             var firstPublish = application.CurrentVersionId is null;
             application.CurrentVersionId = graph.Version.Id;
             application.UpdatedUtc = DateTime.UtcNow;

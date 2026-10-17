@@ -102,7 +102,7 @@
             </section>
             <section class="aw-panel" id="visibility" aria-labelledby="visibility-heading"><header><div><p class="aw-kicker">Branching</p><h2 id="visibility-heading">Visibility rules</h2></div></header><partial name="_VisibilityEditor" model="Model" /></section>
             <section class="aw-panel" id="scoring" aria-labelledby="scoring-heading"><header><div><p class="aw-kicker">Scoring</p><h2 id="scoring-heading">Scoring guide</h2></div></header><partial name="_ScoringEditor" model="Model" /></section>
-            <section class="aw-panel" id="readiness" aria-labelledby="readiness-heading"><header><div><p class="aw-kicker">Before publishing</p><h2 id="readiness-heading">Readiness</h2></div></header><partial name="_Readiness" model="Model" /></section>
+            <section class="aw-panel" id="readiness" aria-labelledby="readiness-heading" data-readiness-url="@Url.Action("Readiness", "Drafts", new { applicationId = Model.ApplicationId })"><header><div><p class="aw-kicker">Before publishing</p><h2 id="readiness-heading">Readiness</h2></div></header><div data-readiness-content><partial name="_Readiness" model="Model" /></div><p data-readiness-status aria-live="polite"></p></section>
             <section class="aw-panel" aria-labelledby="add-category-heading">
                 <header><div><p class="aw-kicker">Structure</p><h2 id="add-category-heading">Add a category</h2></div></header>
                 <label class="aw-field">Category name<input name="categoryName" maxlength="200" /></label>
@@ -199,6 +199,6 @@
 </section>
 <form id="publish-draft" method="post" asp-controller="Drafts" asp-action="Publish" asp-route-applicationId="@Model.ApplicationId">
     @Html.AntiForgeryToken()<input type="hidden" name="ApplicationId" value="@Model.ApplicationId" /><input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
-    @foreach (var warning in Model.Warnings) { <label class="aw-field aw-check"><input type="checkbox" name="AcknowledgedWarningCodes" value="@warning.Code" /> Acknowledge @warning.Code: @warning.Message</label> }
+    <div data-publication-warnings>@foreach (var warning in Model.Warnings) { <label class="aw-field aw-check"><input type="checkbox" name="AcknowledgedWarningCodes" value="@warning.Code" /> Acknowledge @warning.Code: @warning.Message</label> }</div>
     <button type="submit" class="aw-primary" disabled="@(Model.Errors.Count > 0)">Publish version @Model.Graph.Version.VersionNumber</button>
 </form>

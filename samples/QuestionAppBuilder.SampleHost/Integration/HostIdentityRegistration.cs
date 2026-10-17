@@ -104,16 +104,17 @@ public static class HostIdentityRegistration
     public static IServiceCollection AddPlatformPolicies(this IServiceCollection services, IConfiguration configuration)
     {
         var designRole = configuration["QuestionAppBuilder:Authorization:DesignRole"] ?? "Designer";
+        var fillRole = configuration["QuestionAppBuilder:Authorization:FillRole"] ?? "Filler";
         var reportRole = configuration["QuestionAppBuilder:Authorization:ReportRole"] ?? "Analyst";
-        if (string.IsNullOrWhiteSpace(designRole) || string.IsNullOrWhiteSpace(reportRole))
-            throw new InvalidOperationException("Design and Report authorization roles must be configured.");
+        if (string.IsNullOrWhiteSpace(designRole) || string.IsNullOrWhiteSpace(fillRole) || string.IsNullOrWhiteSpace(reportRole))
+            throw new InvalidOperationException("Design, Fill, and Report authorization roles must be configured.");
 
         services.AddAuthorization(options =>
         {
             options.AddPolicy(DesignPolicy, policy => policy.RequireAuthenticatedUser().RequireRole(designRole));
             options.AddPolicy(FillPolicy, policy => policy.RequireAssertion(async context =>
             {
-                if (context.User.Identity?.IsAuthenticated == true) return true;
+                if (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole(fillRole)) return true;
                 if (context.Resource is not HttpContext http) return false;
                 var grant = await http.AuthenticateAsync(ResponseGrantHandler.Scheme);
                 return grant.Succeeded && grant.Principal?.Identity?.IsAuthenticated == true;

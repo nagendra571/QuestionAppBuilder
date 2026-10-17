@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Access;
 using QuestionAppBuilder.Application.Evaluation;
@@ -32,6 +33,7 @@ public sealed class TestHostFixture : IAsyncDisposable
         builder.WebHost.UseTestServer();
         builder.Services.AddQuestionAppBuilderRuntime(options =>
         { options.FillPolicy = "Fill"; options.BasePath = "/App"; options.LayoutName = null!; options.PublicBaseUri = new Uri("https://forms.example.test"); });
+        builder.Services.AddAuthorization(options => options.AddPolicy("Fill", policy => policy.RequireAssertion(_ => true)));
         builder.Services.AddSingleton<IDefinitionEvaluator>(new DefinitionEvaluator());
         builder.Services.AddSingleton<IResponseService>(runtime);
         builder.Services.AddSingleton<ISubmissionCoordinator>(runtime);

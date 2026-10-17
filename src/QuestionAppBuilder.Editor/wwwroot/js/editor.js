@@ -3,7 +3,12 @@
   if (!form) return;
   const status = document.querySelector("[data-save-status]");
   const publishForm = document.querySelector("#publish-draft");
-  let timer = 0, inFlight = false, dirtyVersion = 0, savedVersion = 0, allowSubmit = false;
+  const readiness = document.querySelector("#readiness");
+  const readinessContent = readiness && readiness.querySelector("[data-readiness-content]");
+  const readinessStatus = readiness && readiness.querySelector("[data-readiness-status]");
+  const publishButton = publishForm && publishForm.querySelector("button[type='submit']");
+  let timer = 0, inFlight = false, inFlightPromise = null, dirtyVersion = 0, savedVersion = 0, allowSubmit = false;
+  let readinessCurrent = true;
   const announce = (message, state) => { status.textContent = message; status.dataset.state = state || ""; };
   const syncRevision = revision => {
     if (!revision) return;
@@ -13,32 +18,99 @@
     const conditionRevision = document.querySelector("#add-condition-form [name='ExpectedRevision']");
     if (conditionRevision) conditionRevision.value = revision;
   };
+  const markReadinessStale = () => {
+    readinessCurrent = false;
+    if (publishButton) publishButton.disabled = true;
+    publishForm?.querySelectorAll("[name='AcknowledgedWarningCodes']").forEach(input => { input.checked = false; });
+    if (readinessStatus) readinessStatus.textContent = "The draft changed. Readiness is refreshing after the save; review and acknowledge warnings for this revision.";
+  };
+  const addIssue = (list, issue) => {
+    const item = document.createElement("li");
+    if (issue.elementId != null) {
+      const link = document.createElement("a");
+      link.href = `#element-${issue.elementId}`;
+      link.textContent = issue.message;
+      item.append(link);
+    } else item.textContent = issue.message;
+    list.append(item);
+  };
+  const refreshReadiness = async expectedRevision => {
+    if (!readiness || !readinessContent || !readinessStatus) return true;
+    const response = await fetch(readiness.dataset.readinessUrl, { credentials:"same-origin", headers:{ "Accept":"application/json" } });
+    if (!response.ok) throw new Error("The draft was saved, but readiness could not be refreshed. Retry before publishing.");
+    const result = await response.json();
+    if (result.revision !== expectedRevision) throw new Error("The draft changed again while readiness was loading. Reload before publishing.");
+    if (savedVersion !== dirtyVersion) {
+      readinessCurrent = false;
+      if (publishButton) publishButton.disabled = true;
+      readinessStatus.textContent = "Newer edits are still being saved. Readiness will refresh again before publishing.";
+      return false;
+    }
+    const errors = result.errors || [], warnings = result.warnings || [];
+    readinessContent.replaceChildren();
+    if (errors.length) {
+      const alert = document.createElement("div"); alert.className = "aw-alert"; alert.setAttribute("role", "alert");
+      const heading = document.createElement("h3"); heading.textContent = "Resolve these issues before publishing";
+      const list = document.createElement("ul"); errors.forEach(issue => addIssue(list, issue)); alert.append(heading, list); readinessContent.append(alert);
+    } else {
+      const success = document.createElement("p"); success.className = "aw-success"; success.textContent = "This draft meets the current publication checks."; readinessContent.append(success);
+    }
+    if (warnings.length) {
+      const heading = document.createElement("h3"); heading.textContent = "Warnings requiring acknowledgment";
+      const list = document.createElement("ul"); warnings.forEach(issue => addIssue(list, issue)); readinessContent.append(heading, list);
+    }
+    const warningContainer = publishForm && publishForm.querySelector("[data-publication-warnings]");
+    if (warningContainer) {
+      warningContainer.replaceChildren();
+      warnings.forEach(warning => {
+        const label = document.createElement("label"); label.className = "aw-field aw-check";
+        const input = document.createElement("input"); input.type = "checkbox"; input.name = "AcknowledgedWarningCodes"; input.value = warning.code;
+        label.append(input, document.createTextNode(` Acknowledge ${warning.code}: ${warning.message}`)); warningContainer.append(label);
+      });
+    }
+    readinessCurrent = true;
+    if (publishButton) publishButton.disabled = errors.length > 0;
+    readinessStatus.textContent = "Readiness checked against the saved revision. Review and acknowledge any warnings before publishing.";
+    return true;
+  };
   const save = async () => {
-    if (inFlight) return false;
-    if (dirtyVersion === savedVersion) return true;
+    if (inFlight) {
+      await inFlightPromise;
+      if (dirtyVersion !== savedVersion || !readinessCurrent) return save();
+      return true;
+    }
+    if (dirtyVersion === savedVersion) {
+      if (readinessCurrent) return true;
+      try { return await refreshReadiness(form.querySelector("[name='ExpectedRevision']").value); }
+      catch (error) { announce(error.message, "error"); return false; }
+    }
     inFlight = true;
     const saveVersion = dirtyVersion;
     let failed = false;
     announce("Saving draft…", "pending");
-    try {
-      const response = await fetch(form.dataset.saveUrl, { method:"POST", body:new FormData(form), credentials:"same-origin",
-        headers:{ "Accept":"application/json", "X-Requested-With":"QuestionAppBuilder" } });
-      if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.message || "The draft could not be saved."); }
-      const result = await response.json();
-      syncRevision(result.revision);
-      savedVersion = saveVersion;
-      announce(dirtyVersion === saveVersion ? "All changes saved" : "Saving newer changes…", "saved");
-      return dirtyVersion === saveVersion;
-    } catch (error) { failed = true; announce(error.message || "The draft could not be saved. Your edits are still here.", "error"); return false; }
-    finally { inFlight = false; if (!failed && dirtyVersion > savedVersion) queueSave(0); }
+    inFlightPromise = (async () => {
+      try {
+        const response = await fetch(form.dataset.saveUrl, { method:"POST", body:new FormData(form), credentials:"same-origin",
+          headers:{ "Accept":"application/json", "X-Requested-With":"QuestionAppBuilder" } });
+        if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.message || "The draft could not be saved."); }
+        const result = await response.json();
+        syncRevision(result.revision);
+        savedVersion = saveVersion;
+        if (!await refreshReadiness(result.revision)) return false;
+        announce(dirtyVersion === saveVersion ? "All changes saved" : "Saving newer changes…", "saved");
+        return dirtyVersion === saveVersion;
+      } catch (error) { failed = true; announce(error.message || "The draft could not be saved. Your edits are still here.", "error"); return false; }
+      finally { inFlight = false; inFlightPromise = null; if (!failed && dirtyVersion > savedVersion) queueSave(0); }
+    })();
+    return await inFlightPromise;
   };
   const queueSave = delay => { clearTimeout(timer); timer = setTimeout(() => { void save(); }, delay); };
-  form.addEventListener("input", () => { dirtyVersion++; announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
-  form.addEventListener("change", () => { dirtyVersion++; announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
+  form.addEventListener("input", () => { dirtyVersion++; markReadinessStale(); announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
+  form.addEventListener("change", () => { dirtyVersion++; markReadinessStale(); announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
   form.addEventListener("submit", async event => {
     if (allowSubmit) { allowSubmit = false; return; }
     event.preventDefault(); clearTimeout(timer);
-    if (await save()) { allowSubmit = true; form.requestSubmit(event.submitter); }
+    if (await save() && readinessCurrent) { allowSubmit = true; form.requestSubmit(event.submitter); }
   });
   document.querySelectorAll("a[href^='#']").forEach(link => link.addEventListener("click", async event => {
     if (dirtyVersion === savedVersion && !inFlight) return;
@@ -70,9 +142,9 @@
     } catch (error) { result.textContent = error.message; }
   });
   publishForm && publishForm.addEventListener("submit", async event => {
-    if (dirtyVersion === savedVersion && !inFlight) return;
+    if (dirtyVersion === savedVersion && !inFlight && readinessCurrent) return;
     event.preventDefault(); clearTimeout(timer);
-    if (await save()) event.target.submit();
+    if (await save() && readinessCurrent) event.target.submit();
   });
   const conditionForm = document.querySelector("#add-condition-form");
   if (conditionForm) {

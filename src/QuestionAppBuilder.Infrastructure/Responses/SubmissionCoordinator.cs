@@ -32,8 +32,9 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             await using var db = await _factory.CreateDbContextAsync(cancellationToken);
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             var responseHead = await db.ResponseDrafts.AsNoTracking().Where(r => r.Id == request.ResponseId)
-                .Select(r => new { r.ApplicationId, r.OwnerKey }).SingleOrDefaultAsync(cancellationToken);
-            if (responseHead is null || responseHead.OwnerKey != identity.OwnerKey) throw new NotFoundException("The response was not found.");
+                .Select(r => new { r.Id, r.ApplicationId, r.OwnerKey }).SingleOrDefaultAsync(cancellationToken);
+            if (responseHead is null || !await CanAccessAsync(db, identity, responseHead.Id, responseHead.OwnerKey, cancellationToken))
+                throw new NotFoundException("The response was not found.");
             await SqlApplicationLock.AcquireAsync(db, responseHead.ApplicationId, cancellationToken);
 
             var prior = await db.Submissions.AsNoTracking().Include(s => s.CategoryScores)
@@ -105,7 +106,7 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
         if (string.IsNullOrWhiteSpace(identity.OwnerKey)) throw new InvalidOperationException("A respondent identity is required.");
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var response = await db.ResponseDrafts.AsNoTracking().SingleOrDefaultAsync(r => r.Id == responseId, cancellationToken);
-        if (response is null || !StringComparer.Ordinal.Equals(response.OwnerKey, identity.OwnerKey) && identity.GrantedResponseId != response.Id)
+        if (response is null || !await CanAccessAsync(db, identity, response.Id, response.OwnerKey, cancellationToken))
             throw new NotFoundException("The response was not found.");
         var submission = await db.Submissions.AsNoTracking().Include(s => s.CategoryScores)
             .SingleOrDefaultAsync(s => s.ResponseId == responseId, cancellationToken)
@@ -121,4 +122,13 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             s.CategoryScores.Select(c => new CategoryScore(c.CategoryId, c.Score)).ToArray()),
         _ => new(s.Id, s.ResponseId!.Value, s.SubmittedUtc, v.ConfirmationText, s.TotalScore, null)
     };
+
+    private static async Task<bool> CanAccessAsync(QuestionAppBuilderDbContext db, RespondentIdentity identity,
+        Guid responseId, string ownerKey, CancellationToken cancellationToken)
+    {
+        if (!StringComparer.Ordinal.Equals(ownerKey, identity.OwnerKey)) return false;
+        if (identity.AccessTokenId is not Guid accessTokenId) return true;
+        return await db.ResponseAccessTokens.AsNoTracking().AnyAsync(token => token.Id == accessTokenId
+            && token.OwnerKey == identity.OwnerKey && token.ResponseId == responseId && token.ConsumedUtc != null, cancellationToken);
+    }
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.RateLimiting;
+using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Core.DependencyInjection;
 using QuestionAppBuilder.Core.Routing;
 using QuestionAppBuilder.Editor.DependencyInjection;
@@ -16,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration["QuestionAppBuilder:ConnectionString"] ?? string.Empty;
 var hostIdentity = HostIdentityRegistration.AddHostIdentity(builder.Services, builder.Configuration, builder.Environment);
+builder.Services.AddScoped<ITrustedActorContext, HostTrustedActorContext>();
 
 builder.Services.AddQuestionAppBuilder(o => o.ConnectionString = connectionString);
 builder.Services.AddQuestionAppBuilderRuntime(o =>

@@ -7,40 +7,66 @@
 
   let timer = 0;
   let inFlight = false;
+  let inFlightPromise = null;
   let dirtyVersion = 0;
   let savedVersion = 0;
   let allowSubmit = false;
   let failed = false;
 
   const announce = message => { status.textContent = message; };
+  const applyLiveContent = html => {
+    const target = root.querySelector("[data-live-content]");
+    if (!target || !html) return;
+    const active = document.activeElement;
+    const activeId = active && target.contains(active) ? active.id : "";
+    const activeName = active && target.contains(active) ? active.getAttribute("name") : "";
+    const selection = active && typeof active.selectionStart === "number"
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+    target.innerHTML = html;
+    let replacement = activeId ? target.querySelector(`#${CSS.escape(activeId)}`) : null;
+    if (!replacement && activeName) replacement = Array.from(target.querySelectorAll("[name]")).find(item => item.getAttribute("name") === activeName);
+    if (replacement) {
+      replacement.focus({ preventScroll: true });
+      if (selection && typeof replacement.setSelectionRange === "function") replacement.setSelectionRange(...selection);
+    }
+  };
   const save = async () => {
-    if (inFlight) return false;
-    if (dirtyVersion === savedVersion) return true;
-    inFlight = true;
-    const version = dirtyVersion;
-    announce("Saving your answers…");
-    try {
-      const body = new URLSearchParams(new FormData(form));
-      const response = await fetch(root.dataset.saveUrl, {
-        method: "POST", body, credentials: "same-origin",
-        headers: { "Accept": "application/json", "X-Requested-With": "QuestionAppBuilder" }
-      });
-      if (!response.ok) throw new Error("save failed");
-      const result = await response.json();
-      const revision = form.querySelector("[name='ExpectedRevision']");
-      if (revision && result.revision) revision.value = result.revision;
-      savedVersion = version;
-      failed = false;
-      if (dirtyVersion === version) announce("Saved just now.");
-      else announce("A newer change is waiting to save.");
-      return dirtyVersion === version;
-    } catch {
-      failed = true;
-      announce("Your answers could not be saved. They are still here; retry before leaving.");
-      return false;
-    } finally {
-      inFlight = false;
-      if (dirtyVersion > savedVersion) queueSave(0);
+    while (true) {
+      if (inFlight) {
+        await inFlightPromise;
+        if (failed) return false;
+        continue;
+      }
+      if (dirtyVersion === savedVersion) return true;
+      inFlight = true;
+      const version = dirtyVersion;
+      announce("Saving your answers…");
+      inFlightPromise = (async () => {
+        try {
+          const body = new URLSearchParams(new FormData(form));
+          const response = await fetch(root.dataset.saveUrl, {
+            method: "POST", body, credentials: "same-origin",
+            headers: { "Accept": "application/json", "X-Requested-With": "QuestionAppBuilder" }
+          });
+          if (!response.ok) throw new Error("save failed");
+          const result = await response.json();
+          const revision = form.querySelector("[name='ExpectedRevision']");
+          if (revision && result.revision) revision.value = result.revision;
+          if (dirtyVersion === version && result.liveContentHtml) applyLiveContent(result.liveContentHtml);
+          savedVersion = version;
+          failed = false;
+          if (dirtyVersion === version) announce("Saved just now.");
+          else announce("A newer change is waiting to save.");
+        } catch {
+          failed = true;
+          announce("Your answers could not be saved. They are still here; retry before leaving.");
+        } finally {
+          inFlight = false;
+          if (!failed && dirtyVersion > savedVersion) queueSave(0);
+        }
+      })();
+      await inFlightPromise;
+      if (failed) return false;
     }
   };
   const queueSave = delay => {
@@ -58,10 +84,12 @@
     const saved = await save();
     if (saved) { allowSubmit = true; form.requestSubmit(event.submitter); }
   });
-  root.querySelectorAll(".qab-tabs a").forEach(link => link.addEventListener("click", async event => {
+  root.addEventListener("click", async event => {
+    const link = event.target.closest(".qab-tabs a");
+    if (!link || !root.contains(link)) return;
     if (dirtyVersion === savedVersion && !inFlight) return;
     event.preventDefault();
     window.clearTimeout(timer);
     if (await save()) window.location.assign(link.href);
-  }));
+  });
 })();

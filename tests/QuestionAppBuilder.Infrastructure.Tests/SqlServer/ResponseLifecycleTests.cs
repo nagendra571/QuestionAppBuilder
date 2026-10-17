@@ -48,6 +48,43 @@ public class ResponseLifecycleTests
     }
 
     [SqlServerFact]
+    public async Task Email_grant_is_scoped_to_its_single_response_and_cannot_enumerate_owner_responses()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (owner, _) = db.CreateService("email:shared-owner");
+        var grantedResponse = await owner.StartAsync(1);
+        var otherResponse = await owner.StartAsync(1);
+        var accessTokenId = Guid.NewGuid();
+        await using (var context = db.CreateContext())
+        {
+            context.ResponseAccessTokens.Add(new ResponseAccessToken
+            {
+                Id = accessTokenId, TokenDigest = new byte[32], ApplicationId = 1,
+                ApplicationVersionId = grantedResponse.ApplicationVersionId, ResponseId = grantedResponse.Id,
+                OwnerKey = "email:shared-owner", VerifiedEmail = "person@example.test", CreatedUtc = DateTime.UtcNow,
+                ExpiresUtc = DateTime.UtcNow.AddMinutes(30), ConsumedUtc = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+        }
+        var grantIdentity = new RespondentIdentity("email:shared-owner", grantedResponse.Id, grantedResponse.ApplicationVersionId, accessTokenId);
+        var (grantedService, respondent) = db.CreateService(grantIdentity);
+        var (otherOwnerResponse, _) = db.CreateService("email:shared-owner");
+        var visible = await grantedService.GetAsync(grantedResponse.Id);
+        visible.Id.Should().Be(grantedResponse.Id);
+        (await grantedService.ListMineAsync(50)).Select(item => item.Id).Should().Equal(grantedResponse.Id);
+
+        Func<Task> readOther = () => grantedService.GetAsync(otherResponse.Id);
+        Func<Task> saveOther = () => grantedService.SaveAsync(new SaveResponseRequest(otherResponse.Id, otherResponse.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new("stolen", null, null) }));
+        Func<Task> submitOther = () => db.CreateSubmissionCoordinator(respondent)
+            .SubmitAsync(new SubmitResponseRequest(otherResponse.Id, otherResponse.Revision, Guid.NewGuid()));
+        await readOther.Should().ThrowAsync<NotFoundException>();
+        await saveOther.Should().ThrowAsync<NotFoundException>();
+        await submitOther.Should().ThrowAsync<NotFoundException>();
+        (await otherOwnerResponse.ListMineAsync(50)).Should().HaveCount(2);
+    }
+
+    [SqlServerFact]
     public async Task Two_saves_same_revision_one_conflicts()
     {
         await using var db = await TestDatabase.CreateAsync();
@@ -164,10 +201,14 @@ public class ResponseLifecycleTests
         public (int First, int Second) ChoiceIds { get; private set; }
         public QuestionAppBuilderDbContext CreateContext() => _sql.CreateContext();
         public (IResponseService Service, TestRespondentContext Identity) CreateService(string owner)
+            => CreateService(new RespondentIdentity(owner, null, null));
+        public (IResponseService Service, TestRespondentContext Identity) CreateService(RespondentIdentity identity)
         {
-            var identity = new TestRespondentContext(owner);
-            return (new ResponseService(new DatabaseContextFactory(_sql), identity), identity);
+            var respondent = new TestRespondentContext(identity);
+            return (new ResponseService(new DatabaseContextFactory(_sql), respondent), respondent);
         }
+        public ISubmissionCoordinator CreateSubmissionCoordinator(IRespondentContext identity)
+            => new SubmissionCoordinator(new DatabaseContextFactory(_sql), identity, new DefinitionEvaluator());
         public static async Task<TestDatabase> CreateAsync(bool choiceQuestion = false, AnswerType answerType = AnswerType.Textbox)
         {
             var db = new TestDatabase(await SqlServerDatabase.CreateAsync());
@@ -198,9 +239,9 @@ public class ResponseLifecycleTests
         public ValueTask DisposeAsync() => _sql.DisposeAsync();
     }
 
-    private sealed class TestRespondentContext(string owner) : IRespondentContext
+    private sealed class TestRespondentContext(RespondentIdentity identity) : IRespondentContext
     {
-        public RespondentIdentity GetRequiredIdentity() => new(owner, null, null);
+        public RespondentIdentity GetRequiredIdentity() => identity;
     }
 
     private sealed class DatabaseContextFactory(SqlServerDatabase database) : IDbContextFactory<QuestionAppBuilderDbContext>

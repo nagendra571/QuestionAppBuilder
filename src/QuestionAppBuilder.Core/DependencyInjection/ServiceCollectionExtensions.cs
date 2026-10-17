@@ -12,6 +12,7 @@ using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Core.Rendering;
 using QuestionAppBuilder.Core.Access;
 using QuestionAppBuilder.Core.Options;
+using QuestionAppBuilder.Core.Authorization;
 
 namespace QuestionAppBuilder.Core.DependencyInjection;
 
@@ -39,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.Configure<ResponseAccessOptions>(o => o.LinkLifetime = options.EmailLinkLifetime);
         services.AddHttpContextAccessor();
         services.AddControllersWithViews().AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
+        services.TryAddScoped<RespondentFillAuthorizationFilter>();
         services.AddAntiforgery(o =>
         {
             o.Cookie.Name = "__Host-QAB.Antiforgery";
@@ -73,7 +75,6 @@ public static class ServiceCollectionExtensions
             cookie.SlidingExpiration = false;
             cookie.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
         });
-        services.AddAuthorization(o => o.AddPolicy(options.FillPolicy, p => p.RequireAuthenticatedUser()));
         return services;
     }
 }

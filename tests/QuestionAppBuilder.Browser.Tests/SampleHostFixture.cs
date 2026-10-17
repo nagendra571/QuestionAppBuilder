@@ -18,16 +18,18 @@ internal sealed class SampleHostFixture : IAsyncDisposable
     private readonly string _adminConnection;
     private readonly string _databaseConnection;
     private readonly string _certificatePath;
+    private readonly string _hostAssemblyPath;
     private readonly ConcurrentQueue<string> _output = new();
     public Uri BaseAddress { get; }
 
-    private SampleHostFixture(Process process, string databaseName, string adminConnection, string databaseConnection, string certificatePath, Uri baseAddress)
+    private SampleHostFixture(Process process, string databaseName, string adminConnection, string databaseConnection, string certificatePath, string hostAssemblyPath, Uri baseAddress)
     {
         _process = process;
         _databaseName = databaseName;
         _adminConnection = adminConnection;
         _databaseConnection = databaseConnection;
         _certificatePath = certificatePath;
+        _hostAssemblyPath = hostAssemblyPath;
         BaseAddress = baseAddress;
         process.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) _output.Enqueue(eventArgs.Data); };
         process.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) _output.Enqueue(eventArgs.Data); };
@@ -37,6 +39,8 @@ internal sealed class SampleHostFixture : IAsyncDisposable
 
     public static async Task<SampleHostFixture> StartAsync()
     {
+        var repositoryRoot = FindRepositoryRoot();
+        var hostAssembly = ResolveHostAssembly(AppContext.BaseDirectory, repositoryRoot);
         var configured = Environment.GetEnvironmentVariable("QAB_TEST_SQLSERVER");
         var admin = new SqlConnectionStringBuilder(string.IsNullOrWhiteSpace(configured)
             ? "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true;TrustServerCertificate=true"
@@ -73,14 +77,6 @@ internal sealed class SampleHostFixture : IAsyncDisposable
             using var certificate = certificateRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(2));
             File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Pfx, certificatePassword));
         }
-        var repositoryRoot = FindRepositoryRoot();
-        var configuration = AppContext.BaseDirectory.Contains("\\release\\", StringComparison.OrdinalIgnoreCase) ? "release" : "debug";
-        var artifactsBin = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-        var hostAssembly = Path.Combine(artifactsBin, "QuestionAppBuilder.SampleHost", configuration, "QuestionAppBuilder.SampleHost.dll");
-        if (!File.Exists(hostAssembly))
-            hostAssembly = Path.Combine(repositoryRoot, "samples", "QuestionAppBuilder.SampleHost", "bin", configuration, "net8.0", "QuestionAppBuilder.SampleHost.dll");
-        if (!File.Exists(hostAssembly))
-            throw new FileNotFoundException($"The Browser.Tests project reference did not build the SampleHost test assembly at '{hostAssembly}' (test base '{AppContext.BaseDirectory}').", hostAssembly);
         var start = new ProcessStartInfo("dotnet")
         {
             WorkingDirectory = repositoryRoot,
@@ -99,7 +95,7 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         start.Environment["QuestionAppBuilder__ConnectionString"] = connectionBuilder.ConnectionString;
 
         var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the SampleHost test process.");
-        var fixture = new SampleHostFixture(process, databaseName, admin.ConnectionString, connectionBuilder.ConnectionString, certificatePath, address);
+        var fixture = new SampleHostFixture(process, databaseName, admin.ConnectionString, connectionBuilder.ConnectionString, certificatePath, hostAssembly, address);
         try
         {
             using var handler = new HttpClientHandler { ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator };
@@ -174,6 +170,13 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> CountResponsesAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        return await db.ResponseDrafts.CountAsync();
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (!_process.HasExited)
@@ -194,7 +197,7 @@ internal sealed class SampleHostFixture : IAsyncDisposable
     public string GetDiagnosticLogs()
     {
         var lines = _output.ToArray();
-        return string.Join(Environment.NewLine, lines.TakeLast(160));
+        return $"SampleHost assembly: {_hostAssemblyPath}{Environment.NewLine}{string.Join(Environment.NewLine, lines.TakeLast(160))}";
     }
 
     private static int ReservePort()
@@ -220,6 +223,27 @@ internal sealed class SampleHostFixture : IAsyncDisposable
             if (File.Exists(Path.Combine(directory.FullName, "QuestionAppBuilder.sln"))) return directory.FullName;
         }
         throw new DirectoryNotFoundException("Could not find the QuestionAppBuilder solution root.");
+    }
+
+    internal static string ResolveHostAssembly(string testOutputDirectory, string repositoryRoot)
+    {
+        var configuration = testOutputDirectory.Contains("\\release\\", StringComparison.OrdinalIgnoreCase) ? "release" : "debug";
+        var artifactsBin = Path.GetFullPath(Path.Combine(testOutputDirectory, "..", ".."));
+        var artifactsHost = Path.Combine(artifactsBin, "QuestionAppBuilder.SampleHost", configuration, "QuestionAppBuilder.SampleHost.dll");
+        if (File.Exists(artifactsHost)) return artifactsHost;
+
+        var normalProjectOutput = Path.GetFullPath(Path.Combine(repositoryRoot, "tests", "QuestionAppBuilder.Browser.Tests", "bin"))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var normalizedTestOutput = Path.GetFullPath(testOutputDirectory);
+        if (normalizedTestOutput.StartsWith(normalProjectOutput, StringComparison.OrdinalIgnoreCase))
+        {
+            var projectHost = Path.Combine(repositoryRoot, "samples", "QuestionAppBuilder.SampleHost", "bin", configuration, "net8.0", "QuestionAppBuilder.SampleHost.dll");
+            if (File.Exists(projectHost)) return projectHost;
+        }
+
+        throw new FileNotFoundException(
+            $"Could not find the SampleHost test assembly next to isolated artifacts at '{artifactsHost}'. Refusing to fall back outside the current test build. Test base: '{testOutputDirectory}'.",
+            artifactsHost);
     }
 
 }

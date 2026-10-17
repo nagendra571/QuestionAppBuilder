@@ -1,12 +1,20 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.ViewEngines;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using System.Text;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Core.Access;
+using QuestionAppBuilder.Core.Authorization;
 using QuestionAppBuilder.Core.Options;
 using QuestionAppBuilder.Core.Rendering;
 using QuestionAppBuilder.Core.ViewModels;
@@ -17,6 +25,7 @@ using QuestionAppBuilder.Domain.Graphs;
 namespace QuestionAppBuilder.Core.Controllers;
 
 [Area("QuestionAppBuilderCore")]
+[ServiceFilter(typeof(RespondentFillAuthorizationFilter))]
 public sealed class ResponsesController : Controller
 {
     private readonly IResponseService _responses;
@@ -24,12 +33,14 @@ public sealed class ResponsesController : Controller
     private readonly IDefinitionEvaluator _evaluator;
     private readonly IQuestionnaireRenderer _renderer;
     private readonly QuestionAppBuilderRuntimeOptions _options;
+    private readonly ICompositeViewEngine _viewEngine;
 
     public ResponsesController(IResponseService responses, ISubmissionCoordinator submissions, IDefinitionEvaluator evaluator,
-        IQuestionnaireRenderer renderer, IOptions<QuestionAppBuilderRuntimeOptions> options)
-    { _responses = responses; _submissions = submissions; _evaluator = evaluator; _renderer = renderer; _options = options.Value; }
+        IQuestionnaireRenderer renderer, IOptions<QuestionAppBuilderRuntimeOptions> options, ICompositeViewEngine viewEngine)
+    { _responses = responses; _submissions = submissions; _evaluator = evaluator; _renderer = renderer; _options = options.Value; _viewEngine = viewEngine; }
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<IActionResult> Landing(int applicationId, CancellationToken cancellationToken)
     {
         var landing = await _responses.GetLandingAsync(applicationId, cancellationToken);
@@ -87,7 +98,15 @@ public sealed class ResponsesController : Controller
         try
         {
             var saved = await _responses.SaveAsync(new SaveResponseRequest(responseId, DecodeRevision(form.ExpectedRevision), answers), cancellationToken);
-            if (WantsJson()) return Json(new { success = true, revision = Convert.ToBase64String(saved.Revision), updatedUtc = saved.UpdatedUtc });
+            if (WantsJson())
+            {
+                var evaluated = _evaluator.Evaluate(saved.Definition, saved.Answers, requireComplete: false);
+                var categoryCount = _renderer.Create(saved.Definition, saved.Answers, evaluated, preview: false).Categories.Count;
+                var category = Math.Clamp(form.CurrentCategoryIndex, 0, Math.Max(0, categoryCount - 1));
+                var page = CreateResponsePage(saved, category);
+                var liveContentHtml = await RenderLiveContentAsync(page);
+                return Json(new { success = true, revision = Convert.ToBase64String(saved.Revision), updatedUtc = saved.UpdatedUtc, liveContentHtml });
+            }
             return LocalRedirect(EditUrl(responseId, form.CurrentCategoryIndex));
         }
         catch (ResponseConflictException)
@@ -213,12 +232,29 @@ public sealed class ResponsesController : Controller
         return new ResponsePageModel(snapshot, rendered, categoryIndex, _options.LayoutName, errors, summary, null, null, inputs);
     }
 
+    private async Task<string> RenderLiveContentAsync(ResponsePageModel model)
+    {
+        var result = _viewEngine.GetView(executingFilePath: null,
+            viewPath: "~/Areas/QuestionAppBuilderCore/Views/Shared/_LiveContent.cshtml", isMainPage: false);
+        if (!result.Success) throw new InvalidOperationException("The live response view could not be located.");
+        var viewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), ModelState) { Model = model };
+        viewData["FieldErrors"] = model.FieldErrors;
+        viewData["InputValues"] = model.InputValues;
+        using var writer = new StringWriter();
+        var viewContext = new ViewContext(ControllerContext, result.View, viewData, TempData, writer, new HtmlHelperOptions());
+        await result.View.RenderAsync(viewContext);
+        return writer.ToString();
+    }
+
     private IActionResult SaveError(ResponseSnapshot snapshot, ResponseFormInput form, IReadOnlyDictionary<int, AnswerValue> answers,
         IReadOnlyDictionary<int, string> errors, int statusCode, string? summary = null)
     {
         Response.StatusCode = statusCode;
         var shown = snapshot with { Answers = answers };
-        return View("Edit", CreateResponsePage(shown, Math.Max(0, form.CurrentCategoryIndex), errors, summary, form.Answers));
+        var conflict = statusCode == StatusCodes.Status409Conflict;
+        if (conflict) ViewData["ReloadUrl"] = EditUrl(snapshot.Id, Math.Max(0, form.CurrentCategoryIndex));
+        var page = CreateResponsePage(shown, Math.Max(0, form.CurrentCategoryIndex), errors, summary, form.Answers);
+        return View("Edit", page with { RejectedExpectedRevision = conflict ? form.ExpectedRevision : null });
     }
 
     private IActionResult SubmitError(ResponseSnapshot snapshot, IReadOnlyDictionary<int, AnswerValue> answers,

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -22,15 +23,16 @@ internal sealed class BrowserTestFixture : IAsyncDisposable
     private BrowserTestFixture(WebApplication app, Uri baseAddress, TestHostFixture.FakeRuntime runtime)
     { _app = app; BaseAddress = baseAddress; Runtime = runtime; }
 
-    public static async Task<BrowserTestFixture> StartAsync()
+    public static async Task<BrowserTestFixture> StartAsync(TestHostFixture.FakeRuntime? runtime = null)
     {
-        var runtime = new TestHostFixture.FakeRuntime();
+        runtime ??= new TestHostFixture.FakeRuntime();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseStaticWebAssets();
         builder.WebHost.UseUrls("https://127.0.0.1:0");
         builder.Services.AddControllersWithViews().AddApplicationPart(Assembly.Load("QuestionAppBuilder.SampleHost"));
         builder.Services.AddQuestionAppBuilderRuntime(options =>
         { options.FillPolicy = "Fill"; options.BasePath = "/App"; options.LayoutName = "_Layout"; options.PublicBaseUri = new Uri("https://forms.example.test"); });
+        builder.Services.AddAuthorization(options => options.AddPolicy("Fill", policy => policy.RequireAssertion(_ => true)));
         builder.Services.AddSingleton<IDefinitionEvaluator>(new DefinitionEvaluator());
         builder.Services.AddSingleton<IResponseService>(runtime);
         builder.Services.AddSingleton<ISubmissionCoordinator>(runtime);

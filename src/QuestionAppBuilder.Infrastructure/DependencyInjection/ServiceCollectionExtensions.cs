@@ -48,7 +48,8 @@ public static class ServiceCollectionExtensions
             new QuestionAppBuilder.Application.Authoring.DefinitionValidator(provider.GetRequiredService<IDefinitionEvaluator>()),
             provider.GetService<IResponseEmailSender>() is not UnconfiguredResponseEmailSender));
         services.AddScoped<IDraftService>(provider => new DraftService(provider.GetRequiredService<IDbContextFactory<QuestionAppBuilderDbContext>>(),
-            provider.GetRequiredService<IDefinitionEvaluator>(), provider.GetService<IResponseEmailSender>() is not UnconfiguredResponseEmailSender));
+            provider.GetRequiredService<IDefinitionEvaluator>(), provider.GetService<IResponseEmailSender>() is not UnconfiguredResponseEmailSender,
+            provider.GetRequiredService<ITrustedActorContext>()));
         services.TryAddScoped<IRespondentContext, UnconfiguredRespondentContext>();
         services.TryAddScoped<IResponseEmailSender, UnconfiguredResponseEmailSender>();
         services.TryAddScoped<IResponseAccessLinkBuilder, UnconfiguredResponseAccessLinkBuilder>();

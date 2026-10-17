@@ -6,9 +6,9 @@ namespace QuestionAppBuilder.Core.ViewModels;
 public sealed record ResponsePageModel(ResponseSnapshot Response, QuestionnaireRenderModel Questionnaire,
     int CurrentCategoryIndex, string LayoutName, IReadOnlyDictionary<int, string>? FieldErrors = null,
     string? SummaryMessage = null, string? SaveStatus = null, string? RequestId = null,
-    IReadOnlyDictionary<int, AnswerFormInput>? InputValues = null)
+    IReadOnlyDictionary<int, AnswerFormInput>? InputValues = null, string? RejectedExpectedRevision = null)
 {
-    public string ExpectedRevision => Convert.ToBase64String(Response.Revision);
+    public string ExpectedRevision => RejectedExpectedRevision ?? Convert.ToBase64String(Response.Revision);
 }
 
 public sealed class ResponseFormInput

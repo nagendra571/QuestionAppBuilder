@@ -160,6 +160,25 @@ public sealed class PlatformAcceptanceTests
         (await analyst.GotoAsync(new Uri(host.BaseAddress, "/ConfigureApp/Applications").ToString()))!.Status.Should().Be(403);
     }
 
+    [Fact]
+    public async Task Host_fill_policy_rejects_authenticated_designer_from_creating_a_response()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var applicationId = await host.SeedHostSignInApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var designer = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await LoginAsync(designer, host.BaseAddress, "designer");
+        await designer.GotoAsync(new Uri(host.BaseAddress, $"/App/{applicationId}").ToString());
+        var startResponseTask = designer.WaitForResponseAsync(response => response.Url.EndsWith("/Start", StringComparison.Ordinal));
+
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+
+        var startResponse = await startResponseTask;
+        startResponse.Status.Should().Be(403, $"unexpected Start response location: {startResponse.Headers.GetValueOrDefault("location", "<none>")}; host: {host.GetDiagnosticLogs()}");
+        (await host.CountResponsesAsync()).Should().Be(0, "the host FillPolicy is enforced before a response is created");
+    }
+
     private static async Task LoginAsync(IPage page, Uri baseAddress, string username)
     {
         await page.GotoAsync(new Uri(baseAddress, "/Account/Login").ToString());
