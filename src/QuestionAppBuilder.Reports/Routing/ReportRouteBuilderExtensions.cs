@@ -17,6 +17,10 @@ public static class ReportRouteBuilderExtensions
                 new { area = "QuestionAppBuilderReports", controller = "Reports", action = "Index" },
                 new { area = "QuestionAppBuilderReports" })
             .RequireAuthorization(options.ReportPolicy);
+        endpoints.MapControllerRoute("questionappbuilder-reports-export", $"{basePath}/Export",
+                new { area = "QuestionAppBuilderReports", controller = "Exports", action = "Export" },
+                new { area = "QuestionAppBuilderReports" })
+            .RequireAuthorization(options.ReportPolicy);
         return endpoints;
     }
 }

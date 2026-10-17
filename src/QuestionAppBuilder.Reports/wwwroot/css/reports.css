@@ -9,6 +9,7 @@
 .qab-report-summary > div { display: flex; flex-direction: column; gap: .15rem; padding: .9rem 1rem; border-left: 4px solid var(--qab-primary, #005ea2); background: var(--qab-panel, #fff); }
 .qab-report-summary strong { font-size: 1.4rem; }
 .qab-report-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.qab-report-actions { display: flex; flex-wrap: wrap; gap: 1rem; }
 .qab-report-table { width: 100%; border-collapse: collapse; background: var(--qab-panel, #fff); }
 .qab-report-table caption { padding: .4rem; text-align: left; font-weight: 600; }
 .qab-report-table th, .qab-report-table td { padding: .55rem .7rem; border: 1px solid var(--qab-border, #d5dae0); text-align: left; vertical-align: top; }

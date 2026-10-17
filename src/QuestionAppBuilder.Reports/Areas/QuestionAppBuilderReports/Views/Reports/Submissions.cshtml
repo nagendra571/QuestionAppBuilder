@@ -6,7 +6,7 @@
 <section class="qab-report" aria-labelledby="submissions-title">
     <h1 id="submissions-title">Submissions</h1>
     <p>Submitted times are shown in UTC. Results are ordered newest first; the next page uses a stable timestamp and submission-ID cursor.</p>
-    <form method="get" asp-action="Submissions" class="qab-report-filters">
+    <form method="get" asp-area="QuestionAppBuilderReports" asp-action="Submissions" class="qab-report-filters">
         <div><label for="applicationId">Application ID</label><input id="applicationId" name="applicationId" type="number" min="1" value="@Model.Filter.ApplicationId" /></div>
         <div><label for="versionId">Version ID</label><input id="versionId" name="versionId" type="number" min="1" value="@Model.Filter.VersionId" /></div>
         <div><label for="from">From date</label><input id="from" name="from" type="date" value="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" /></div>
@@ -27,7 +27,7 @@
             @foreach (var item in Model.Page.Items)
             {
                 <tr>
-                    <th scope="row"><a asp-action="Detail" asp-route-id="@item.Id">@item.Id</a></th>
+                    <th scope="row"><a asp-area="QuestionAppBuilderReports" asp-action="Detail" asp-route-id="@item.Id">@item.Id</a></th>
                     <td>@item.ApplicationName</td><td>v@item.VersionNumber · @item.DisplayName</td>
                     <td><time datetime="@item.SubmittedUtc.ToString("O")">@item.SubmittedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</time></td>
                     <td>@(item.OwnerReference ?? "Not recorded")</td><td>@item.TotalScore</td>
@@ -40,5 +40,5 @@
     {
         <p class="qab-report-next"><a href="@nextUrl">Next page</a></p>
     }
-    <p><a asp-action="Index">Back to analysis</a></p>
+    <p><a asp-area="QuestionAppBuilderReports" asp-action="Index">Back to analysis</a></p>
 </section>

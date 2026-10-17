@@ -51,7 +51,7 @@ public sealed class ReportsController : ReportControllerBase
         ViewData["Layout"] = _options.LayoutName;
         ViewData["NextUrl"] = page.NextCursor is null ? null : Url.Action(nameof(Submissions), new
         {
-            applicationId, versionId, from, through, search, pageSize = page.PageSize,
+            area = "QuestionAppBuilderReports", applicationId, versionId, from, through, search, pageSize = page.PageSize,
             afterUtc = page.NextCursor.SubmittedUtc.ToString("O", CultureInfo.InvariantCulture), afterId = page.NextCursor.Id
         });
         return View(new ReportSubmissionsViewModel(page, new(applicationId, versionId, from, through, search)));

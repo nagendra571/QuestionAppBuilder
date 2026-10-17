@@ -46,6 +46,8 @@ The Development mail sink keeps response links in process memory; it is not dura
 
 Outside Development, the host fails startup if OIDC, persistent Data Protection keys, or SMTP settings are incomplete. The host validates issuer and stable subject claims before mapping signed-in users to respondent ownership. It does not create a second user database. Use a durable, protected, shared key ring for production instances.
 
+Report CSV exports are UTF-8. Text cells that begin with spreadsheet formula markers (`=`, `+`, `-`, `@`) or control characters after leading whitespace are prefixed with an apostrophe so spreadsheet software treats them as data. CSV quotes, commas, and line breaks are escaped using standard CSV quoting.
+
 ## Integration pattern
 
 Reference `QuestionAppBuilder.Infrastructure`, `QuestionAppBuilder.Core`, and `QuestionAppBuilder.Editor`, then register the host identity before mounting the surfaces:

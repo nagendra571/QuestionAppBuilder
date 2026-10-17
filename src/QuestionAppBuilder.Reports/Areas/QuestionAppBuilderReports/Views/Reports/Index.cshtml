@@ -8,7 +8,7 @@
     <h1 id="report-title">Submission analysis</h1>
     <p>Review submitted responses and compare totals within each published version.</p>
 
-    <form method="get" asp-action="Index" class="qab-report-filters">
+    <form method="get" asp-area="QuestionAppBuilderReports" asp-action="Index" class="qab-report-filters">
         <div><label for="applicationId">Application</label>
             <select id="applicationId" name="applicationId">
                 <option value="">All applications</option>
@@ -41,9 +41,20 @@
 
     <div class="qab-report-heading-row">
         <h2>Scores by version</h2>
-        <a asp-action="Submissions" asp-route-applicationId="@Model.Filter.ApplicationId" asp-route-versionId="@Model.Filter.VersionId"
-           asp-route-from="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-through="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")"
-           asp-route-search="@Model.Filter.Search">View submissions</a>
+        <div class="qab-report-actions">
+            <a asp-area="QuestionAppBuilderReports" asp-action="Submissions" asp-route-applicationId="@Model.Filter.ApplicationId" asp-route-versionId="@Model.Filter.VersionId"
+               asp-route-from="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-through="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")"
+               asp-route-search="@Model.Filter.Search">View submissions</a>
+            <a asp-area="QuestionAppBuilderReports" asp-controller="Exports" asp-action="Export" asp-route-applicationId="@Model.Filter.ApplicationId" asp-route-versionId="@Model.Filter.VersionId"
+               asp-route-from="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-through="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")"
+               asp-route-search="@Model.Filter.Search" asp-route-includeAnswers="false">Download summary CSV</a>
+            @if (Model.Filter.ApplicationId is not null && Model.Filter.VersionId is not null)
+            {
+                <a asp-area="QuestionAppBuilderReports" asp-controller="Exports" asp-action="Export" asp-route-applicationId="@Model.Filter.ApplicationId" asp-route-versionId="@Model.Filter.VersionId"
+                   asp-route-from="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-through="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")"
+                   asp-route-search="@Model.Filter.Search" asp-route-includeAnswers="true">Download answer CSV</a>
+            }
+        </div>
     </div>
     @if (Model.Overview.Versions.Count == 0)
     {

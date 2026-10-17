@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<ResponseAccessOptions>();
         services.AddScoped<IResponseAccessService, ResponseAccessService>();
         services.AddScoped<IReportQueries, ReportQueries>();
+        services.AddScoped<IReportExport, ReportExport>();
 
         return services;
     }

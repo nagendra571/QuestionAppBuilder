@@ -58,7 +58,8 @@ public sealed class ReportAuthorizationTests
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.Should().Contain("Platform surfaces").And.Contain("Reports").And.Contain("/Insights/");
+        body.Should().Contain("Platform surfaces").And.Contain("Reports").And.Contain("/Insights/")
+            .And.Contain("Download summary CSV").And.Contain("/Insights/Export");
     }
 
     [Fact]
@@ -69,6 +70,37 @@ public sealed class ReportAuthorizationTests
         var act = () => services.AddQuestionAppBuilderReports(options => options.ReportPolicy = " ");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("A host report authorization policy is required.");
+    }
+
+    [Fact]
+    public async Task Unauthorized_export_writes_no_body()
+    {
+        using var factory = new ReportsHostFactory();
+        using var filler = await CreateSignedInClientAsync(factory, "filler");
+
+        var response = await filler.GetAsync("/Reports/Export?applicationId=1&versionId=1&includeAnswers=true");
+        var body = await response.Content.ReadAsByteArrayAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        body.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Authorized_export_streams_summary_and_validates_answer_scope_first()
+    {
+        using var factory = new ReportsHostFactory();
+        using var analyst = await CreateSignedInClientAsync(factory, "analyst");
+
+        var invalidAnswers = await analyst.GetAsync("/Reports/Export?includeAnswers=true");
+        invalidAnswers.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await invalidAnswers.Content.ReadAsStringAsync()).Should().Contain("require both applicationId and versionId");
+
+        using var response = await analyst.GetAsync("/Reports/Export?includeAnswers=false");
+        var csv = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        csv.Should().StartWith("Submission ID,Application ID,Application,Version ID,Version,Submitted UTC,Owner Reference,Total Score");
     }
 
     private static async Task<HttpClient> CreateSignedInClientAsync(ReportsHostFactory factory, string username)
