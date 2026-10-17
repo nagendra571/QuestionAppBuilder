@@ -1,3 +1,8 @@
+@inject IConfiguration Configuration
+@{
+    var editorBasePath = Configuration["QuestionAppBuilderEditor:BasePath"] ?? "/ConfigureApp";
+    var runtimeBasePath = Configuration["QuestionAppBuilderRuntime:BasePath"] ?? "/App";
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,6 +26,7 @@
         body { margin: 0; font-family: "Public Sans", "Helvetica Neue", Arial, sans-serif; color: var(--qab-text); background: var(--qab-ground); }
         .qab-host-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--qab-navy); color: #fff; padding: 0.75rem 1.5rem; }
         .qab-host-bar a { color: #fff; text-decoration: none; font-weight: 600; }
+        .qab-host-nav { display: flex; gap: 1rem; margin-right: auto; margin-left: 1.5rem; }
         .qab-host-bar form { display: flex; align-items: center; gap: 0.75rem; margin: 0; }
         .qab-host-bar button { background: transparent; border: 1px solid #fff; }
         main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
@@ -41,6 +47,10 @@
 <body>
     <header class="qab-host-bar">
         <a href="/">QuestionAppBuilder</a>
+        <nav aria-label="Platform surfaces" class="qab-host-nav">
+            <a href="@(editorBasePath.TrimEnd('/') + "/Applications")">Design</a>
+            <a href="@(runtimeBasePath.TrimEnd('/') + "/Mine")">My responses</a>
+        </nav>
         @if (User.Identity?.IsAuthenticated == true)
         {
             <form method="post" action="/Account/Logout">

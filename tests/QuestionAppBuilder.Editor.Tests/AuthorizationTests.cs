@@ -60,5 +60,5 @@ public class AuthorizationTests : IClassFixture<EditorWebApplicationFactory>
     }
 
     private HttpClient CreateAnonymousClient() =>
-        _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, BaseAddress = new Uri("https://localhost") });
 }

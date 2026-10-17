@@ -22,8 +22,11 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException(
                 "QuestionAppBuilderEditorOptions.BasePath must start with '/'.");
         }
+        if (string.IsNullOrWhiteSpace(options.DesignPolicy))
+            throw new InvalidOperationException("QuestionAppBuilderEditorOptions.DesignPolicy must name a configured host policy.");
 
         services.AddSingleton(options);
+        services.AddScoped<EditorAuthorizationFilter>();
         services.AddAntiforgery(antiforgery => antiforgery.HeaderName = "RequestVerificationToken");
         services.TryAddSingleton<IQuestionnaireRenderer, QuestionnaireRenderModelFactory>();
         services.AddControllersWithViews().AddApplicationPart(typeof(ApplicationsController).Assembly);

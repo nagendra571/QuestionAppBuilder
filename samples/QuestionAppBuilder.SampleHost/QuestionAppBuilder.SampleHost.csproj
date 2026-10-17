@@ -8,7 +8,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="8.0.19" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Editor\QuestionAppBuilder.Editor.csproj" />
+    <ProjectReference Include="..\..\src\QuestionAppBuilder.Core\QuestionAppBuilder.Core.csproj" />
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Infrastructure\QuestionAppBuilder.Infrastructure.csproj" />
   </ItemGroup>
 

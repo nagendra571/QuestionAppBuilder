@@ -5,6 +5,7 @@ using QuestionAppBuilder.Editor.Options;
 namespace QuestionAppBuilder.Editor.Controllers;
 
 [Area(EditorArea.Name)]
+[ServiceFilter(typeof(EditorAuthorizationFilter))]
 public abstract class EditorControllerBase : Controller
 {
     protected EditorControllerBase(QuestionAppBuilderEditorOptions editorOptions)

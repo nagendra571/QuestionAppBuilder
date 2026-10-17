@@ -1,0 +1,29 @@
+@model IReadOnlyList<QuestionAppBuilder.Application.Responses.ResponseSummary>
+@inject Microsoft.Extensions.Options.IOptions<QuestionAppBuilder.Core.Options.QuestionAppBuilderRuntimeOptions> RuntimeOptions
+@{
+    ViewData["Title"] = "My responses";
+    var basePath = RuntimeOptions.Value.BasePath.TrimEnd('/');
+}
+<main class="qab-runtime">
+    <header class="qab-header">
+        <p class="qab-eyebrow">Your account</p>
+        <h1>My responses</h1>
+        <p>Open an in-progress questionnaire to continue where you left off.</p>
+    </header>
+    @if (Model.Count == 0)
+    {
+        <p>You do not have any saved responses yet.</p>
+    }
+    else
+    {
+        <ul class="qab-response-list">
+            @foreach (var response in Model)
+            {
+                <li>
+                    <h2><a href="@(basePath + "/Responses/" + response.Id.ToString("D"))">@response.DisplayName</a></h2>
+                    <p>Last saved @response.UpdatedUtc.ToLocalTime().ToString("g")</p>
+                </li>
+            }
+        </ul>
+    }
+</main>

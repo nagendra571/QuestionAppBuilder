@@ -1,57 +1,64 @@
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.RateLimiting;
+using QuestionAppBuilder.Core.DependencyInjection;
+using QuestionAppBuilder.Core.Routing;
 using QuestionAppBuilder.Editor.DependencyInjection;
 using QuestionAppBuilder.Editor.Options;
 using QuestionAppBuilder.Editor.Routing;
 using QuestionAppBuilder.Infrastructure.DependencyInjection;
 using QuestionAppBuilder.Infrastructure.Persistence;
-using QuestionAppBuilder.SampleHost.DevAuth;
+using QuestionAppBuilder.SampleHost.Integration;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration["QuestionAppBuilder:ConnectionString"] ?? string.Empty;
+var hostIdentity = HostIdentityRegistration.AddHostIdentity(builder.Services, builder.Configuration, builder.Environment);
 
 builder.Services.AddQuestionAppBuilder(o => o.ConnectionString = connectionString);
+builder.Services.AddQuestionAppBuilderRuntime(o =>
+{
+    o.BasePath = builder.Configuration["QuestionAppBuilderRuntime:BasePath"] ?? "/App";
+    o.FillPolicy = HostIdentityRegistration.FillPolicy;
+    o.HostAuthenticationScheme = hostIdentity.AuthenticationScheme;
+    o.TrustedIssuer = hostIdentity.Issuer;
+    o.PublicBaseUri = Uri.TryCreate(builder.Configuration["QuestionAppBuilderRuntime:PublicBaseUri"], UriKind.Absolute, out var publicUri)
+        ? publicUri
+        : new Uri("https://localhost");
+});
 builder.Services.AddQuestionAppBuilderEditor(o =>
 {
     o.BasePath = builder.Configuration["QuestionAppBuilderEditor:BasePath"] ?? o.BasePath;
-    o.DesignerRole = builder.Configuration["QuestionAppBuilderEditor:DesignerRole"] ?? o.DesignerRole;
+    o.DesignPolicy = builder.Configuration["QuestionAppBuilderEditor:DesignPolicy"] ?? o.DesignPolicy;
 });
-builder.Services.AddSingleton<DevUserStore>();
-builder.Services
-    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(o =>
-    {
-        o.LoginPath = "/Account/Login";
-        o.Events.OnRedirectToAccessDenied = context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return Task.CompletedTask;
-        };
-    });
+HostIdentityRegistration.AddPlatformPolicies(builder.Services, builder.Configuration);
 
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<QuestionAppBuilderDbContext>();
-    if (db.Database.IsSqlServer())
+    if (builder.Environment.IsDevelopment() && db.Database.IsSqlServer())
     {
         db.Database.Migrate();
     }
 }
 
 app.UseStaticFiles();
+app.UseRouting();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 var editorOptions = app.Services.GetRequiredService<QuestionAppBuilderEditorOptions>();
 
 app.MapQuestionAppBuilderEditor();
+app.MapQuestionAppBuilderRuntime();
+app.MapControllerRoute(name: "area-conventional", pattern: "{area:exists}/{controller=Applications}/{action=Index}/{id?}");
 app.MapGet("/", () => Results.Redirect($"{editorOptions.BasePath.TrimEnd('/')}/Applications"));
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Account}/{action=Login}/{id?}");
+if (builder.Environment.IsDevelopment())
+{
+    app.MapControllerRoute(name: "development-account", pattern: "{controller=Account}/{action=Login}/{id?}");
+}
 
 app.Run();
 

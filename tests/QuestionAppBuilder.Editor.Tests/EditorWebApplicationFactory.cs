@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using QuestionAppBuilder.Infrastructure.Persistence;
 using QuestionAppBuilder.SampleHost.DevAuth;
 
@@ -12,9 +13,22 @@ namespace QuestionAppBuilder.Editor.Tests;
 
 public class EditorWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly IReadOnlyDictionary<string, string?> _configuration;
+
+    public EditorWebApplicationFactory()
+        : this(new Dictionary<string, string?>())
+    {
+    }
+
+    internal EditorWebApplicationFactory(IReadOnlyDictionary<string, string?> configuration)
+        => _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         var databaseName = $"editor-tests-{Guid.NewGuid():N}";
+        foreach (var (key, value) in _configuration)
+            builder.UseSetting(key, value);
+        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(_configuration));
 
         builder.ConfigureServices(services =>
         {
@@ -29,7 +43,7 @@ public class EditorWebApplicationFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(username);
 
-        var client = CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = allowAutoRedirect });
+        var client = CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = allowAutoRedirect, BaseAddress = new Uri("https://localhost") });
         var (token, _) = await GetFormAsync(client, "/Account/Login");
 
         var response = await client.PostAsync("/Account/Login", new FormUrlEncodedContent(new Dictionary<string, string>
@@ -56,7 +70,10 @@ public class EditorWebApplicationFactory : WebApplicationFactory<Program>
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(url);
 
-        var html = await client.GetStringAsync(url);
+        using var response = await client.GetAsync(url);
+        var html = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Form request {url} returned {(int)response.StatusCode}: {html}");
         var match = Regex.Match(html, "<input[^>]*name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
         match.Success.Should().BeTrue($"the form at {url} should include an antiforgery token");
         return (WebUtility.HtmlDecode(match.Groups[1].Value), html);

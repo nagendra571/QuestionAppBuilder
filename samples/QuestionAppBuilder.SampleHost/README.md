@@ -1,80 +1,73 @@
 # QuestionAppBuilder Sample Host
 
-A reference ASP.NET Core host that mounts the QuestionAppBuilder editor (designer) surface. It is the working example of how a consuming app integrates the platform: the host owns identity, roles, layout, and database; the editor ships as a Razor Class Library mounted at a configurable base path.
+The sample host consumes the platform's Core runtime and Editor Razor Class Libraries. It owns the database connection, identity configuration, application layout, and response email delivery. Questionnaire definitions and response behavior live in the referenced platform libraries.
 
-## Prerequisites
+## Run locally
 
-- .NET 8 SDK
-- SQL Server LocalDB (Windows) for the default connection string
-
-## Run
+Prerequisites: .NET 8 SDK and SQL Server LocalDB on Windows.
 
 ```powershell
-dotnet run --project samples/QuestionAppBuilder.SampleHost
+dotnet dev-certs https --trust
+dotnet run --project samples/QuestionAppBuilder.SampleHost --urls https://localhost:5001
 ```
 
-The host prints its listening address (default `http://localhost:5000`). `/` redirects to the designer index at `/ConfigureApp/Applications`. The default connection string in `appsettings.json` points at LocalDB (`(localdb)\MSSQLLocalDB`, database `QuestionAppBuilderSampleHost`); the sample host applies the EF Core migrations at startup when the provider is SQL Server.
+The sample applies EF Core migrations only in Development. Its default connection string targets the `QuestionAppBuilderSampleHost` LocalDB catalog. `/` opens the designer, `/ConfigureApp/Applications` lists applications, `/App/Mine` lists the signed-in user's responses, and `/App/{applicationId}` opens a published questionnaire.
 
-### Dev users
+Development mode exposes a local-only sign-in and an in-memory mail sink. All sample users use `DevPassword!1`:
 
-The sample host uses a dev-only cookie sign-in (`DevAuth`). All users share the password `DevPassword!1`:
+| Username | Role | Access |
+| --- | --- | --- |
+| `designer` | `Designer` | Design applications |
+| `filler` | `Filler` | Respond to questionnaires |
+| `analyst` | `Analyst` | View reports when the Reports surface is installed |
 
-| Username | Role     | Can use the designer |
-| -------- | -------- | -------------------- |
-| designer | Designer | Yes                  |
-| filler   | Filler   | No (403)             |
-| analyst  | Analyst  | No (403)             |
+The Development mail sink keeps response links in process memory; it is not durable email delivery. `DevAuth` and the mail sink are registered only in Development and are absent from deployed environments.
 
-Replace `AccountController`/`DevUserStore` with the host's real authentication in any non-sample app; the editor consumes whatever cookie principal the host establishes.
+## Host configuration
 
-## Configuration
+| Key | Purpose |
+| --- | --- |
+| `QuestionAppBuilder:ConnectionString` | Host-owned SQL Server database. |
+| `QuestionAppBuilderEditor:BasePath` | Editor prefix, default `/ConfigureApp`. |
+| `QuestionAppBuilderEditor:DesignPolicy` | Required named design policy, default `QuestionAppBuilder.Design`; blank values fail startup. |
+| `QuestionAppBuilderRuntime:BasePath` | Respondent prefix, default `/App`. |
+| `QuestionAppBuilderRuntime:PublicBaseUri` | Trusted HTTPS origin used to construct email access links. |
+| `QuestionAppBuilder:Authorization:DesignRole` | Host role required by the design policy; default `Designer`. |
+| `QuestionAppBuilder:Authorization:ReportRole` | Host role required by the report policy; default `Analyst`. |
+| `QuestionAppBuilder:Identity:Authority` | HTTPS OpenID Connect authority, required outside Development. |
+| `QuestionAppBuilder:Identity:Issuer` | Expected HTTPS token issuer, required outside Development. |
+| `QuestionAppBuilder:Identity:ClientId` / `ClientSecret` | OIDC client credentials, required outside Development. Supply secrets from the deployment secret provider. |
+| `QuestionAppBuilder:DataProtection:KeyRingPath` | Absolute persistent key-ring path shared by host instances. |
+| `QuestionAppBuilder:Smtp:Host`, `Port`, `FromAddress` | SMTP endpoint and sender, required outside Development. |
+| `QuestionAppBuilder:Smtp:Username`, `Password` | Optional SMTP credentials; provide both or neither. Supply the password from the deployment secret provider. |
+| `QuestionAppBuilder:Smtp:ImplicitTls` | Use implicit TLS when true; otherwise SMTP STARTTLS is required. |
 
-| Key                                      | Default       | Purpose                                                        |
-| ---------------------------------------- | ------------- | -------------------------------------------------------------- |
-| `QuestionAppBuilder:ConnectionString`    | LocalDB       | Database for definitions and submissions (host-owned).         |
-| `QuestionAppBuilderEditor:BasePath`      | `/ConfigureApp` | Route prefix the designer mounts under. Must start with `/`. |
-| `QuestionAppBuilderEditor:DesignerRole`  | `Designer`    | Host role allowed to use the designer; blank disables the gate. |
+Outside Development, the host fails startup if OIDC, persistent Data Protection keys, or SMTP settings are incomplete. The host validates issuer and stable subject claims before mapping signed-in users to respondent ownership. It does not create a second user database. Use a durable, protected, shared key ring for production instances.
 
-## Host integration
+## Integration pattern
 
-1. Reference the platform packages (in this repo, project references):
-
-   - core engine: `QuestionAppBuilder.Infrastructure` (domain, application services, EF Core context, migrations)
-   - editor surface: `QuestionAppBuilder.Editor` (MVC area with controllers and Razor views)
-
-2. Register services in `Program.cs`:
+Reference `QuestionAppBuilder.Infrastructure`, `QuestionAppBuilder.Core`, and `QuestionAppBuilder.Editor`, then register the host identity before mounting the surfaces:
 
 ```csharp
+var hostIdentity = HostIdentityRegistration.AddHostIdentity(
+    builder.Services, builder.Configuration, builder.Environment);
 builder.Services.AddQuestionAppBuilder(o => o.ConnectionString = connectionString);
+builder.Services.AddQuestionAppBuilderRuntime(o =>
+{
+    o.BasePath = "/App";
+    o.FillPolicy = HostIdentityRegistration.FillPolicy;
+    o.HostAuthenticationScheme = hostIdentity.AuthenticationScheme;
+    o.TrustedIssuer = hostIdentity.Issuer;
+    o.PublicBaseUri = new Uri("https://surveys.example.org");
+});
 builder.Services.AddQuestionAppBuilderEditor(o =>
 {
-    o.BasePath = builder.Configuration["QuestionAppBuilderEditor:BasePath"] ?? o.BasePath;
-    o.DesignerRole = builder.Configuration["QuestionAppBuilderEditor:DesignerRole"] ?? o.DesignerRole;
+    o.BasePath = "/ConfigureApp";
+    o.DesignPolicy = HostIdentityRegistration.DesignPolicy;
 });
+HostIdentityRegistration.AddPlatformPolicies(builder.Services, builder.Configuration);
 ```
 
-3. Wire authentication/authorization, then mount the routes:
+The host also owns the standard authentication, rate-limiting, and authorization middleware. Call `UseAuthentication()`, `UseRateLimiter()`, and `UseAuthorization()` in that order before mapping `MapQuestionAppBuilderEditor()` and `MapQuestionAppBuilderRuntime()`. Keep the editor design policy on the controller and route group; do not disable it for anonymous demos.
 
-```csharp
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapQuestionAppBuilderEditor();
-```
-
-`AddQuestionAppBuilderEditor` registers the area's controllers/views and the options singleton. `MapQuestionAppBuilderEditor` mounts the area under `BasePath` (`{basePath}/{controller=Applications}/{action=Index}/{id?}`) and, when `DesignerRole` is set, requires that role on every editor route. Views and redirects use tag helpers/`RedirectToAction`, so they all honor a custom base path without further work.
-
-### Role mapping
-
-The host owns identity and roles; the editor maps onto them. Set `DesignerRole` to the host's designer/admin role. The sample host issues role claims at sign-in (`designer` → `Designer`, etc.), so a signed-in user without the role gets 403 on every editor route. Blank `DesignerRole` skips the gate (useful for anonymous demos only).
-
-### Layout
-
-Editor views render inside the host's layout. `QuestionAppBuilderEditorOptions.LayoutName` picks it (default `_Layout`): provide a view with that name under the host's `Views/Shared/`, and the editor's `_ViewStart` resolves it. The sample host's `Views/Shared/_Layout.cshtml` shows the minimal contract.
-
-### Database and migrations
-
-The platform ships its EF Core migrations inside the core package so consuming hosts never hand-author schema. Apply them to the host's database:
-
-- sample host (development convenience): `db.Database.Migrate()` after `builder.Build()`, guarded by `db.Database.IsSqlServer()` so tests using the in-memory provider are untouched;
-- production hosts: run migrations as part of the deployment (for example `dotnet ef database update` with the platform migrations assembly, or a scripted `dotnet ef migrations script` step) before the new app version takes traffic.
+The sample host runs migrations automatically only in Development. Production deployments must apply the generated EF migration through an explicit release step before traffic is moved to the new host version; production startup never mutates the schema.

@@ -40,15 +40,12 @@ public static class EditorRouteBuilderExtensions
             pattern: $"{basePath}/{{controller=Applications}}/{{action=Index}}/{{id?}}",
             defaults: new { area = EditorArea.Name });
 
-        if (!string.IsNullOrWhiteSpace(options.DesignerRole))
-        {
-            preview.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-            save.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-            publish.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-            readiness.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-            workspace.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-            route.RequireAuthorization(new AuthorizeAttribute { Roles = options.DesignerRole });
-        }
+        preview.RequireAuthorization(options.DesignPolicy);
+        save.RequireAuthorization(options.DesignPolicy);
+        publish.RequireAuthorization(options.DesignPolicy);
+        readiness.RequireAuthorization(options.DesignPolicy);
+        workspace.RequireAuthorization(options.DesignPolicy);
+        route.RequireAuthorization(options.DesignPolicy);
 
         return endpoints;
     }

@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using QuestionAppBuilder.Editor.Options;
+using QuestionAppBuilder.SampleHost.Integration;
 
 namespace QuestionAppBuilder.SampleHost.DevAuth;
 
@@ -46,13 +46,15 @@ public class AccountController : Controller
         var identity = new ClaimsIdentity(
             new[]
             {
-                new Claim(ClaimTypes.Name, request.Username),
+            new Claim(ClaimTypes.Name, request.Username),
                 new Claim(ClaimTypes.Role, role),
+            new Claim("iss", HostIdentityRegistration.DevelopmentIssuer),
+            new Claim("sub", request.Username),
             },
-            CookieAuthenticationDefaults.AuthenticationScheme);
+            HostIdentityRegistration.CookieScheme);
 
         await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
+            HostIdentityRegistration.CookieScheme,
             new ClaimsPrincipal(identity));
 
         return Redirect($"{_editorOptions.BasePath.TrimEnd('/')}/Applications");
@@ -62,7 +64,7 @@ public class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
     {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignOutAsync(HostIdentityRegistration.CookieScheme);
         return RedirectToAction(nameof(Login));
     }
 }
