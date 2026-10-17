@@ -2,7 +2,7 @@
 
 Date: 2026-10-17
 
-Status: Proposed for written-specification review. Architecture, reliability, and editor sections were reviewed in conversation; this consolidated artifact has not yet been approved for planning or implementation.
+Status: Approved for implementation planning on 2026-10-17. The owner reviewed this written specification and responded, "Looks good to me so far." Implementation plan review and execution-method selection remain pending.
 
 ## 1. Purpose and authority
 
