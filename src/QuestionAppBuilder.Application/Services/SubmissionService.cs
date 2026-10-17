@@ -61,11 +61,6 @@ public sealed class SubmissionService : ISubmissionService
         var missingRequired = new List<int>();
         foreach (var category in graph.Categories)
         {
-            if (category.IsIndependent)
-            {
-                continue;
-            }
-
             foreach (var element in category.Elements)
             {
                 var question = element.Question;

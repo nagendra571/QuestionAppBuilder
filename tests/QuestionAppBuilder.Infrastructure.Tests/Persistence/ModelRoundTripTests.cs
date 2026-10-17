@@ -68,7 +68,6 @@ public class ModelRoundTripTests
             {
                 Name = "Eligibility",
                 SortOrder = 1,
-                IsIndependent = true
             };
 
             category.Elements.Add(new Element
@@ -130,7 +129,6 @@ public class ModelRoundTripTests
             reloaded.Categories.Should().HaveCount(1);
 
             var reloadedCategory = reloaded.Categories.Single();
-            reloadedCategory.IsIndependent.Should().BeTrue();
             reloadedCategory.Elements.Should().HaveCount(2);
 
             var questionElement = reloadedCategory.Elements.Single(e => e.Kind == ElementKind.Question);

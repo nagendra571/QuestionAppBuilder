@@ -108,7 +108,6 @@ public class CategoriesScreensTests : IDisposable
             {
                 ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
                 ["Name"] = "General",
-                ["IsIndependent"] = "true",
                 ["__RequestVerificationToken"] = token,
             }));
 
@@ -119,14 +118,14 @@ public class CategoriesScreensTests : IDisposable
 
         var body = await client.GetStringAsync(location);
         body.Should().Contain("General");
-        body.Should().Contain("Independent");
+        body.Should().NotContain("Independent");
 
         await _factory.WithScopeAsync(async services =>
         {
             var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
             var category = await database.Categories.SingleAsync(c => c.Name == "General");
 
-            category.IsIndependent.Should().BeTrue();
+            category.LogicalKey.Should().NotBeEmpty();
             return true;
         });
     }
@@ -135,7 +134,7 @@ public class CategoriesScreensTests : IDisposable
     public async Task Rename_category_updates_detail()
     {
         var applicationId = await CreateApplicationAsync();
-        var categoryId = await AddCategoryAsync(applicationId, "General", isIndependent: false);
+        var categoryId = await AddCategoryAsync(applicationId, "General");
         var client = await _factory.CreateSignedInClientAsync("designer");
         var (token, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
 
@@ -145,7 +144,6 @@ public class CategoriesScreensTests : IDisposable
             {
                 ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
                 ["Name"] = "Site Information",
-                ["IsIndependent"] = "true",
                 ["__RequestVerificationToken"] = token,
             }));
 
@@ -154,7 +152,7 @@ public class CategoriesScreensTests : IDisposable
         var detailAfterRename = await client.GetStringAsync(DetailUrl(applicationId));
         detailAfterRename.Should().Contain("Site Information");
         detailAfterRename.Should().NotContain("General");
-        detailAfterRename.Should().Contain("Independent");
+        detailAfterRename.Should().NotContain("Independent");
 
         var (removeToken, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
         var removeResponse = await client.PostAsync(
@@ -263,11 +261,11 @@ public class CategoriesScreensTests : IDisposable
             return (application.Id, category.Id);
         });
 
-    private async Task<int> AddCategoryAsync(int applicationId, string name, bool isIndependent)
+    private async Task<int> AddCategoryAsync(int applicationId, string name)
         => await _factory.WithScopeAsync(async services =>
         {
             var designService = services.GetRequiredService<IApplicationDesignService>();
-            var category = await designService.AddCategoryAsync(applicationId, name, isIndependent);
+            var category = await designService.AddCategoryAsync(applicationId, name);
             return category.Id;
         });
 

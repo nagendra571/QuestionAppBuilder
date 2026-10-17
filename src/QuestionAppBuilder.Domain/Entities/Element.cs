@@ -10,5 +10,7 @@ public class Element
     public string Label { get; set; } = string.Empty;
     public string? HelpText { get; set; }
     public int SortOrder { get; set; }
+    public Guid LogicalKey { get; set; } = Guid.NewGuid();
+    public int? VisibilityConditionId { get; set; }
     public Question? Question { get; set; }
 }

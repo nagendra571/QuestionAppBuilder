@@ -43,7 +43,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         {
             VersionNumber = 1,
             Status = VersionStatus.Draft,
-            CreatedUtc = now
+            CreatedUtc = now,
+            DisplayName = name
         });
 
         _repository.Add(application);
@@ -98,7 +99,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return cloneGraph;
     }
 
-    public async Task<Category> AddCategoryAsync(int applicationId, string name, bool isIndependent = false, CancellationToken ct = default)
+    public async Task<Category> AddCategoryAsync(int applicationId, string name, CancellationToken ct = default)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Category name");
 
@@ -119,7 +120,6 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             ApplicationVersionId = graph.Version.Id,
             Name = name,
             SortOrder = NextSortOrder(graph.Categories.Select(c => c.SortOrder)),
-            IsIndependent = isIndependent
         };
 
         graph.Version.Categories.Add(category);
@@ -128,14 +128,13 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return category;
     }
 
-    public async Task UpdateCategoryAsync(int categoryId, string name, bool isIndependent, CancellationToken ct = default)
+    public async Task UpdateCategoryAsync(int categoryId, string name, CancellationToken ct = default)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Category name");
 
         var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct);
 
         editable.Target.Name = name;
-        editable.Target.IsIndependent = isIndependent;
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -179,7 +178,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         var question = new Question
         {
             AnswerType = answerType,
-            IsRequired = isRequired
+            IsRequired = isRequired,
+            ScoringMode = answerType == AnswerType.Number ? ScoringMode.FirstMatch : ScoringMode.Additive
         };
 
         var element = new Element
@@ -341,6 +341,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
         graph.Version.Status = VersionStatus.Published;
         graph.Version.PublishedUtc = DateTime.UtcNow;
+        if (application.CurrentVersionId is null)
+        {
+            application.AcceptNewResponses = true;
+            application.AcceptSubmissions = true;
+        }
         application.CurrentVersionId = graph.Version.Id;
         await _repository.SaveChangesAsync(ct);
     }
@@ -430,7 +435,13 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             VersionNumber = versionNumber,
             Status = VersionStatus.Draft,
             CreatedUtc = DateTime.UtcNow,
-            PublishedUtc = null
+            PublishedUtc = null,
+            NavigationMode = source.Version.NavigationMode,
+            RespondentAccessMode = source.Version.RespondentAccessMode,
+            ResultVisibility = source.Version.ResultVisibility,
+            SubmitLabel = source.Version.SubmitLabel,
+            ConfirmationText = source.Version.ConfirmationText,
+            DisplayName = source.Version.DisplayName
         };
 
         var map = new CloneMap();
@@ -441,7 +452,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             {
                 Name = sourceCategory.Name,
                 SortOrder = sourceCategory.SortOrder,
-                IsIndependent = sourceCategory.IsIndependent
+                LogicalKey = sourceCategory.LogicalKey
             };
 
             map.Categories[sourceCategory.Id] = category;
@@ -454,7 +465,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                     Kind = sourceElement.Kind,
                     Label = sourceElement.Label,
                     HelpText = sourceElement.HelpText,
-                    SortOrder = sourceElement.SortOrder
+                    SortOrder = sourceElement.SortOrder,
+                    LogicalKey = sourceElement.LogicalKey
                 };
 
                 map.Elements[sourceElement.Id] = element;
@@ -468,7 +480,13 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                 var question = new Question
                 {
                     AnswerType = sourceElement.Question.AnswerType,
-                    IsRequired = sourceElement.Question.IsRequired
+                    IsRequired = sourceElement.Question.IsRequired,
+                    ScoringMode = sourceElement.Question.ScoringMode,
+                    MaxLength = sourceElement.Question.MaxLength,
+                    MinValue = sourceElement.Question.MinValue,
+                    MaxValue = sourceElement.Question.MaxValue,
+                    MinSelections = sourceElement.Question.MinSelections,
+                    MaxSelections = sourceElement.Question.MaxSelections
                 };
 
                 map.Questions[sourceElement.Question.Id] = question;
@@ -480,7 +498,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                     {
                         Label = sourceOption.Label,
                         Value = sourceOption.Value,
-                        SortOrder = sourceOption.SortOrder
+                        SortOrder = sourceOption.SortOrder,
+                        LogicalKey = sourceOption.LogicalKey
                     };
 
                     map.Options[sourceOption.Id] = option;
@@ -493,6 +512,10 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                     {
                         Family = sourceRule.Family,
                         Points = sourceRule.Points,
+                        SortOrder = sourceRule.SortOrder,
+                        LogicalKey = sourceRule.LogicalKey,
+                        MinInclusive = sourceRule.MinInclusive,
+                        MaxInclusive = sourceRule.MaxInclusive,
                         MembershipOperator = sourceRule.MembershipOperator,
                         MinValue = sourceRule.MinValue,
                         MaxValue = sourceRule.MaxValue

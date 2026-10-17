@@ -8,7 +8,10 @@ public class SqlServerFactAttributeTests
     [Fact]
     public void Missing_configuration_reports_skip_reason()
     {
-        Environment.SetEnvironmentVariable("QAB_TEST_SQLSERVER", null);
-        new SqlServerFactAttribute().Skip.Should().Contain("QAB_TEST_SQLSERVER");
+        var configured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("QAB_TEST_SQLSERVER"));
+        if (configured)
+            new SqlServerFactAttribute().Skip.Should().BeNull();
+        else
+            new SqlServerFactAttribute().Skip.Should().Contain("QAB_TEST_SQLSERVER");
     }
 }

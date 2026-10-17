@@ -29,7 +29,7 @@ public class CategoriesController : EditorControllerBase
 
         try
         {
-            await _designService.AddCategoryAsync(applicationId, form.Name, form.IsIndependent, ct);
+            await _designService.AddCategoryAsync(applicationId, form.Name, ct);
         }
         catch (NotFoundException)
         {
@@ -54,7 +54,7 @@ public class CategoriesController : EditorControllerBase
 
         try
         {
-            await _designService.UpdateCategoryAsync(id, form.Name, form.IsIndependent, ct);
+            await _designService.UpdateCategoryAsync(id, form.Name, ct);
         }
         catch (NotFoundException)
         {

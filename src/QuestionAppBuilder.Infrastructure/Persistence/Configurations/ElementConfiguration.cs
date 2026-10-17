@@ -20,6 +20,9 @@ public class ElementConfiguration : IEntityTypeConfiguration<Element>
             .HasMaxLength(ValidationLimits.LabelMaxLength);
         builder.Property(e => e.HelpText)
             .HasMaxLength(ValidationLimits.HelpTextMaxLength);
+        builder.Property(e => e.LogicalKey).IsRequired();
+        builder.HasIndex(e => new { e.CategoryId, e.LogicalKey }).IsUnique();
+        builder.Property(e => e.LogicalKey).HasDefaultValueSql("NEWID()");
 
         builder.HasOne<Category>()
             .WithMany(c => c.Elements)
@@ -30,5 +33,7 @@ public class ElementConfiguration : IEntityTypeConfiguration<Element>
             .WithOne()
             .HasForeignKey<Question>(q => q.ElementId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<VisibilityCondition>().WithMany().HasForeignKey(e => e.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
     }
 }

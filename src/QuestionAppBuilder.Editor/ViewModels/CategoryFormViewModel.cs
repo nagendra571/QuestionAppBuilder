@@ -8,5 +8,4 @@ public sealed class CategoryFormViewModel
     [MaxLength(200, ErrorMessage = "Category name must be at most 200 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    public bool IsIndependent { get; set; }
 }

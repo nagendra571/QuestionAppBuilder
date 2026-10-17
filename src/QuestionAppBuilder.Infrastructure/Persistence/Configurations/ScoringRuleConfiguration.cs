@@ -19,6 +19,11 @@ public class ScoringRuleConfiguration : IEntityTypeConfiguration<ScoringRule>
             .HasMaxLength(32);
         builder.Property(r => r.MinValue).HasPrecision(18, 4);
         builder.Property(r => r.MaxValue).HasPrecision(18, 4);
+        builder.Property(r => r.LogicalKey).IsRequired();
+        builder.HasIndex(r => new { r.QuestionId, r.LogicalKey }).IsUnique();
+        builder.Property(r => r.LogicalKey).HasDefaultValueSql("NEWID()");
+        builder.Property(r => r.MinInclusive).HasDefaultValue(true);
+        builder.Property(r => r.MaxInclusive).HasDefaultValue(true);
 
         builder.HasMany(r => r.Options)
             .WithOne()

@@ -6,6 +6,7 @@ public class Category
     public int ApplicationVersionId { get; set; }
     public string Name { get; set; } = string.Empty;
     public int SortOrder { get; set; }
-    public bool IsIndependent { get; set; }
+    public Guid LogicalKey { get; set; } = Guid.NewGuid();
+    public int? VisibilityConditionId { get; set; }
     public List<Element> Elements { get; set; } = new();
 }

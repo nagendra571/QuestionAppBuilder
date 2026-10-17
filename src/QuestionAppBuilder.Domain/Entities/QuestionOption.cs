@@ -7,4 +7,5 @@ public class QuestionOption
     public string Label { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
     public int SortOrder { get; set; }
+    public Guid LogicalKey { get; set; } = Guid.NewGuid();
 }

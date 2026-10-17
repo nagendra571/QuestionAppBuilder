@@ -197,31 +197,21 @@ public class SubmissionServiceTests
     }
 
     [Fact]
-    public async Task Independent_category_may_be_left_empty()
+    public async Task Required_answers_are_enforced_for_every_category()
     {
         using var ctx = new TestContext();
         var application = await ctx.Design.CreateApplicationAsync("Independent", ctx.ApplicationTypeId);
-        var category = await ctx.Design.AddCategoryAsync(application.Id, "Background", isIndependent: true);
+        var category = await ctx.Design.AddCategoryAsync(application.Id, "Background");
         var question = await ctx.Design.AddQuestionAsync(category.Id, "Context", AnswerType.Textbox);
         await ctx.Design.AddRuleAsync(question.Id, RuleFamily.Presence, 5);
 
         var versionId = (await ctx.Design.GetDraftGraphAsync(application.Id)).Version.Id;
         await ctx.Design.PublishAsync(application.Id);
 
-        var submission = await ctx.Submissions.SubmitAsync(new SubmitRequest(
-            application.Id,
-            versionId,
-            new Dictionary<int, AnswerValue>()));
-
-        using var fresh = ctx.CreateFreshContext();
-        var stored = await fresh.Submissions
-            .Include(s => s.CategoryScores)
-            .SingleAsync(s => s.Id == submission.Id);
-
-        stored.TotalScore.Should().Be(0);
-        stored.CategoryScores.Should().ContainSingle();
-        stored.CategoryScores[0].CategoryId.Should().Be(category.Id);
-        stored.CategoryScores[0].Score.Should().Be(0);
+        Func<Task> submit = () => ctx.Submissions.SubmitAsync(new SubmitRequest(
+            application.Id, versionId, new Dictionary<int, AnswerValue>()));
+        var failure = await submit.Should().ThrowAsync<AnswerValidationException>();
+        failure.Which.QuestionIds.Should().ContainSingle().Which.Should().Be(question.Id);
     }
 
     [Fact]

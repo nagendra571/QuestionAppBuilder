@@ -34,6 +34,21 @@ public class ApplicationDesignServiceTests
     }
 
     [Fact]
+    public async Task First_publish_enables_response_starts_and_submissions()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Availability defaults", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "General");
+        await ctx.Service.AddQuestionAsync(category.Id, "Name", AnswerType.Textbox);
+
+        await ctx.Service.PublishAsync(application.Id);
+
+        var published = await ctx.Service.GetApplicationAsync(application.Id);
+        published.AcceptNewResponses.Should().BeTrue();
+        published.AcceptSubmissions.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Duplicate_name_is_rejected()
     {
         using var ctx = new TestContext();
@@ -50,7 +65,7 @@ public class ApplicationDesignServiceTests
         using var ctx = new TestContext();
         var application = await ctx.Service.CreateApplicationAsync("Chain", ctx.ApplicationTypeId);
 
-        var category = await ctx.Service.AddCategoryAsync(application.Id, "Eligibility", isIndependent: true);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Eligibility");
         var content = await ctx.Service.AddContentElementAsync(category.Id, "Read carefully", "Scoring starts below.");
         var question = await ctx.Service.AddQuestionAsync(category.Id, "Are you registered?", AnswerType.Dropdown);
         var option = await ctx.Service.AddOptionAsync(question.Id, "Yes", "yes");
@@ -68,7 +83,6 @@ public class ApplicationDesignServiceTests
         var graphCategory = graph.Categories.Should().ContainSingle().Subject;
         graphCategory.Id.Should().Be(category.Id);
         graphCategory.Name.Should().Be("Eligibility");
-        graphCategory.IsIndependent.Should().BeTrue();
         graphCategory.SortOrder.Should().Be(1);
 
         graphCategory.Elements.Should().HaveCount(2);
@@ -228,7 +242,7 @@ public class ApplicationDesignServiceTests
         var publishedVersionId = (await ctx.Service.GetDraftGraphAsync(application.Id)).Version.Id;
         await ctx.Service.PublishAsync(application.Id);
 
-        await ctx.Service.UpdateCategoryAsync(category.Id, "renamed", isIndependent: false);
+        await ctx.Service.UpdateCategoryAsync(category.Id, "renamed");
 
         var draft = await ctx.Service.GetDraftGraphAsync(application.Id);
         draft.Version.VersionNumber.Should().Be(2);
@@ -307,7 +321,7 @@ public class ApplicationDesignServiceTests
 
         Func<Task> create = () => ctx.Service.CreateApplicationAsync(null!, ctx.ApplicationTypeId);
         Func<Task> addCategory = () => ctx.Service.AddCategoryAsync(application.Id, null!);
-        Func<Task> updateCategory = () => ctx.Service.UpdateCategoryAsync(category.Id, null!, isIndependent: false);
+        Func<Task> updateCategory = () => ctx.Service.UpdateCategoryAsync(category.Id, null!);
         Func<Task> addContent = () => ctx.Service.AddContentElementAsync(category.Id, null!);
         Func<Task> addQuestion = () => ctx.Service.AddQuestionAsync(category.Id, null!, AnswerType.Textbox);
         Func<Task> addOptionLabel = () => ctx.Service.AddOptionAsync(question.Id, null!, "value");

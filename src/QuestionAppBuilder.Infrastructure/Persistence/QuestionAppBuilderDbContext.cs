@@ -24,9 +24,20 @@ public class QuestionAppBuilderDbContext : DbContext
     public DbSet<Answer> Answers => Set<Answer>();
     public DbSet<AnswerSelectedOption> AnswerSelectedOptions => Set<AnswerSelectedOption>();
     public DbSet<SubmissionCategoryScore> SubmissionCategoryScores => Set<SubmissionCategoryScore>();
+    public DbSet<VisibilityCondition> VisibilityConditions => Set<VisibilityCondition>();
+    public DbSet<VisibilityPredicate> VisibilityPredicates => Set<VisibilityPredicate>();
+    public DbSet<VisibilityPredicateOption> VisibilityPredicateOptions => Set<VisibilityPredicateOption>();
+    public DbSet<ApplicationAuditEvent> ApplicationAuditEvents => Set<ApplicationAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(QuestionAppBuilderDbContext).Assembly);
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            modelBuilder.Entity<ApplicationVersion>()
+                .Property(version => version.RowVersion)
+                .ValueGeneratedNever()
+                .IsConcurrencyToken();
+        }
     }
 }

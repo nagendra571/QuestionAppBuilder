@@ -14,10 +14,15 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(c => c.Name)
             .IsRequired()
             .HasMaxLength(ValidationLimits.NameMaxLength);
+        builder.Property(c => c.LogicalKey).IsRequired();
+        builder.HasIndex(c => new { c.ApplicationVersionId, c.LogicalKey }).IsUnique();
+        builder.Property(c => c.LogicalKey).HasDefaultValueSql("NEWID()");
 
         builder.HasOne<ApplicationVersion>()
             .WithMany(v => v.Categories)
             .HasForeignKey(c => c.ApplicationVersionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<VisibilityCondition>().WithMany().HasForeignKey(c => c.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
     }
 }

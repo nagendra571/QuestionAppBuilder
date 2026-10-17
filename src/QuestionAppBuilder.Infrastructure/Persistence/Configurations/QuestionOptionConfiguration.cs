@@ -17,5 +17,8 @@ public class QuestionOptionConfiguration : IEntityTypeConfiguration<QuestionOpti
         builder.Property(o => o.Value)
             .IsRequired()
             .HasMaxLength(ValidationLimits.OptionValueMaxLength);
+        builder.Property(o => o.LogicalKey).IsRequired();
+        builder.HasIndex(o => new { o.QuestionId, o.LogicalKey }).IsUnique();
+        builder.Property(o => o.LogicalKey).HasDefaultValueSql("NEWID()");
     }
 }
