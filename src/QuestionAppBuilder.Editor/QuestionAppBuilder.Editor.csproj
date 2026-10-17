@@ -2,7 +2,12 @@
 
   <PropertyGroup>
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <PackageId>QuestionAppBuilder.Editor</PackageId>
+    <Description>Authoring workspace Razor Class Library for QuestionAppBuilder.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup><None Include="..\..\docs\integration.md" Pack="true" PackagePath="README.md" /></ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

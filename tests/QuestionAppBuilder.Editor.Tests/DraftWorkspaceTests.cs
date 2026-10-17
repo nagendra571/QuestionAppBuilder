@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Text.Encodings.Web;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,7 +97,7 @@ public sealed class DraftWorkspaceTests : IDisposable
         var appId = await CreateDraftAsync();
         var client = await _factory.CreateSignedInClientAsync("designer");
         var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
-        var revision = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"").Groups[1].Value;
+        var revision = ReadRevision(html);
         var form = new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = token, ["ApplicationId"] = appId.ToString(),
@@ -125,14 +126,25 @@ public sealed class DraftWorkspaceTests : IDisposable
         var appId = await CreateDraftAsync();
         var client = await _factory.CreateSignedInClientAsync("designer");
         var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
-        var revision = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"").Groups[1].Value;
+        var revision = ReadRevision(html);
         var response = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = token, ["ApplicationId"] = appId.ToString(), ["ExpectedRevision"] = revision,
             ["Categories[0].Id"] = "999999", ["Categories[0].Name"] = "malicious"
         }));
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("outside this version");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity, body);
+        body.Should().Contain("outside this version");
+    }
+
+    [Fact]
+    public void Html_encoded_base64_revision_is_decoded_before_url_form_post()
+    {
+        const string revision = "+w==";
+        var html = $"<input name=\"ExpectedRevision\" value=\"{HtmlEncoder.Default.Encode(revision)}\">";
+        var parsed = ReadRevision(html);
+        parsed.Should().Be(revision);
+        Convert.FromBase64String(parsed).Should().Equal(new byte[] { 0xfb });
     }
 
     [Fact]
@@ -231,5 +243,12 @@ public sealed class DraftWorkspaceTests : IDisposable
             await design.AddQuestionAsync(category.Id, "Annual income", AnswerType.Number, true);
             return application.Id;
         });
+    }
+
+    private static string ReadRevision(string html)
+    {
+        var match = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"");
+        match.Success.Should().BeTrue("the form includes a draft revision");
+        return WebUtility.HtmlDecode(match.Groups[1].Value);
     }
 }

@@ -1,0 +1,19 @@
+# Integrating QuestionAppBuilder
+
+QuestionAppBuilder is an ASP.NET Core MVC/Razor Class Library platform. A consuming host owns SQL Server, authentication, authorization policies, branding/layout, email delivery, HTTPS origin, and data-protection keys. The libraries own questionnaire definitions, immutable publication, response persistence, visibility, validation, scoring, and reporting.
+
+## Packages and framework
+
+The released libraries target `net8.0` and EF Core 8. The sample host and package-consumer acceptance host use the ASP.NET Core MVC stack. The standalone package acceptance script also builds a .NET 10 host from packages. That proves this package set can be consumed by the tested .NET 10 SDK/runtime; it does not mean the libraries multi-target `net10.0`.
+
+Install matching versions of `QuestionAppBuilder.Infrastructure`, `QuestionAppBuilder.Core`, `QuestionAppBuilder.Editor`, and optionally `QuestionAppBuilder.Reports`. Package dependencies supply Domain and Application transitively. Register one Infrastructure database connection, the runtime and editor surfaces, and Reports only when analysts should have that surface. Configure a host-authentication adapter, explicit fill/design/report policies, and an email sender for email-link applications. See the sample host README for a complete development composition.
+
+The default route prefixes are `/App`, `/ConfigureApp`, and `/Reports`; every prefix is configurable. Register host authentication before authorization, call `UseRateLimiter()` for the configured IP limiter, then map the selected platform surfaces. Use the host's MVC layout and scoped CSS; do not expose a privileged surface without its named policy. Reports enforce their policy on both area and conventional routes.
+
+## Respondent identity and access
+
+For host-sign-in applications, map the authenticated host's validated issuer and stable subject to respondent ownership. Never use an unvalidated display name or email as the durable identity key. For email-link access, configure a trusted HTTPS public origin and a sender. Access links contain one-time random tokens; only their digest is stored. Unknown, expired, consumed, and wrong-owner links fail closed. Cookies and antiforgery require HTTPS. Hosts should configure their external proxy/forwarded-header trust explicitly.
+
+## Package verification
+
+`scripts/Test-Packages.ps1 -FeedPath <empty-absolute-directory> -Version <unique-prerelease>` creates six packages, restores a host that has only PackageReferences to them from an isolated feed/cache, and checks compiled Editor/Reports views and Core/Editor/Reports assets under custom prefixes. It then runs the real-browser package consumer test. It does not publish packages. `scripts/Test-Release.ps1` adds SQL Server and full solution acceptance.

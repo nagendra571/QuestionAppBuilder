@@ -5,6 +5,7 @@
     <PackageReference Include="FluentAssertions" Version="7.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageReference Include="Deque.AxeCore.Playwright" Version="4.13.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.9" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -18,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\QuestionAppBuilder.Runtime.Tests\QuestionAppBuilder.Runtime.Tests.csproj" />
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Core\QuestionAppBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\src\QuestionAppBuilder.Infrastructure\QuestionAppBuilder.Infrastructure.csproj" />
     <ProjectReference Include="..\..\samples\QuestionAppBuilder.SampleHost\QuestionAppBuilder.SampleHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

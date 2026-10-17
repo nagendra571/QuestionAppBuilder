@@ -16,15 +16,19 @@
     @switch (Model.AnswerType)
     {
         case AnswerType.Textbox:
+            <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
             <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" type="text" value="@textValue" maxlength="@Model.MaxLength" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
             break;
         case AnswerType.Textarea:
+            <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
             <textarea class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" maxlength="@Model.MaxLength" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy">@textValue</textarea>
             break;
         case AnswerType.Number:
+            <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
             <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Number" type="number" step="any" value="@numberValue" min="@Model.MinValue" max="@Model.MaxValue" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
             break;
         case AnswerType.Dropdown:
+            <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
             <select class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].SelectedOptionIds" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy">
                 <option value="">Choose an option</option>
                 @foreach (var option in Model.Options) { <option value="@option.Id" selected="@(selectedValues?.Contains(option.Id) == true)">@option.Label</option> }

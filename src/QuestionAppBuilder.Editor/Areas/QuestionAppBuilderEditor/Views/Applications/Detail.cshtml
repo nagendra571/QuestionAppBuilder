@@ -55,6 +55,7 @@
     .cv-rename-form { position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; width: 320px; background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; padding: 16px; }
 </style>
 
+<main>
 <a class="cv-back" asp-controller="Applications" asp-action="Index">&#8592; All applications</a>
 
 @if (TempData["EditorError"] is string editorError)
@@ -156,3 +157,4 @@
         </div>
     </section>
 }
+</main>

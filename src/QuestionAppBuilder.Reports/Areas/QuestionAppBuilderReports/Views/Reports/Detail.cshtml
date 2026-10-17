@@ -3,7 +3,7 @@
     ViewData["Title"] = $"Submission {Model.Id}";
 }
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Reports/css/reports.css" />
-<article class="qab-report" aria-labelledby="detail-title">
+<main class="qab-report" aria-labelledby="detail-title">
     <h1 id="detail-title">Submission @Model.Id</h1>
     <dl class="qab-report-metadata">
         <dt>Application</dt><dd>@Model.ApplicationName</dd>
@@ -64,4 +64,4 @@
         </table>
     }
     <p><a asp-area="QuestionAppBuilderReports" asp-action="Submissions">Back to submissions</a></p>
-</article>
+</main>

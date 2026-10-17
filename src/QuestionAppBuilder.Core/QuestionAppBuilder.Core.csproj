@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
-  <PropertyGroup><AddRazorSupportForMvc>true</AddRazorSupportForMvc></PropertyGroup>
+  <PropertyGroup>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <PackageId>QuestionAppBuilder.Core</PackageId>
+    <Description>Respondent runtime Razor Class Library for QuestionAppBuilder.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup><None Include="..\..\docs\integration.md" Pack="true" PackagePath="README.md" /></ItemGroup>
   <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
   <ItemGroup><ProjectReference Include="..\QuestionAppBuilder.Application\QuestionAppBuilder.Application.csproj" /></ItemGroup>
 </Project>

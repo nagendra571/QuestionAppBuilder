@@ -1,4 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>QuestionAppBuilder.Infrastructure</PackageId>
+    <Description>SQL Server persistence and query implementations for QuestionAppBuilder.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup><None Include="..\..\docs\integration.md" Pack="true" PackagePath="README.md" /></ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\QuestionAppBuilder.Application\QuestionAppBuilder.Application.csproj" />

@@ -11,7 +11,7 @@ dotnet dev-certs https --trust
 dotnet run --project samples/QuestionAppBuilder.SampleHost --urls https://localhost:5001
 ```
 
-The sample applies EF Core migrations only in Development. Its default connection string targets the `QuestionAppBuilderSampleHost` LocalDB catalog. `/` opens the designer, `/ConfigureApp/Applications` lists applications, `/App/Mine` lists the signed-in user's responses, `/App/{applicationId}` opens a published questionnaire, and `/Reports` opens restricted submission analysis.
+The sample applies EF Core migrations only in Development. Its default connection string targets the `QuestionAppBuilderSampleHost` LocalDB catalog. `/` opens the designer, `/ConfigureApp/Applications` lists applications, `/App/Mine` lists the signed-in user's responses, `/App/{applicationId}` opens a published questionnaire, and `/Reports` opens restricted submission analysis. Respondents can save and resume; each response stays pinned to its starting published version. Result visibility is configured per version, and scores are never shown during completion.
 
 Development mode exposes a local-only sign-in and an in-memory mail sink. All sample users use `DevPassword!1`:
 
@@ -19,6 +19,7 @@ Development mode exposes a local-only sign-in and an in-memory mail sink. All sa
 | --- | --- | --- |
 | `designer` | `Designer` | Design applications |
 | `filler` | `Filler` | Respond to questionnaires |
+| `filler2` | `Filler` | Second respondent account for owner-isolation checks |
 | `analyst` | `Analyst` | View submission reports |
 
 The Development mail sink keeps response links in process memory; it is not durable email delivery. `DevAuth` and the mail sink are registered only in Development and are absent from deployed environments.
@@ -72,6 +73,6 @@ builder.Services.AddQuestionAppBuilderEditor(o =>
 HostIdentityRegistration.AddPlatformPolicies(builder.Services, builder.Configuration);
 ```
 
-The host also owns the standard authentication, rate-limiting, and authorization middleware. Call `UseAuthentication()`, `UseRateLimiter()`, and `UseAuthorization()` in that order before mapping `MapQuestionAppBuilderEditor()` and `MapQuestionAppBuilderRuntime()`. Keep the editor design policy on the controller and route group; do not disable it for anonymous demos.
+The host also owns the standard authentication, rate-limiting, and authorization middleware. Call `UseAuthentication()`, `UseRateLimiter()`, and `UseAuthorization()` in that order before mapping `MapQuestionAppBuilderEditor()`, `MapQuestionAppBuilderRuntime()`, and `MapQuestionAppBuilderReports()`. Keep each surface's named policy on its controller and route group; do not disable it for anonymous demos. The sample configures host sign-in identity; applications may separately choose the platform's email-link access mode.
 
 The sample host runs migrations automatically only in Development. Production deployments must apply the generated EF migration through an explicit release step before traffic is moved to the new host version; production startup never mutates the schema.

@@ -9,6 +9,7 @@ public sealed class DevUserStore
         {
             ["designer"] = "Designer",
             ["filler"] = "Filler",
+            ["filler2"] = "Filler",
             ["analyst"] = "Analyst",
         };
 

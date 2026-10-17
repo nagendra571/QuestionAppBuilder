@@ -3,7 +3,7 @@
     ViewData["Title"] = "Submissions";
 }
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Reports/css/reports.css" />
-<section class="qab-report" aria-labelledby="submissions-title">
+<main class="qab-report" aria-labelledby="submissions-title">
     <h1 id="submissions-title">Submissions</h1>
     <p>Submitted times are shown in UTC. Results are ordered newest first; the next page uses a stable timestamp and submission-ID cursor.</p>
     <form method="get" asp-area="QuestionAppBuilderReports" asp-action="Submissions" class="qab-report-filters">
@@ -41,4 +41,4 @@
         <p class="qab-report-next"><a href="@nextUrl">Next page</a></p>
     }
     <p><a asp-area="QuestionAppBuilderReports" asp-action="Index">Back to analysis</a></p>
-</section>
+</main>

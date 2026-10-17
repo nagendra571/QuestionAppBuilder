@@ -55,7 +55,9 @@ public sealed class ResponsesController : Controller
     [HttpGet]
     public async Task<IActionResult> Edit(Guid responseId, int category = 0, CancellationToken cancellationToken = default)
     {
-        var snapshot = await _responses.GetAsync(responseId, cancellationToken);
+        ResponseSnapshot snapshot;
+        try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(ReceiptUrl(responseId));
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         var visibleCategories = _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, preview: false).Categories;
@@ -77,7 +79,9 @@ public sealed class ResponsesController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Save(Guid responseId, ResponseFormInput form, CancellationToken cancellationToken)
     {
-        var snapshot = await _responses.GetAsync(responseId, cancellationToken);
+        ResponseSnapshot snapshot;
+        try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (!TryParseAnswers(snapshot, form, out var answers, out var fieldErrors))
             return SaveError(snapshot, form, answers, fieldErrors, StatusCodes.Status422UnprocessableEntity);
         try
@@ -104,7 +108,9 @@ public sealed class ResponsesController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Navigate(Guid responseId, ResponseFormInput form, CancellationToken cancellationToken)
     {
-        var snapshot = await _responses.GetAsync(responseId, cancellationToken);
+        ResponseSnapshot snapshot;
+        try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (!TryParseAnswers(snapshot, form, out var answers, out var fieldErrors))
             return SaveError(snapshot, form, answers, fieldErrors, StatusCodes.Status422UnprocessableEntity);
         ResponseSnapshot saved;
@@ -130,7 +136,9 @@ public sealed class ResponsesController : Controller
     [HttpGet]
     public async Task<IActionResult> Review(Guid responseId, CancellationToken cancellationToken)
     {
-        var snapshot = await _responses.GetAsync(responseId, cancellationToken);
+        ResponseSnapshot snapshot;
+        try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(ReceiptUrl(responseId));
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         ViewData["SubmitUrl"] = SubmitUrl(responseId);
@@ -150,7 +158,9 @@ public sealed class ResponsesController : Controller
         }
         catch (NotFoundException) { }
 
-        var snapshot = await _responses.GetAsync(responseId, cancellationToken);
+        ResponseSnapshot snapshot;
+        try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (!TryParseAnswers(snapshot, form, out var answers, out var fieldErrors))
             return SubmitError(snapshot, answers, fieldErrors, "Check the highlighted answers and try again.");
         try
@@ -176,7 +186,9 @@ public sealed class ResponsesController : Controller
     [HttpGet]
     public async Task<IActionResult> Receipt(Guid responseId, string? format = null, CancellationToken cancellationToken = default)
     {
-        var receipt = await _submissions.GetReceiptAsync(responseId, cancellationToken);
+        SubmissionReceipt receipt;
+        try { receipt = await _submissions.GetReceiptAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
         if (StringComparer.OrdinalIgnoreCase.Equals(format, "json") || Request.Headers.Accept.Any(value => value?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true))
         {
             var payload = new Dictionary<string, object?> { ["submissionId"] = receipt.SubmissionId, ["responseId"] = receipt.ResponseId,

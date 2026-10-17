@@ -48,9 +48,18 @@ public sealed class RuntimeJourneyTests
         await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
         await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
         await page.Locator("[data-response-id]").EvaluateAsync("element => element.dataset.saveDelay = '5000'");
-        await page.RouteAsync("**/Save", route => route.AbortAsync());
+        await page.RouteAsync("**/Save", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            Status = 503,
+            ContentType = "text/plain",
+            Body = "Injected save failure"
+        }));
+        var failedSaveResponse = page.WaitForResponseAsync(response =>
+            response.Url.EndsWith("/Save", StringComparison.Ordinal) && response.Status == 503,
+            new PageWaitForResponseOptions { Timeout = 10000 });
         await page.Locator("[name='Answers[1].Text']").FillAsync("keep this value");
         await page.GetByRole(AriaRole.Button, new() { Name = "Save & Continue" }).ClickAsync();
+        (await failedSaveResponse).Status.Should().Be(503);
         await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "could not be saved" }).WaitForAsync(new() { Timeout = 5000 });
         (await page.Locator("[name='Answers[1].Text']").InputValueAsync()).Should().Be("keep this value");
         (await page.Locator(".qab-progress").InnerTextAsync()).Should().Contain("Category 1 of");

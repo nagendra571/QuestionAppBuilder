@@ -43,6 +43,11 @@
         input[type="text"], input[type="password"] { width: 100%; max-width: 24rem; padding: 0.5rem; border: 1px solid var(--qab-border); border-radius: 4px; font: inherit; background: var(--qab-panel); }
         .validation-summary-errors { color: var(--qab-danger); }
         .validation-summary-errors ul { margin: 0.25rem 0 1rem; padding-left: 1.25rem; }
+        @@media (max-width: 480px) {
+            .qab-host-bar { flex-wrap: wrap; align-items: flex-start; padding: 0.75rem; }
+            .qab-host-nav { flex: 1 0 100%; flex-wrap: wrap; margin: 0.5rem 0 0; gap: 0.5rem 0.75rem; }
+            .qab-host-content main { padding: 1rem 0.75rem; }
+        }
     </style>
 </head>
 <body>
@@ -62,8 +67,8 @@
             </form>
         }
     </header>
-    <main>
+    <div class="qab-host-content">
         @RenderBody()
-    </main>
+    </div>
 </body>
 </html>

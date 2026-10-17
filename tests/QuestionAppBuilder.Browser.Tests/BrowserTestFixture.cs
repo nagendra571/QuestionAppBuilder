@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using System.Reflection;
 using QuestionAppBuilder.Application.Access;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Responses;
@@ -27,8 +28,9 @@ internal sealed class BrowserTestFixture : IAsyncDisposable
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseStaticWebAssets();
         builder.WebHost.UseUrls("https://127.0.0.1:0");
+        builder.Services.AddControllersWithViews().AddApplicationPart(Assembly.Load("QuestionAppBuilder.SampleHost"));
         builder.Services.AddQuestionAppBuilderRuntime(options =>
-        { options.FillPolicy = "Fill"; options.BasePath = "/App"; options.LayoutName = null!; options.PublicBaseUri = new Uri("https://forms.example.test"); });
+        { options.FillPolicy = "Fill"; options.BasePath = "/App"; options.LayoutName = "_Layout"; options.PublicBaseUri = new Uri("https://forms.example.test"); });
         builder.Services.AddSingleton<IDefinitionEvaluator>(new DefinitionEvaluator());
         builder.Services.AddSingleton<IResponseService>(runtime);
         builder.Services.AddSingleton<ISubmissionCoordinator>(runtime);

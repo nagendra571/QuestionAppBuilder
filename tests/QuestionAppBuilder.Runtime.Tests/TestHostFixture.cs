@@ -92,6 +92,7 @@ public sealed class TestHostFixture : IAsyncDisposable
             var receipt = new SubmissionReceipt(SubmissionCount, request.ResponseId, DateTime.UtcNow, Graph.Version.ConfirmationText,
                 Graph.Version.ResultVisibility == ResultVisibility.ConfirmationOnly ? null : result.Score.Total,
                 Graph.Version.ResultVisibility == ResultVisibility.CategoryBreakdown ? result.Score.Categories : null);
+            _responses[request.ResponseId] = snapshot with { Status = ResponseStatus.Submitted };
             _receipts[request.RequestId] = receipt; _requestResponses[request.RequestId] = request.ResponseId;
             return Task.FromResult(receipt);
         }
