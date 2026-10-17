@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="7.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.*" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\QuestionAppBuilder.SampleHost\QuestionAppBuilder.SampleHost.csproj" />
+    <ProjectReference Include="..\..\src\QuestionAppBuilder.Reports\QuestionAppBuilder.Reports.csproj" />
+  </ItemGroup>
+</Project>

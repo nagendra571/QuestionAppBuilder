@@ -1,0 +1,44 @@
+@model ReportSubmissionsViewModel
+@{
+    ViewData["Title"] = "Submissions";
+}
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Reports/css/reports.css" />
+<section class="qab-report" aria-labelledby="submissions-title">
+    <h1 id="submissions-title">Submissions</h1>
+    <p>Submitted times are shown in UTC. Results are ordered newest first; the next page uses a stable timestamp and submission-ID cursor.</p>
+    <form method="get" asp-action="Submissions" class="qab-report-filters">
+        <div><label for="applicationId">Application ID</label><input id="applicationId" name="applicationId" type="number" min="1" value="@Model.Filter.ApplicationId" /></div>
+        <div><label for="versionId">Version ID</label><input id="versionId" name="versionId" type="number" min="1" value="@Model.Filter.VersionId" /></div>
+        <div><label for="from">From date</label><input id="from" name="from" type="date" value="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" /></div>
+        <div><label for="through">Through date</label><input id="through" name="through" type="date" value="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")" /></div>
+        <div><label for="search">Owner reference</label><input id="search" name="search" type="search" maxlength="128" value="@Model.Filter.Search" /></div>
+        <button type="submit">Apply filters</button>
+    </form>
+    @if (Model.Page.Items.Count == 0)
+    {
+        <p>No submissions match these filters.</p>
+    }
+    else
+    {
+        <table class="qab-report-table">
+            <caption>Filtered submitted responses.</caption>
+            <thead><tr><th scope="col">Reference</th><th scope="col">Application</th><th scope="col">Version</th><th scope="col">Submitted (UTC)</th><th scope="col">Owner reference</th><th scope="col">Total</th></tr></thead>
+            <tbody>
+            @foreach (var item in Model.Page.Items)
+            {
+                <tr>
+                    <th scope="row"><a asp-action="Detail" asp-route-id="@item.Id">@item.Id</a></th>
+                    <td>@item.ApplicationName</td><td>v@item.VersionNumber · @item.DisplayName</td>
+                    <td><time datetime="@item.SubmittedUtc.ToString("O")">@item.SubmittedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</time></td>
+                    <td>@(item.OwnerReference ?? "Not recorded")</td><td>@item.TotalScore</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+    @if (ViewData["NextUrl"] is string nextUrl)
+    {
+        <p class="qab-report-next"><a href="@nextUrl">Next page</a></p>
+    }
+    <p><a asp-action="Index">Back to analysis</a></p>
+</section>

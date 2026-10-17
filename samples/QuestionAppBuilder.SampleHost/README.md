@@ -11,7 +11,7 @@ dotnet dev-certs https --trust
 dotnet run --project samples/QuestionAppBuilder.SampleHost --urls https://localhost:5001
 ```
 
-The sample applies EF Core migrations only in Development. Its default connection string targets the `QuestionAppBuilderSampleHost` LocalDB catalog. `/` opens the designer, `/ConfigureApp/Applications` lists applications, `/App/Mine` lists the signed-in user's responses, and `/App/{applicationId}` opens a published questionnaire.
+The sample applies EF Core migrations only in Development. Its default connection string targets the `QuestionAppBuilderSampleHost` LocalDB catalog. `/` opens the designer, `/ConfigureApp/Applications` lists applications, `/App/Mine` lists the signed-in user's responses, `/App/{applicationId}` opens a published questionnaire, and `/Reports` opens restricted submission analysis.
 
 Development mode exposes a local-only sign-in and an in-memory mail sink. All sample users use `DevPassword!1`:
 
@@ -19,7 +19,7 @@ Development mode exposes a local-only sign-in and an in-memory mail sink. All sa
 | --- | --- | --- |
 | `designer` | `Designer` | Design applications |
 | `filler` | `Filler` | Respond to questionnaires |
-| `analyst` | `Analyst` | View reports when the Reports surface is installed |
+| `analyst` | `Analyst` | View submission reports |
 
 The Development mail sink keeps response links in process memory; it is not durable email delivery. `DevAuth` and the mail sink are registered only in Development and are absent from deployed environments.
 
@@ -32,6 +32,8 @@ The Development mail sink keeps response links in process memory; it is not dura
 | `QuestionAppBuilderEditor:DesignPolicy` | Required named design policy, default `QuestionAppBuilder.Design`; blank values fail startup. |
 | `QuestionAppBuilderRuntime:BasePath` | Respondent prefix, default `/App`. |
 | `QuestionAppBuilderRuntime:PublicBaseUri` | Trusted HTTPS origin used to construct email access links. |
+| `QuestionAppBuilderReports:BasePath` | Reports prefix, default `/Reports`. |
+| `QuestionAppBuilderReports:DisplayTimeZone` | Time zone used to interpret local report date filters, default `UTC`. |
 | `QuestionAppBuilder:Authorization:DesignRole` | Host role required by the design policy; default `Designer`. |
 | `QuestionAppBuilder:Authorization:ReportRole` | Host role required by the report policy; default `Analyst`. |
 | `QuestionAppBuilder:Identity:Authority` | HTTPS OpenID Connect authority, required outside Development. |

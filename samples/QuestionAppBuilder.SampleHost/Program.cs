@@ -7,6 +7,9 @@ using QuestionAppBuilder.Editor.Options;
 using QuestionAppBuilder.Editor.Routing;
 using QuestionAppBuilder.Infrastructure.DependencyInjection;
 using QuestionAppBuilder.Infrastructure.Persistence;
+using QuestionAppBuilder.Reports.DependencyInjection;
+using QuestionAppBuilder.Reports.Options;
+using QuestionAppBuilder.Reports.Routing;
 using QuestionAppBuilder.SampleHost.Integration;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +34,13 @@ builder.Services.AddQuestionAppBuilderEditor(o =>
     o.DesignPolicy = builder.Configuration["QuestionAppBuilderEditor:DesignPolicy"] ?? o.DesignPolicy;
 });
 HostIdentityRegistration.AddPlatformPolicies(builder.Services, builder.Configuration);
+builder.Services.AddQuestionAppBuilderReports(o =>
+{
+    o.BasePath = builder.Configuration["QuestionAppBuilderReports:BasePath"] ?? o.BasePath;
+    o.ReportPolicy = HostIdentityRegistration.ReportPolicy;
+    o.LayoutName = builder.Configuration["QuestionAppBuilderReports:LayoutName"] ?? o.LayoutName;
+    o.DisplayTimeZone = builder.Configuration["QuestionAppBuilderReports:DisplayTimeZone"] ?? o.DisplayTimeZone;
+});
 
 var app = builder.Build();
 
@@ -53,6 +63,7 @@ var editorOptions = app.Services.GetRequiredService<QuestionAppBuilderEditorOpti
 
 app.MapQuestionAppBuilderEditor();
 app.MapQuestionAppBuilderRuntime();
+app.MapQuestionAppBuilderReports();
 app.MapControllerRoute(name: "area-conventional", pattern: "{area:exists}/{controller=Applications}/{action=Index}/{id?}");
 app.MapGet("/", () => Results.Redirect($"{editorOptions.BasePath.TrimEnd('/')}/Applications"));
 if (builder.Environment.IsDevelopment())

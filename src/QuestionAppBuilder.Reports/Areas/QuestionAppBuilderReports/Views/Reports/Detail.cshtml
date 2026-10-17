@@ -1,0 +1,67 @@
+@model SubmissionDetail
+@{
+    ViewData["Title"] = $"Submission {Model.Id}";
+}
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Reports/css/reports.css" />
+<article class="qab-report" aria-labelledby="detail-title">
+    <h1 id="detail-title">Submission @Model.Id</h1>
+    <dl class="qab-report-metadata">
+        <dt>Application</dt><dd>@Model.ApplicationName</dd>
+        <dt>Version</dt><dd>v@Model.VersionNumber · @Model.DisplayName</dd>
+        <dt>Submitted (UTC)</dt><dd><time datetime="@Model.SubmittedUtc.ToString("O")">@Model.SubmittedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</time></dd>
+        <dt>Owner reference</dt><dd>@(Model.OwnerReference ?? "Not recorded")</dd>
+        <dt>Total score</dt><dd>@Model.TotalScore</dd>
+    </dl>
+
+    <h2>Category scores</h2>
+    @if (Model.Categories.Count == 0)
+    {
+        <p>No category score snapshot was recorded for this submission.</p>
+    }
+    else
+    {
+        <table class="qab-report-table"><caption>Stored category score snapshot.</caption><thead><tr><th scope="col">Category</th><th scope="col">Score</th></tr></thead><tbody>
+        @foreach (var category in Model.Categories.OrderBy(category => category.SortOrder))
+        { <tr><th scope="row">@category.Name</th><td>@category.Score</td></tr> }
+        </tbody></table>
+    }
+
+    <h2>Answers and applicability</h2>
+    <table class="qab-report-table"><caption>Answers are shown from the stored submission snapshot; scores are not recalculated.</caption>
+        <thead><tr><th scope="col">Question</th><th scope="col">State</th><th scope="col">Answer</th><th scope="col">Points</th></tr></thead>
+        <tbody>
+        @foreach (var question in Model.Questions)
+        {
+            <tr>
+                <th scope="row">@question.Label</th>
+                <td>@(question.IsApplicable is null ? "Applicability not recorded" : question.IsApplicable.Value ? "Applicable" : "Not applicable")</td>
+                <td>
+                    @if (question.IsApplicable == false) { <span>Not applicable</span> }
+                    else if (!question.HasAnswer) { <span>Unanswered</span> }
+                    else if (question.SelectedOptions.Count > 0) { @string.Join(", ", question.SelectedOptions) }
+                    else if (question.NumberValue.HasValue) { @question.NumberValue.Value }
+                    else { @question.TextValue }
+                </td>
+                <td>@question.PointsEarned</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    <h2>Stored scoring trace</h2>
+    @if (Model.RuleTraces.Count == 0)
+    {
+        <p>No rule trace was recorded for this submission.</p>
+    }
+    else
+    {
+        <table class="qab-report-table"><caption>Recorded rule outcomes; this view does not run the scoring engine.</caption>
+            <thead><tr><th scope="col">Question</th><th scope="col">Rule</th><th scope="col">Matched</th><th scope="col">Contributed</th><th scope="col">Points</th></tr></thead>
+            <tbody>
+            @foreach (var trace in Model.RuleTraces)
+            { <tr><th scope="row">@trace.QuestionLabel</th><td>@trace.RuleId</td><td>@(trace.Matches ? "Yes" : "No")</td><td>@(trace.Contributes ? "Yes" : "No")</td><td>@trace.Points</td></tr> }
+            </tbody>
+        </table>
+    }
+    <p><a asp-action="Submissions">Back to submissions</a></p>
+</article>

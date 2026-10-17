@@ -2,6 +2,7 @@
 @{
     var editorBasePath = Configuration["QuestionAppBuilderEditor:BasePath"] ?? "/ConfigureApp";
     var runtimeBasePath = Configuration["QuestionAppBuilderRuntime:BasePath"] ?? "/App";
+    var reportsBasePath = Configuration["QuestionAppBuilderReports:BasePath"] ?? "/Reports";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -50,6 +51,7 @@
         <nav aria-label="Platform surfaces" class="qab-host-nav">
             <a href="@(editorBasePath.TrimEnd('/') + "/Applications")">Design</a>
             <a href="@(runtimeBasePath.TrimEnd('/') + "/Mine")">My responses</a>
+            <a href="@(reportsBasePath.TrimEnd('/') + "/")">Reports</a>
         </nav>
         @if (User.Identity?.IsAuthenticated == true)
         {

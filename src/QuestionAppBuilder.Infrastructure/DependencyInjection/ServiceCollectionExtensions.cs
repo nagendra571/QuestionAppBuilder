@@ -14,6 +14,8 @@ using QuestionAppBuilder.Infrastructure.Responses;
 using QuestionAppBuilder.Infrastructure.Access;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using QuestionAppBuilder.Infrastructure.Repositories;
+using QuestionAppBuilder.Application.Reporting;
+using QuestionAppBuilder.Infrastructure.Reporting;
 
 namespace QuestionAppBuilder.Infrastructure.DependencyInjection;
 
@@ -56,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ITrustedActorContext, UnconfiguredTrustedActorContext>();
         services.AddOptions<ResponseAccessOptions>();
         services.AddScoped<IResponseAccessService, ResponseAccessService>();
+        services.AddScoped<IReportQueries, ReportQueries>();
 
         return services;
     }

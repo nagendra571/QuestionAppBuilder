@@ -1,0 +1,76 @@
+@model ReportIndexViewModel
+@inject QuestionAppBuilder.Reports.Options.QuestionAppBuilderReportsOptions ReportsOptions
+@{
+    ViewData["Title"] = "Submission analysis";
+}
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Reports/css/reports.css" />
+<section class="qab-report" aria-labelledby="report-title">
+    <h1 id="report-title">Submission analysis</h1>
+    <p>Review submitted responses and compare totals within each published version.</p>
+
+    <form method="get" asp-action="Index" class="qab-report-filters">
+        <div><label for="applicationId">Application</label>
+            <select id="applicationId" name="applicationId">
+                <option value="">All applications</option>
+                @foreach (var app in Model.Overview.Applications)
+                {
+                    <option value="@app.Id" selected="@(Model.Filter.ApplicationId == app.Id)">@app.Name</option>
+                }
+            </select>
+        </div>
+        <div><label for="versionId">Version</label>
+            <select id="versionId" name="versionId">
+                <option value="">All versions</option>
+                @foreach (var version in Model.Overview.Applications.SelectMany(app => app.Versions))
+                {
+                    <option value="@version.Id" selected="@(Model.Filter.VersionId == version.Id)">v@version.VersionNumber · @version.DisplayName</option>
+                }
+            </select>
+        </div>
+        <div><label for="from">From date (@ReportsOptions.DisplayTimeZone)</label><input id="from" name="from" type="date" value="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" /></div>
+        <div><label for="through">Through date</label><input id="through" name="through" type="date" value="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")" /></div>
+        <div><label for="search">Owner reference</label><input id="search" name="search" type="search" maxlength="128" value="@Model.Filter.Search" /></div>
+        <button type="submit">Apply filters</button>
+    </form>
+
+    <div class="qab-report-summary" aria-label="Submission totals">
+        <div><strong>@Model.Overview.SubmittedCount</strong><span>Submitted</span></div>
+        <div><strong>@Model.Overview.InProgressCount</strong><span>In progress</span></div>
+        <div><strong>@(Model.Overview.AverageTotalScore?.ToString("0.##") ?? "—")</strong><span>Average total</span></div>
+    </div>
+
+    <div class="qab-report-heading-row">
+        <h2>Scores by version</h2>
+        <a asp-action="Submissions" asp-route-applicationId="@Model.Filter.ApplicationId" asp-route-versionId="@Model.Filter.VersionId"
+           asp-route-from="@Model.Filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-through="@Model.Filter.ThroughDate?.ToString("yyyy-MM-dd")"
+           asp-route-search="@Model.Filter.Search">View submissions</a>
+    </div>
+    @if (Model.Overview.Versions.Count == 0)
+    {
+        <p>No submissions match these filters.</p>
+    }
+    else
+    {
+        <table class="qab-report-table">
+            <caption>Submission counts and total-score distribution, kept separate for every published application version.</caption>
+            <thead><tr><th scope="col">Version</th><th scope="col">Submissions</th><th scope="col">Average total</th><th scope="col">Score</th><th scope="col">Count</th></tr></thead>
+            <tbody>
+            @foreach (var version in Model.Overview.Versions)
+            {
+                @foreach (var score in version.ScoreCounts)
+                {
+                    <tr>
+                        @if (score == version.ScoreCounts[0])
+                        {
+                            <th scope="rowgroup" rowspan="@version.ScoreCounts.Count">v@version.VersionNumber · @version.DisplayName</th>
+                            <td rowspan="@version.ScoreCounts.Count">@version.SubmissionCount</td>
+                            <td rowspan="@version.ScoreCounts.Count">@version.AverageTotalScore.ToString("0.##")</td>
+                        }
+                        <th scope="row">@score.TotalScore</th><td>@score.Count</td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    }
+</section>

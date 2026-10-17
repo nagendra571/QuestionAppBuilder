@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Editor\QuestionAppBuilder.Editor.csproj" />
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Core\QuestionAppBuilder.Core.csproj" />
     <ProjectReference Include="..\..\src\QuestionAppBuilder.Infrastructure\QuestionAppBuilder.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\QuestionAppBuilder.Reports\QuestionAppBuilder.Reports.csproj" />
   </ItemGroup>
 
 </Project>
