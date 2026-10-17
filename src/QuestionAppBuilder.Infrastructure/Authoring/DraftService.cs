@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Domain.Entities;
@@ -13,11 +14,13 @@ public sealed class DraftService : IDraftService
 {
     private readonly IDbContextFactory<QuestionAppBuilderDbContext> _factory;
     private readonly DefinitionValidator _validator;
+    private readonly bool _hasEmailSender;
 
-    public DraftService(IDbContextFactory<QuestionAppBuilderDbContext> factory, IDefinitionEvaluator evaluator)
+    public DraftService(IDbContextFactory<QuestionAppBuilderDbContext> factory, IDefinitionEvaluator evaluator, bool emailSenderConfigured = false)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _validator = new DefinitionValidator(evaluator);
+        _hasEmailSender = emailSenderConfigured;
     }
 
     public async Task<DraftSnapshot> GetAsync(int applicationId, CancellationToken ct = default)
@@ -67,6 +70,8 @@ public sealed class DraftService : IDraftService
             var graph = await LoadDraft(db, request.ApplicationId, tracking: true, ct)
                 ?? throw new DefinitionValidationException("No draft to publish.");
             EnsureRevision(graph, request.ExpectedRevision);
+            if (graph.Version.RespondentAccessMode == RespondentAccessMode.EmailLink && !_hasEmailSender)
+                throw new DefinitionValidationException("Email-link access requires a configured response email sender.");
             var review = _validator.Review(graph, request.ExpectedRevision);
             if (review.Errors.Count != 0)
                 throw new DefinitionValidationException(string.Join(" ", review.Errors.Select(e => e.Message)));

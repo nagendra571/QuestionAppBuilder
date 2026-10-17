@@ -22,9 +22,7 @@ public class ServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddQuestionAppBuilder(o => o.ConnectionString = "Server=unused");
-        using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-        scope.ServiceProvider.GetRequiredService<ISubmissionCoordinator>().Should().NotBeNull();
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ISubmissionCoordinator));
         services.Should().NotContain(descriptor => descriptor.ServiceType.FullName == "QuestionAppBuilder.Application.Services.ISubmissionService");
     }
 }

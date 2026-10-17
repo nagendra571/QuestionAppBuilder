@@ -42,11 +42,36 @@ public sealed class ResponseService : IResponseService
             await SqlApplicationLock.AcquireAsync(db, applicationId, ct);
             var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, ct)
                 ?? throw new NotFoundException($"Application {applicationId} was not found.");
-            if (!application.AcceptNewResponses || application.CurrentVersionId is not int currentVersionId)
+            if (!application.AcceptNewResponses)
                 throw new NotFoundException($"Application {applicationId} is not accepting new responses.");
-            if (identity.GrantedVersionId is int grantedVersion && grantedVersion != currentVersionId)
-                throw new NotFoundException("The response start was not found.");
-            var version = await db.ApplicationVersions.SingleOrDefaultAsync(v => v.Id == currentVersionId
+            ResponseAccessToken? accessToken = null;
+            int versionId;
+            if (identity.AccessTokenId is Guid tokenId)
+            {
+                accessToken = await db.ResponseAccessTokens.SingleOrDefaultAsync(t => t.Id == tokenId && t.ApplicationId == application.Id
+                    && t.OwnerKey == identity.OwnerKey && t.ConsumedUtc != null, ct);
+                if (accessToken is null || identity.GrantedVersionId != accessToken.ApplicationVersionId)
+                    throw new NotFoundException("The response start was not found.");
+                if (accessToken.ResponseId is Guid existingResponseId)
+                {
+                    var existing = await db.ResponseDrafts.Include(r => r.Answers).ThenInclude(a => a.SelectedOptions)
+                        .SingleOrDefaultAsync(r => r.Id == existingResponseId, ct);
+                    if (existing is null || !CanAccess(identity, existing)) throw new NotFoundException("The response was not found.");
+                    var existingGraph = await LoadGraphAsync(db, existing.ApplicationVersionId, ct);
+                    await transaction.CommitAsync(ct);
+                    return Snapshot(existing, existingGraph, ToValues(existing.Answers), application);
+                }
+                versionId = accessToken.ApplicationVersionId;
+            }
+            else
+            {
+                if (application.CurrentVersionId is not int currentVersionId)
+                    throw new NotFoundException($"Application {applicationId} is not accepting new responses.");
+                if (identity.GrantedVersionId is int grantedVersion && grantedVersion != currentVersionId)
+                    throw new NotFoundException("The response start was not found.");
+                versionId = currentVersionId;
+            }
+            var version = await db.ApplicationVersions.SingleOrDefaultAsync(v => v.Id == versionId
                 && v.ApplicationId == application.Id && v.Status == VersionStatus.Published, ct)
                 ?? throw new NotFoundException("The published definition was not found.");
             var now = DateTime.UtcNow;
@@ -56,6 +81,7 @@ public sealed class ResponseService : IResponseService
                 OwnerKey = identity.OwnerKey, Status = ResponseStatus.InProgress, CreatedUtc = now, UpdatedUtc = now
             };
             db.ResponseDrafts.Add(response);
+            if (accessToken is not null) accessToken.ResponseId = response.Id;
             await db.SaveChangesAsync(ct);
             var graph = await LoadGraphAsync(db, version.Id, ct);
             await transaction.CommitAsync(ct);

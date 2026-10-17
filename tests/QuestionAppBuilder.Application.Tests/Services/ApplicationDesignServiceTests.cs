@@ -49,6 +49,22 @@ public class ApplicationDesignServiceTests
     }
 
     [Fact]
+    public async Task Email_link_publication_requires_an_email_sender()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Email access", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "General");
+        await ctx.Service.AddQuestionAsync(category.Id, "Name", AnswerType.Textbox);
+        var draft = await ctx.Service.GetDraftGraphAsync(application.Id);
+        draft.Version.RespondentAccessMode = RespondentAccessMode.EmailLink;
+        await ctx.Context.SaveChangesAsync();
+
+        Func<Task> publish = () => ctx.Service.PublishAsync(application.Id);
+
+        await publish.Should().ThrowAsync<DefinitionValidationException>().WithMessage("*email sender*");
+    }
+
+    [Fact]
     public async Task Duplicate_name_is_rejected()
     {
         using var ctx = new TestContext();

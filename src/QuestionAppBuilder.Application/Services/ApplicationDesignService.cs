@@ -14,12 +14,14 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 {
     private readonly IApplicationRepository _repository;
     private readonly DefinitionValidator _definitionValidator;
+    private readonly bool _emailSenderConfigured;
 
-    public ApplicationDesignService(IApplicationRepository repository, DefinitionValidator? definitionValidator = null)
+    public ApplicationDesignService(IApplicationRepository repository, DefinitionValidator? definitionValidator = null, bool emailSenderConfigured = false)
     {
         ArgumentNullException.ThrowIfNull(repository);
         _repository = repository;
         _definitionValidator = definitionValidator ?? new DefinitionValidator(new DefinitionEvaluator());
+        _emailSenderConfigured = emailSenderConfigured;
     }
 
     public async Task<IReadOnlyList<ApplicationType>> ListApplicationTypesAsync(CancellationToken ct = default)
@@ -345,6 +347,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         {
             throw new DefinitionValidationException("No draft to publish.");
         }
+        if (graph.Version.RespondentAccessMode == RespondentAccessMode.EmailLink && !_emailSenderConfigured)
+            throw new DefinitionValidationException("Email-link access requires a configured response email sender.");
         var review = _definitionValidator.Review(graph, graph.Version.RevisionNonce.ToByteArray());
         if (review.Errors.Count != 0)
             throw new DefinitionValidationException(string.Join(" ", review.Errors.Select(issue => issue.Message)));

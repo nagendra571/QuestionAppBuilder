@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Authoring;
+using QuestionAppBuilder.Application.Access;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
@@ -85,7 +86,19 @@ public class DraftConcurrencyTests
         saved.Definition.Categories.Single().Name.Should().Be("Winner");
     }
 
-    private static async Task SeedDraftAsync(SqlServerDatabase database, bool includeOverlappingRules = false)
+    [SqlServerFact]
+    public async Task Email_mode_cannot_publish_without_sender()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await SeedDraftAsync(database, accessMode: RespondentAccessMode.EmailLink);
+        var drafts = new DraftService(new DatabaseContextFactory(database), new DefinitionEvaluator(), emailSenderConfigured: false);
+        var snapshot = await drafts.GetAsync(1);
+        Func<Task> publish = () => drafts.PublishAsync(new PublishRequest(1, snapshot.Revision, new HashSet<string>()));
+        await publish.Should().ThrowAsync<DefinitionValidationException>().WithMessage("*email sender*");
+    }
+
+    private static async Task SeedDraftAsync(SqlServerDatabase database, bool includeOverlappingRules = false,
+        RespondentAccessMode accessMode = RespondentAccessMode.HostSignIn)
     {
         await using var seed = database.CreateContext();
         await seed.Database.MigrateAsync();
@@ -102,7 +115,7 @@ public class DraftConcurrencyTests
         var app = new QuestionAppBuilder.Domain.Entities.Application
         {
             Name = "Draft revision", ApplicationTypeId = 1, CreatedUtc = DateTime.UtcNow, UpdatedUtc = DateTime.UtcNow,
-            Versions = { new ApplicationVersion { VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = DateTime.UtcNow, DisplayName = "Draft revision" } }
+            Versions = { new ApplicationVersion { VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = DateTime.UtcNow, DisplayName = "Draft revision", RespondentAccessMode = accessMode } }
         };
         app.Versions.Single().Categories.Add(new Category
         {
