@@ -12,7 +12,7 @@ public class ScoringRuleOptionConfiguration : IEntityTypeConfiguration<ScoringRu
         builder.HasKey(o => o.Id);
         builder.HasIndex(o => new { o.ScoringRuleId, o.QuestionOptionId }).IsUnique();
 
-        builder.HasOne<QuestionOption>()
+        builder.HasOne(o => o.QuestionOption)
             .WithMany()
             .HasForeignKey(o => o.QuestionOptionId)
             .OnDelete(DeleteBehavior.Restrict);

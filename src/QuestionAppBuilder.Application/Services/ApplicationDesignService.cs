@@ -263,10 +263,10 @@ public sealed class ApplicationDesignService : IApplicationDesignService
                         throw new DefinitionValidationException($"Option {optionId} does not belong to question {questionId}.");
                     }
 
-                    var targetOptionId = editable.CloneMap is null
-                        ? optionId
-                        : editable.CloneMap.Options[optionId].Id;
-                    rule.Options.Add(new ScoringRuleOption { QuestionOptionId = targetOptionId });
+                    var targetOption = editable.CloneMap is null
+                        ? sourceQuestion.Options.Single(o => o.Id == optionId)
+                        : editable.CloneMap.Options[optionId];
+                    rule.Options.Add(new ScoringRuleOption { QuestionOption = targetOption });
                 }
 
                 break;
@@ -516,7 +516,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         foreach (var (rule, sourceOptionId) in map.RuleOptionLinks)
         {
-            rule.Options.Add(new ScoringRuleOption { QuestionOptionId = map.Options[sourceOptionId].Id });
+            rule.Options.Add(new ScoringRuleOption { QuestionOption = map.Options[sourceOptionId] });
         }
     }
 
