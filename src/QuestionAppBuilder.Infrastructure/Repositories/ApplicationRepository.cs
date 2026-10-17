@@ -31,6 +31,9 @@ public sealed class ApplicationRepository : IApplicationRepository
     public async Task<IReadOnlyList<ApplicationType>> ListApplicationTypesAsync(CancellationToken ct = default)
         => await _context.ApplicationTypes.OrderBy(t => t.SortOrder).ThenBy(t => t.Id).ToListAsync(ct);
 
+    public Task<bool> ApplicationTypeNameExistsAsync(string name, CancellationToken ct = default)
+        => _context.ApplicationTypes.AnyAsync(t => t.Name.ToUpper() == name.ToUpper(), ct);
+
     public async Task<ApplicationVersionGraph?> GetDraftGraphAsync(int applicationId, CancellationToken ct = default)
     {
         var version = await GraphsWithChildren()
@@ -78,6 +81,8 @@ public sealed class ApplicationRepository : IApplicationRepository
     }
 
     public void Add(ApplicationEntity application) => _context.Applications.Add(application);
+
+    public void Add(ApplicationType applicationType) => _context.ApplicationTypes.Add(applicationType);
 
     public void AddGraph(ApplicationVersionGraph graph) => _context.ApplicationVersions.Add(graph.Version);
 

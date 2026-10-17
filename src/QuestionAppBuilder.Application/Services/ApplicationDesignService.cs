@@ -27,6 +27,20 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     public async Task<IReadOnlyList<ApplicationType>> ListApplicationTypesAsync(CancellationToken ct = default)
         => await _repository.ListApplicationTypesAsync(ct);
 
+    public async Task<ApplicationType> CreateApplicationTypeAsync(string name, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var normalized = name.Trim();
+        EnsureMaxLength(normalized, ValidationLimits.ApplicationTypeNameMaxLength, "Application type name");
+        if (await _repository.ApplicationTypeNameExistsAsync(normalized, ct))
+            throw new DuplicateApplicationTypeNameException(normalized);
+        var types = await _repository.ListApplicationTypesAsync(ct);
+        var applicationType = new ApplicationType { Name = normalized, SortOrder = NextSortOrder(types.Select(x => x.SortOrder)) };
+        _repository.Add(applicationType);
+        await _repository.SaveChangesAsync(ct);
+        return applicationType;
+    }
+
     public async Task<ApplicationEntity> CreateApplicationAsync(string name, int applicationTypeId, CancellationToken ct = default)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Application name");
@@ -153,6 +167,39 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         var removedOptions = editable.Target.Elements.Where(e => e.Question is not null).SelectMany(e => e.Question!.Options).Select(o => o.Id).ToHashSet();
         PruneVisibilityConditions(editable.Graph, removedQuestions, removedOptions, removedElements, new HashSet<int> { editable.Target.Id });
         editable.Graph.Version.Categories.Remove(editable.Target);
+        await _repository.SaveChangesAsync(ct);
+    }
+
+    public async Task<Category> DuplicateCategoryAsync(int categoryId, CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
+        var source = editable.Target;
+        var duplicate = new Category
+        {
+            ApplicationVersionId = editable.Graph.Version.Id,
+            Name = source.Name + " copy",
+            SortOrder = source.SortOrder,
+            LogicalKey = Guid.NewGuid(),
+        };
+        foreach (var element in source.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
+            duplicate.Elements.Add(CloneElement(element, duplicate.Elements.Count + 1));
+        var categories = editable.Graph.Version.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).ToList();
+        var index = categories.IndexOf(source);
+        categories.Insert(index + 1, duplicate);
+        editable.Graph.Version.Categories.Add(duplicate);
+        for (var position = 0; position < categories.Count; position++) categories[position].SortOrder = position + 1;
+        await _repository.SaveChangesAsync(ct);
+        return duplicate;
+    }
+
+    public async Task MoveCategoryAsync(int categoryId, int targetIndex, CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
+        var ordered = editable.Graph.Version.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).ToList();
+        EnsureIndex(targetIndex, ordered.Count);
+        ordered.Remove(editable.Target);
+        ordered.Insert(targetIndex, editable.Target);
+        for (var index = 0; index < ordered.Count; index++) ordered[index].SortOrder = index + 1;
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -299,6 +346,75 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         await _repository.SaveChangesAsync(ct);
 
         return rule;
+    }
+
+    public async Task<Element> DuplicateElementAsync(int elementId, CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
+        var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
+        var ordered = category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id).ToList();
+        var index = ordered.IndexOf(editable.Target);
+        var duplicate = CloneElement(editable.Target, index + 2);
+        ordered.Insert(index + 1, duplicate);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+        category.Elements.Add(duplicate);
+        await _repository.SaveChangesAsync(ct);
+        return duplicate;
+    }
+
+    public async Task MoveElementAsync(int elementId, int targetIndex, CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
+        var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
+        var ordered = category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id).ToList();
+        EnsureIndex(targetIndex, ordered.Count);
+        ordered.Remove(editable.Target);
+        ordered.Insert(targetIndex, editable.Target);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+        await _repository.SaveChangesAsync(ct);
+    }
+
+    public async Task<VisibilityCondition> AddVisibilityPredicateAsync(int elementId, int sourceQuestionId, ConditionOperator conditionOperator,
+        ConditionJunction junction, decimal? numberValue = null, IReadOnlyCollection<int>? optionIds = null,
+        CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
+        var source = FindQuestion(editable.Graph, sourceQuestionId) ?? throw new NotFoundException($"Question {sourceQuestionId} was not found.");
+        if (!ComesBefore(editable.Graph, sourceQuestionId, elementId))
+            throw new DefinitionValidationException("A visibility rule must use a question from an earlier section.");
+        if (!Enum.IsDefined(conditionOperator) || !Enum.IsDefined(junction))
+            throw new DefinitionValidationException("Select a supported visibility operator and ALL/ANY mode.");
+        var selectedOptions = optionIds ?? Array.Empty<int>();
+        if (conditionOperator is ConditionOperator.HasAnyOption or ConditionOperator.HasAllOptions)
+        {
+            if (source.AnswerType is not (AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes)
+                || selectedOptions.Count == 0 || selectedOptions.Any(id => source.Options.All(o => o.Id != id)))
+                throw new DefinitionValidationException("Select one or more options belonging to the source choice question.");
+        }
+        else if (conditionOperator is ConditionOperator.Equal or ConditionOperator.NotEqual or ConditionOperator.GreaterThan
+            or ConditionOperator.GreaterThanOrEqual or ConditionOperator.LessThan or ConditionOperator.LessThanOrEqual)
+        {
+            if (source.AnswerType != AnswerType.Number || numberValue is null)
+                throw new DefinitionValidationException("Numeric visibility comparisons require a number question and a numeric value.");
+        }
+        else if (numberValue is not null || selectedOptions.Count != 0)
+            throw new DefinitionValidationException("This visibility operator does not accept a value or options.");
+
+        var condition = editable.Target.VisibilityConditionId is int existingId
+            ? editable.Graph.VisibilityConditions.Single(c => c.Id == existingId)
+            : new VisibilityCondition { ApplicationVersionId = editable.Graph.Version.Id, Junction = junction };
+        condition.Junction = junction;
+        var predicate = new VisibilityPredicate { SourceQuestionId = sourceQuestionId, Operator = conditionOperator, NumberValue = numberValue };
+        foreach (var optionId in selectedOptions.Distinct())
+            predicate.Options.Add(new VisibilityPredicateOption { QuestionOption = source.Options.Single(o => o.Id == optionId) });
+        condition.Predicates.Add(predicate);
+        if (editable.Target.VisibilityConditionId is null)
+        {
+            editable.Graph.Version.VisibilityConditions.Add(condition);
+            editable.Target.VisibilityCondition = condition;
+        }
+        await _repository.SaveChangesAsync(ct);
+        return condition;
     }
 
     public async Task RemoveElementAsync(int elementId, CancellationToken ct = default, byte[]? expectedRevision = null)
@@ -585,6 +701,52 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     }
 
     private static int NextSortOrder(IEnumerable<int> sortOrders) => sortOrders.DefaultIfEmpty(0).Max() + 1;
+
+    private static bool ComesBefore(ApplicationVersionGraph graph, int sourceQuestionId, int targetElementId)
+    {
+        var sourcePosition = -1;
+        var targetPosition = -1;
+        var position = 0;
+        foreach (var category in graph.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id))
+        foreach (var element in category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
+        {
+            if (element.Id == targetElementId) targetPosition = position;
+            if (element.Question?.Id == sourceQuestionId) sourcePosition = position;
+            position++;
+        }
+        return sourcePosition >= 0 && targetPosition >= 0 && sourcePosition < targetPosition;
+    }
+
+    private static void EnsureIndex(int index, int count)
+    {
+        if (index < 0 || index >= count) throw new DefinitionValidationException("The requested order position is outside the current list.");
+    }
+
+    private static Element CloneElement(Element source, int sortOrder)
+    {
+        var clone = new Element { Kind = source.Kind, Label = source.Label + " copy", HelpText = source.HelpText, SortOrder = sortOrder, LogicalKey = Guid.NewGuid() };
+        if (source.Question is not { } question) return clone;
+        var newQuestion = new Question { AnswerType = question.AnswerType, IsRequired = question.IsRequired, ScoringMode = question.ScoringMode,
+            MaxLength = question.MaxLength, MinValue = question.MinValue, MaxValue = question.MaxValue, MinSelections = question.MinSelections, MaxSelections = question.MaxSelections };
+        var optionMap = new Dictionary<int, QuestionOption>();
+        foreach (var option in question.Options.OrderBy(o => o.SortOrder).ThenBy(o => o.Id))
+        {
+            var optionClone = new QuestionOption { Label = option.Label, Value = option.Value, SortOrder = option.SortOrder, LogicalKey = Guid.NewGuid() };
+            newQuestion.Options.Add(optionClone);
+            optionMap[option.Id] = optionClone;
+        }
+        foreach (var rule in question.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
+        {
+            var ruleClone = new ScoringRule { Family = rule.Family, Points = rule.Points, SortOrder = rule.SortOrder,
+                MinInclusive = rule.MinInclusive, MaxInclusive = rule.MaxInclusive, MembershipOperator = rule.MembershipOperator,
+                MinValue = rule.MinValue, MaxValue = rule.MaxValue, LogicalKey = Guid.NewGuid() };
+            foreach (var optionLink in rule.Options)
+                if (optionMap.TryGetValue(optionLink.QuestionOptionId, out var option)) ruleClone.Options.Add(new ScoringRuleOption { QuestionOption = option });
+            newQuestion.Rules.Add(ruleClone);
+        }
+        clone.Question = newQuestion;
+        return clone;
+    }
 
     private static void EnsureMaxLength(string value, int maxLength, string fieldName)
     {

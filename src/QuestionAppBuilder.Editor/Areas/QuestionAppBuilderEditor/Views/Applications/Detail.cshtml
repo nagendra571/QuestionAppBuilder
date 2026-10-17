@@ -64,6 +64,10 @@
 
 <div class="cv-head">
     <h1>@Model.Application.Name</h1>
+    @if (Model.IsEditable && Model.DraftGraph is not null)
+    {
+        <a class="cv-btn" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@Model.Application.Id">Open authoring workspace</a>
+    }
 </div>
 
 <div class="cv-statusline">

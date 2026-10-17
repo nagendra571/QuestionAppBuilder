@@ -1,0 +1,19 @@
+@model ApplicationTypesViewModel
+@{
+    ViewData["Title"] = "Application types";
+}
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor.css" />
+<header class="aw-page-head"><div><a asp-controller="Applications" asp-action="Index" class="aw-back">Back to applications</a><h1>Application types</h1><p>Manage the classifications shown when creating a questionnaire.</p></div></header>
+<section class="aw-panel">
+    <h2>Current types</h2>
+    <ul>@foreach (var type in Model.Types.OrderBy(x => x.SortOrder)) { <li>@type.Name</li> }</ul>
+</section>
+<section class="aw-panel">
+    <h2>Add a type</h2>
+    @if (!ViewData.ModelState.IsValid) { <div class="aw-alert" role="alert">@Html.ValidationSummary()</div> }
+    <form method="post" asp-controller="ApplicationTypes" asp-action="Create">
+        @Html.AntiForgeryToken()
+        <label class="aw-field">Type name<input name="NewName" value="@Model.NewName" maxlength="100" required /></label>
+        <button class="aw-primary" type="submit">Add type</button>
+    </form>
+</section>

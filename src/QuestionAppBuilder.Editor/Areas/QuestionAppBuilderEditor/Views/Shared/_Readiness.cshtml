@@ -1,0 +1,14 @@
+@model DraftWorkspaceViewModel
+@if (Model.Errors.Count > 0)
+{
+    <div class="aw-alert" role="alert"><h3>Resolve these issues before publishing</h3><ul>@foreach (var issue in Model.Errors) { <li>@if (issue.ElementId is int id) { <a href="#element-@id">@issue.Message</a> } else { @issue.Message }</li> }</ul></div>
+}
+else
+{
+    <p class="aw-success">This draft meets the current publication checks.</p>
+}
+@if (Model.Warnings.Count > 0)
+{
+    <h3>Warnings requiring acknowledgment</h3>
+    <ul>@foreach (var warning in Model.Warnings) { <li>@if (warning.ElementId is int id) { <a href="#element-@id">@warning.Message</a> } else { @warning.Message }</li> }</ul>
+}

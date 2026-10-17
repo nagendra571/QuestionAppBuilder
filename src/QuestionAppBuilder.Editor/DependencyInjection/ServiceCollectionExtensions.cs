@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using QuestionAppBuilder.Core.Rendering;
 using QuestionAppBuilder.Editor.Controllers;
 using QuestionAppBuilder.Editor.Options;
 
@@ -22,6 +24,8 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
+        services.AddAntiforgery(antiforgery => antiforgery.HeaderName = "RequestVerificationToken");
+        services.TryAddSingleton<IQuestionnaireRenderer, QuestionnaireRenderModelFactory>();
         services.AddControllersWithViews().AddApplicationPart(typeof(ApplicationsController).Assembly);
 
         return services;

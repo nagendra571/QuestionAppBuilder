@@ -126,6 +126,10 @@ public class ApplicationsController : EditorControllerBase
         {
             return NotFound();
         }
+        catch (DraftConflictException)
+        {
+            SetEditorError("The draft changed since this page was loaded. Review the latest version and try again.");
+        }
         catch (DefinitionValidationException exception)
         {
             SetEditorError(exception.Message);

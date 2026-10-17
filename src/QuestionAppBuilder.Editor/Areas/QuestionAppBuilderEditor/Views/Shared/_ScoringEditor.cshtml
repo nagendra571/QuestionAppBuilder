@@ -1,0 +1,18 @@
+@model DraftWorkspaceViewModel
+@if (!Model.Graph.Categories.SelectMany(c => c.Elements).Any(e => e.Question?.Rules.Count > 0))
+{
+    <p>No scoring rules are defined. Add a rule to a question from the application detail page.</p>
+}
+else
+{
+    <p>Rules are evaluated in their explicit order. Additive mode sums matches; first-match mode stops after the first matching rule. Range bounds can be inclusive or exclusive.</p>
+    <table class="aw-table"><thead><tr><th>Question</th><th>Rule</th><th>Order</th><th>Mode</th><th>Points</th><th>Bounds</th></tr></thead><tbody>
+    @foreach (var element in Model.Graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null))
+    {
+        foreach (var rule in element.Question!.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
+        {
+            <tr><td>@element.Label</td><td>@rule.Family</td><td>@rule.SortOrder</td><td>@element.Question.ScoringMode</td><td>@rule.Points</td><td>@(rule.MinInclusive ? "[" : "(")@(rule.MinValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "−∞"), @(rule.MaxValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "∞")@(rule.MaxInclusive ? "]" : ")")</td></tr>
+        }
+    }
+    </tbody></table>
+}

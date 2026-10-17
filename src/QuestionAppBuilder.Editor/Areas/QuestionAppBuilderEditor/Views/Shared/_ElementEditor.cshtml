@@ -1,0 +1,12 @@
+@model QuestionAppBuilder.Domain.Entities.Element
+<div class="aw-element-kind" aria-label="Element type">
+    @if (Model.Question is null)
+    {
+        <span>Content block</span>
+    }
+    else
+    {
+        <span>@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(Model.Question.AnswerType.ToString()) question</span>
+        <span class="aw-muted">@(Model.Question.IsRequired ? "Required" : "Optional")</span>
+    }
+</div>

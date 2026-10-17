@@ -1,0 +1,235 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using QuestionAppBuilder.Application.Authoring;
+using QuestionAppBuilder.Application.Evaluation;
+using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Application.Services;
+using QuestionAppBuilder.Domain.Entities;
+using QuestionAppBuilder.Domain.Enums;
+using QuestionAppBuilder.Infrastructure.Persistence;
+
+namespace QuestionAppBuilder.Editor.Tests;
+
+public sealed class DraftWorkspaceTests : IDisposable
+{
+    private readonly EditorWebApplicationFactory _factory = new();
+    public void Dispose() => _factory.Dispose();
+
+    [Fact]
+    public async Task Workspace_exposes_all_six_answer_types_and_revision_bound_readiness()
+    {
+        var appId = await CreateDraftAsync();
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var html = await client.GetStringAsync($"/ConfigureApp/Drafts/{appId}");
+        html.Should().Contain("Questionnaire settings").And.Contain("Visibility rules").And.Contain("Scoring guide").And.Contain("Readiness");
+        foreach (var type in Enum.GetNames<AnswerType>()) html.Should().Contain($"value=\"{type}\"");
+        var readiness = await client.GetStringAsync($"/ConfigureApp/Drafts/{appId}/Readiness");
+        readiness.Should().Contain("\"revision\"").And.Contain("\"errors\"");
+    }
+
+    [Fact]
+    public async Task Create_duplicate_reorder_edit_publish_all_six_types()
+    {
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            await database.Database.EnsureCreatedAsync();
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var drafts = services.GetRequiredService<IDraftService>();
+            var type = (await design.ListApplicationTypesAsync()).First();
+            var app = await design.CreateApplicationAsync("Six types " + Guid.NewGuid().ToString("N"), type.Id);
+            var first = await design.AddCategoryAsync(app.Id, "Contact");
+            var second = await design.AddCategoryAsync(app.Id, "Eligibility");
+            var questions = new Dictionary<AnswerType, Question>();
+            foreach (var answerType in Enum.GetValues<AnswerType>())
+                questions[answerType] = await design.AddQuestionAsync(first.Id, answerType + " question", answerType, true);
+            foreach (var answerType in new[] { AnswerType.Dropdown, AnswerType.RadioGroup, AnswerType.Checkboxes })
+            {
+                var option = await design.AddOptionAsync(questions[answerType].Id, "Yes", "yes");
+                await design.AddOptionAsync(questions[answerType].Id, "No", "no");
+                if (answerType == AnswerType.RadioGroup)
+                    await design.AddRuleAsync(questions[answerType].Id, RuleFamily.Selection, 4, MembershipOperator.AnyOf, new[] { option.Id });
+            }
+            await design.AddRuleAsync(questions[AnswerType.Number].Id, RuleFamily.NumericRange, 5, minValue: 1, maxValue: 10);
+
+            var beforeBranch = await drafts.GetAsync(app.Id);
+            var targetElement = beforeBranch.Definition.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == questions[AnswerType.Dropdown].Id);
+            var branch = await design.AddVisibilityPredicateAsync(targetElement.Id, questions[AnswerType.Textbox].Id,
+                ConditionOperator.Answered, ConditionJunction.All, expectedRevision: beforeBranch.Revision);
+            branch.Predicates.Should().ContainSingle().Which.SourceQuestionId.Should().Be(questions[AnswerType.Textbox].Id);
+
+            var draftBefore = await drafts.GetAsync(app.Id);
+            var originalRadio = draftBefore.Definition.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == questions[AnswerType.RadioGroup].Id);
+            var clonedElement = await design.DuplicateElementAsync(originalRadio.Id, expectedRevision: draftBefore.Revision);
+            clonedElement.LogicalKey.Should().NotBe(originalRadio.LogicalKey);
+            clonedElement.Question!.Options.Select(o => o.LogicalKey).Should().NotIntersectWith(originalRadio.Question!.Options.Select(o => o.LogicalKey));
+            clonedElement.Question.Rules.Select(r => r.LogicalKey).Should().NotIntersectWith(originalRadio.Question.Rules.Select(r => r.LogicalKey));
+            var afterElement = await drafts.GetAsync(app.Id);
+            await design.MoveElementAsync(clonedElement.Id, 0, expectedRevision: afterElement.Revision);
+            var afterMove = await drafts.GetAsync(app.Id);
+            afterMove.Definition.Categories.SelectMany(c => c.Elements).OrderBy(e => e.SortOrder).First().Id.Should().Be(clonedElement.Id);
+            await design.MoveCategoryAsync(second.Id, 0, expectedRevision: afterMove.Revision);
+            var afterCategoryMove = await drafts.GetAsync(app.Id);
+            afterCategoryMove.Definition.Categories.OrderBy(c => c.SortOrder).First().Id.Should().Be(second.Id);
+
+            var review = await drafts.ReviewAsync(app.Id);
+            review.Errors.Should().BeEmpty();
+            await drafts.PublishAsync(new PublishRequest(app.Id, review.Revision, review.Warnings.Select(w => w.Code).ToHashSet(StringComparer.Ordinal)));
+            await database.Entry(app).ReloadAsync();
+            var published = await design.GetLatestPublishedGraphAsync(app.Id);
+            var categoryKey = published.Categories.Single(c => c.Id == first.Id).LogicalKey;
+            await design.OpenDraftAsync(app.Id);
+            var cloned = await drafts.GetAsync(app.Id);
+            cloned.Definition.Categories.Single(c => c.Name == "Contact").LogicalKey.Should().Be(categoryKey);
+            return true;
+        });
+    }
+
+    [Fact]
+    public async Task Draft_conflict_preserves_local_input_and_refuses_stale_save()
+    {
+        var appId = await CreateDraftAsync();
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        var revision = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"").Groups[1].Value;
+        var form = new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = token, ["ApplicationId"] = appId.ToString(),
+            ["ExpectedRevision"] = revision, ["Version.DisplayName"] = "Saved local draft",
+            ["Version.SubmitLabel"] = "Send", ["Version.ConfirmationText"] = "Thank you",
+            ["Version.NavigationMode"] = nameof(NavigationMode.Sequential),
+            ["Version.RespondentAccessMode"] = nameof(RespondentAccessMode.HostSignIn),
+            ["Version.ResultVisibility"] = nameof(ResultVisibility.Total),
+        };
+        var firstSave = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(form));
+        firstSave.StatusCode.Should().Be(HttpStatusCode.Found, await firstSave.Content.ReadAsStringAsync());
+        var stale = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(form));
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await stale.Content.ReadAsStringAsync()).Should().Contain("changed elsewhere");
+        await _factory.WithScopeAsync(async services =>
+        {
+            var draft = await services.GetRequiredService<IDraftService>().GetAsync(appId);
+            draft.Definition.Version.DisplayName.Should().Be("Saved local draft");
+            return true;
+        });
+    }
+
+    [Fact]
+    public async Task Save_rejects_a_posted_entity_that_is_not_part_of_the_draft()
+    {
+        var appId = await CreateDraftAsync();
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        var revision = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"").Groups[1].Value;
+        var response = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = token, ["ApplicationId"] = appId.ToString(), ["ExpectedRevision"] = revision,
+            ["Categories[0].Id"] = "999999", ["Categories[0].Name"] = "malicious"
+        }));
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("outside this version");
+    }
+
+    [Fact]
+    public async Task Changing_warning_ack_revision_blocks_publish()
+    {
+        var appId = await CreateDraftAsync();
+        await _factory.WithScopeAsync(async services =>
+        {
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var drafts = services.GetRequiredService<IDraftService>();
+            var snapshot = await drafts.GetAsync(appId);
+            var questionId = snapshot.Definition.Categories.SelectMany(c => c.Elements).Select(e => e.Question).First(q => q is not null)!.Id;
+            await design.AddRuleAsync(questionId, RuleFamily.NumericRange, 2, minValue: 1, maxValue: 10, expectedRevision: snapshot.Revision);
+            snapshot = await drafts.GetAsync(appId);
+            await design.AddRuleAsync(questionId, RuleFamily.NumericRange, 3, minValue: 5, maxValue: 15, expectedRevision: snapshot.Revision);
+            var review = await drafts.ReviewAsync(appId);
+            review.Warnings.Select(x => x.Code).Should().Contain("overlapping-numeric-rules");
+            var edit = await drafts.GetAsync(appId);
+            edit.Definition.Version.DisplayName = "Changed after warning review";
+            await drafts.SaveAsync(new SaveDraftRequest(appId, edit.Revision, edit.Definition));
+            var publish = () => drafts.PublishAsync(new PublishRequest(appId, review.Revision,
+                review.Warnings.Select(x => x.Code).ToHashSet(StringComparer.Ordinal)));
+            await publish.Should().ThrowAsync<DraftConflictException>();
+            return true;
+        });
+    }
+
+    [Fact]
+    public async Task Preview_matches_runtime_evaluator_and_creates_no_response_or_submission()
+    {
+        var appId = await CreateDraftAsync();
+        var questionId = await _factory.WithScopeAsync(async services =>
+        {
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var graph = await design.GetDraftGraphAsync(appId);
+            var qid = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).First(q => q is not null)!.Id;
+            await design.AddRuleAsync(qid, RuleFamily.NumericRange, 7, minValue: 1, maxValue: 10);
+            return qid;
+        });
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        var before = await _factory.WithScopeAsync(async services =>
+        {
+            var db = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            return (await db.ResponseDrafts.CountAsync(), await db.Submissions.CountAsync());
+        });
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new { Answers = new Dictionary<int, object> { [questionId] = new { Number = "5", SelectedOptionIds = Array.Empty<int>() } } }), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("RequestVerificationToken", token);
+        var response = await client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var parsed = JsonDocument.Parse(json);
+        parsed.RootElement.GetProperty("score").GetProperty("total").GetInt32().Should().Be(7);
+        parsed.RootElement.GetProperty("questionnaire").GetProperty("preview").GetBoolean().Should().BeTrue();
+
+        var storedGraph = await _factory.WithScopeAsync(services => services.GetRequiredService<IDraftService>().GetAsync(appId));
+        var expected = new DefinitionEvaluator().Evaluate(storedGraph.Definition,
+            new Dictionary<int, AnswerValue> { [questionId] = new AnswerValue(null, 5, Array.Empty<int>()) }, false);
+        parsed.RootElement.GetProperty("score").GetProperty("total").GetInt32().Should().Be(expected.Score.Total);
+        var after = await _factory.WithScopeAsync(async services =>
+        {
+            var db = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            return (await db.ResponseDrafts.CountAsync(), await db.Submissions.CountAsync());
+        });
+        after.Should().Be(before);
+    }
+
+    [Fact]
+    public async Task Non_designer_cannot_reach_preview_or_scoring_trace()
+    {
+        var appId = await CreateDraftAsync();
+        var client = await _factory.CreateSignedInClientAsync("filler");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+        {
+            Content = new StringContent("{\"answers\":{}}", Encoding.UTF8, "application/json")
+        };
+        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private async Task<int> CreateDraftAsync()
+    {
+        await _factory.WithScopeAsync(async services =>
+        {
+            await services.GetRequiredService<QuestionAppBuilderDbContext>().Database.EnsureCreatedAsync();
+            return true;
+        });
+        return await _factory.WithScopeAsync(async services =>
+        {
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var type = (await design.ListApplicationTypesAsync()).First();
+            var application = await design.CreateApplicationAsync("Workspace test " + Guid.NewGuid().ToString("N"), type.Id);
+            var category = await design.AddCategoryAsync(application.Id, "Identity");
+            await design.AddQuestionAsync(category.Id, "Annual income", AnswerType.Number, true);
+            return application.Id;
+        });
+    }
+}

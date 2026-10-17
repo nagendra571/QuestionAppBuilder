@@ -1,0 +1,46 @@
+@model DraftWorkspaceViewModel
+@using QuestionAppBuilder.Domain.Enums
+@{
+    var conditions = Model.Graph.VisibilityConditions.OrderBy(x => x.Id).ToArray();
+    var questions = Model.Graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
+    var questionLabels = Model.Graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).ToDictionary(e => e.Question!.Id, e => e.Label);
+}
+@if (conditions.Length == 0)
+{
+    <p>No visibility conditions yet. Build an ALL / ANY rule below and assign it to a later question from the structure panel.</p>
+}
+else
+{
+    <p>Conditions use ALL or ANY. A source question must appear before the section it controls.</p>
+    var conditionIndex = 0;
+    var predicateIndex = 0;
+    foreach (var condition in conditions)
+    {
+        <fieldset class="aw-subpanel">
+            <legend>Condition @condition.Id</legend>
+            <input type="hidden" name="Conditions[@conditionIndex].Id" value="@condition.Id" />
+            <label class="aw-field">Match mode<select name="Conditions[@conditionIndex].Junction">@foreach (var junction in Enum.GetValues<ConditionJunction>()) { <option value="@junction" selected="@(junction == condition.Junction)">@junction</option> }</select></label>
+            @foreach (var predicate in condition.Predicates)
+            {
+                <input type="hidden" name="Conditions[@conditionIndex].Predicates[@predicateIndex].Id" value="@predicate.Id" />
+                <div class="aw-grid">
+                    <label class="aw-field">When this earlier question<select name="Conditions[@conditionIndex].Predicates[@predicateIndex].SourceQuestionId">@foreach (var question in questions) { <option value="@question.Id" selected="@(question.Id == predicate.SourceQuestionId)">@questionLabels[question.Id]</option> }</select></label>
+                    <label class="aw-field">Condition<select name="Conditions[@conditionIndex].Predicates[@predicateIndex].Operator">@foreach (var op in Enum.GetValues<ConditionOperator>()) { <option value="@op" selected="@(op == predicate.Operator)">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(op.ToString())</option> }</select></label>
+                    <label class="aw-field">Numeric value<input name="Conditions[@conditionIndex].Predicates[@predicateIndex].NumberValue" type="number" step="any" value="@predicate.NumberValue?.ToString(System.Globalization.CultureInfo.InvariantCulture)" /></label>
+                </div>
+                var source = questions.FirstOrDefault(q => q.Id == predicate.SourceQuestionId);
+                if (source is not null && source.Options.Count > 0)
+                {
+                    <fieldset class="aw-subpanel"><legend>Matching options</legend>
+                        @foreach (var option in source.Options.OrderBy(o => o.SortOrder))
+                        {
+                            <label class="aw-field aw-check"><input type="checkbox" name="Conditions[@conditionIndex].Predicates[@predicateIndex].OptionIds" value="@option.Id" checked="@(predicate.Options.Any(x => x.QuestionOptionId == option.Id))" /> @option.Label</label>
+                        }
+                    </fieldset>
+                }
+                predicateIndex++;
+            }
+        </fieldset>
+        conditionIndex++;
+    }
+}

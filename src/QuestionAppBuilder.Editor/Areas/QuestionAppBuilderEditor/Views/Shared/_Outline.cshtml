@@ -1,0 +1,17 @@
+@model DraftWorkspaceViewModel
+<h2>On this questionnaire</h2>
+<p class="aw-muted">Select a section to edit it.</p>
+<nav aria-label="Questionnaire outline">
+    @foreach (var category in Model.Graph.Categories.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
+    {
+        <a href="#category-@category.Id" class="aw-outline-category">@category.Name</a>
+        @foreach (var element in category.Elements.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
+        {
+            <a href="#element-@element.Id" class="aw-outline-element">@element.Label</a>
+        }
+    }
+</nav>
+<a class="aw-outline-action" href="#visibility">Visibility rules</a>
+<a class="aw-outline-action" href="#scoring">Scoring</a>
+<a class="aw-outline-action" href="#readiness">Readiness</a>
+<a class="aw-outline-action" href="#preview">Preview</a>

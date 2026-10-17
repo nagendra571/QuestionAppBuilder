@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\QuestionAppBuilder.Application\QuestionAppBuilder.Application.csproj" />
+    <ProjectReference Include="..\QuestionAppBuilder.Core\QuestionAppBuilder.Core.csproj" />
   </ItemGroup>
 
 </Project>
