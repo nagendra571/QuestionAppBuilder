@@ -6,68 +6,67 @@ namespace QuestionAppBuilder.Application.Scoring;
 
 public sealed class ScoringEngine : IScoringEngine
 {
-    public SubmissionScore Score(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers)
+    public SubmissionScore Score(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers, IReadOnlySet<int>? applicableQuestionIds = null)
     {
         var questionScores = new List<QuestionScore>();
         var categoryScores = new List<CategoryScore>();
+        var total = 0;
 
-        foreach (var category in graph.Categories)
+        foreach (var category in graph.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id))
         {
             var categoryTotal = 0;
-
-            foreach (var element in category.Elements)
+            foreach (var element in category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
             {
-                if (element.Kind != ElementKind.Question || element.Question is null)
-                {
-                    continue;
-                }
-
-                var points = ScoreQuestion(element.Question, answers);
-                questionScores.Add(new QuestionScore(element.Question.Id, points));
-                categoryTotal += points;
+                var question = element.Question;
+                if (element.Kind != ElementKind.Question || question is null) continue;
+                var applicable = applicableQuestionIds is null || applicableQuestionIds.Contains(question.Id);
+                var (points, trace) = applicable ? ScoreQuestion(question, answers) : (0, (IReadOnlyList<RuleEvaluation>)Array.Empty<RuleEvaluation>());
+                questionScores.Add(new QuestionScore(question.Id, points) { IsApplicable = applicable, Rules = trace });
+                categoryTotal = checked(categoryTotal + points);
             }
-
             categoryScores.Add(new CategoryScore(category.Id, categoryTotal));
+            total = checked(total + categoryTotal);
         }
-
-        var total = questionScores.Sum(questionScore => questionScore.Points);
-
-        return new SubmissionScore(total, questionScores, categoryScores);
+        return new SubmissionScore(total, questionScores, categoryScores, "1.0");
     }
 
-    private static int ScoreQuestion(Question question, IReadOnlyDictionary<int, AnswerValue> answers)
+    private static (int Points, IReadOnlyList<RuleEvaluation> Trace) ScoreQuestion(Question question, IReadOnlyDictionary<int, AnswerValue> answers)
     {
-        var answer = answers.TryGetValue(question.Id, out var found)
-            ? found
-            : new AnswerValue(null, null, null);
-
-        var isAnswered = AnswerSemantics.IsAnswered(question.AnswerType, answer);
-
-        var points = 0;
-        foreach (var rule in question.Rules)
+        var answer = answers.TryGetValue(question.Id, out var found) ? found : new AnswerValue(null, null, null);
+        var answered = AnswerSemantics.IsAnswered(question.AnswerType, answer);
+        var rules = question.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToArray();
+        var raw = rules.Select(rule => (Rule: rule, Matches: rule.Points is >= 0 and <= 1_000_000 && RuleMatches(rule, answer, answered))).ToArray();
+        var first = question.ScoringMode == ScoringMode.FirstMatch ? Array.FindIndex(raw, item => item.Matches) : -1;
+        var trace = new List<RuleEvaluation>(raw.Length);
+        var total = 0;
+        for (var i = 0; i < raw.Length; i++)
         {
-            var fires = rule.Family switch
+            var contributes = question.ScoringMode switch
             {
-                RuleFamily.Presence => isAnswered,
-                RuleFamily.Selection => SelectionSatisfied(rule, answer),
-                RuleFamily.NumericRange => NumericRangeSatisfied(rule, answer),
+                ScoringMode.Additive => raw[i].Matches,
+                ScoringMode.FirstMatch => i == first,
                 _ => false
             };
-
-            if (fires)
-            {
-                points += rule.Points;
-            }
+            var points = contributes ? raw[i].Rule.Points : 0;
+            total = checked(total + points);
+            trace.Add(new RuleEvaluation(raw[i].Rule.Id, raw[i].Matches, contributes, points));
         }
-
-        return points;
+        return (total, trace);
     }
+
+    private static bool RuleMatches(ScoringRule rule, AnswerValue answer, bool answered) => rule.Family switch
+    {
+        RuleFamily.Presence => answered,
+        RuleFamily.Selection => SelectionSatisfied(rule, answer),
+        RuleFamily.NumericRange => NumericRangeSatisfied(rule, answer),
+        _ => false
+    };
 
     private static bool SelectionSatisfied(ScoringRule rule, AnswerValue answer)
     {
         var selected = answer.SelectedOptionIds ?? Array.Empty<int>();
-        var ruleOptionIds = rule.Options.Select(option => option.QuestionOptionId);
-
+        var ruleOptionIds = rule.Options.Select(option => option.QuestionOptionId).Distinct().ToArray();
+        if (selected.Count == 0 || ruleOptionIds.Length == 0) return false;
         return rule.MembershipOperator switch
         {
             MembershipOperator.AnyOf => ruleOptionIds.Any(selected.Contains),
@@ -78,12 +77,9 @@ public sealed class ScoringEngine : IScoringEngine
 
     private static bool NumericRangeSatisfied(ScoringRule rule, AnswerValue answer)
     {
-        if (answer.Number is not decimal value)
-        {
-            return false;
-        }
-
-        return (rule.MinValue is null || value >= rule.MinValue)
-            && (rule.MaxValue is null || value <= rule.MaxValue);
+        if (answer.Number is not decimal value) return false;
+        var minPass = rule.MinValue is null || (rule.MinInclusive ? value >= rule.MinValue : value > rule.MinValue);
+        var maxPass = rule.MaxValue is null || (rule.MaxInclusive ? value <= rule.MaxValue : value < rule.MaxValue);
+        return minPass && maxPass;
     }
 }

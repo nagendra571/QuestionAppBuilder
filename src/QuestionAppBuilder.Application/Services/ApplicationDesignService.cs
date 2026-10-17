@@ -232,6 +232,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             QuestionId = editable.Target.Id,
             Family = family,
             Points = points,
+            SortOrder = NextSortOrder(editable.Target.Rules.Select(existing => existing.SortOrder)),
             MembershipOperator = membershipOperator,
             MinValue = minValue,
             MaxValue = maxValue

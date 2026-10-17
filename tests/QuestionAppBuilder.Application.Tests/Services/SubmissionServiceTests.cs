@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain;
 using QuestionAppBuilder.Domain.Entities;
@@ -215,6 +216,49 @@ public class SubmissionServiceTests
     }
 
     [Fact]
+    public async Task Hidden_required_answers_do_not_block_and_hidden_values_are_not_submitted()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Design.CreateApplicationAsync("Hidden branches", ctx.ApplicationTypeId);
+        var firstCategory = await ctx.Design.AddCategoryAsync(application.Id, "First");
+        var controller = await ctx.Design.AddQuestionAsync(firstCategory.Id, "Show branch?", AnswerType.Dropdown, isRequired: false);
+        var show = await ctx.Design.AddOptionAsync(controller.Id, "Show", "show");
+        var hiddenRequired = await ctx.Design.AddQuestionAsync(firstCategory.Id, "Hidden required", AnswerType.Textbox);
+        var secondCategory = await ctx.Design.AddCategoryAsync(application.Id, "Second");
+        var dependentRequired = await ctx.Design.AddQuestionAsync(secondCategory.Id, "Dependent required", AnswerType.Textbox);
+        var condition1 = new VisibilityCondition
+        {
+            ApplicationVersionId = (await ctx.Design.GetDraftGraphAsync(application.Id)).Version.Id,
+            Predicates = { new VisibilityPredicate { SourceQuestionId = controller.Id, Operator = ConditionOperator.HasAnyOption, Options = { new VisibilityPredicateOption { QuestionOptionId = show.Id } } } }
+        };
+        ctx.Context.VisibilityConditions.Add(condition1);
+        await ctx.Context.SaveChangesAsync();
+        var condition2 = new VisibilityCondition
+        {
+            ApplicationVersionId = condition1.ApplicationVersionId,
+            Predicates = { new VisibilityPredicate { SourceQuestionId = hiddenRequired.Id, Operator = ConditionOperator.Answered } }
+        };
+        ctx.Context.VisibilityConditions.Add(condition2);
+        await ctx.Context.SaveChangesAsync();
+        var graph = await ctx.Design.GetDraftGraphAsync(application.Id);
+        graph.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == hiddenRequired.Id).VisibilityConditionId = condition1.Id;
+        graph.Categories.Single(c => c.Id == secondCategory.Id).VisibilityConditionId = condition2.Id;
+        await ctx.Context.SaveChangesAsync();
+        var versionId = graph.Version.Id;
+        await ctx.Design.PublishAsync(application.Id);
+
+        var submission = await ctx.Submissions.SubmitAsync(new SubmitRequest(application.Id, versionId,
+            new Dictionary<int, AnswerValue>
+            {
+                [hiddenRequired.Id] = new("retained while hidden", null, null)
+            }));
+
+        using var fresh = ctx.CreateFreshContext();
+        var saved = await fresh.Submissions.Include(s => s.Answers).SingleAsync(s => s.Id == submission.Id);
+        saved.Answers.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Zero_answers_persist_with_zero_total()
     {
         using var ctx = new TestContext();
@@ -371,7 +415,7 @@ public class SubmissionServiceTests
             Context = new QuestionAppBuilderDbContext(Options);
             var applicationRepository = new ApplicationRepository(Context);
             Design = new ApplicationDesignService(applicationRepository);
-            Submissions = new SubmissionService(applicationRepository, new SubmissionRepository(Context), new ScoringEngine());
+            Submissions = new SubmissionService(applicationRepository, new SubmissionRepository(Context), new DefinitionEvaluator());
 
             var applicationType = new ApplicationType { Name = "RFA", SortOrder = 1 };
             Context.ApplicationTypes.Add(applicationType);

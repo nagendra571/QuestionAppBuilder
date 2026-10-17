@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Options;
 using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain.Interfaces;
 using QuestionAppBuilder.Infrastructure.Persistence;
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<ISubmissionRepository, SubmissionRepository>();
         services.AddSingleton<IScoringEngine, ScoringEngine>();
+        services.AddSingleton<IDefinitionEvaluator, DefinitionEvaluator>();
         services.AddScoped<IApplicationDesignService, ApplicationDesignService>();
         services.AddScoped<ISubmissionService, SubmissionService>();
 

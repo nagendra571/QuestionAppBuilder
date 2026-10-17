@@ -2,7 +2,7 @@ using QuestionAppBuilder.Domain.Enums;
 
 namespace QuestionAppBuilder.Application.Scoring;
 
-internal static class AnswerSemantics
+public static class AnswerSemantics
 {
     public static bool IsAnswered(AnswerType answerType, AnswerValue? answer) => answerType switch
     {

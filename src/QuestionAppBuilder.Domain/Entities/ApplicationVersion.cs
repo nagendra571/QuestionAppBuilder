@@ -19,4 +19,5 @@ public class ApplicationVersion
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     public Guid RevisionNonce { get; set; } = Guid.NewGuid();
     public List<Category> Categories { get; set; } = new();
+    public List<VisibilityCondition> VisibilityConditions { get; set; } = new();
 }

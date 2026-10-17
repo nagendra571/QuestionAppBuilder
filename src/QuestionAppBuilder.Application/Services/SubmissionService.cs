@@ -1,4 +1,4 @@
-using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Domain;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
@@ -11,20 +11,20 @@ public sealed class SubmissionService : ISubmissionService
 {
     private readonly IApplicationRepository _applicationRepository;
     private readonly ISubmissionRepository _submissionRepository;
-    private readonly IScoringEngine _scoringEngine;
+    private readonly IDefinitionEvaluator _evaluator;
 
     public SubmissionService(
         IApplicationRepository applicationRepository,
         ISubmissionRepository submissionRepository,
-        IScoringEngine scoringEngine)
+        IDefinitionEvaluator evaluator)
     {
         ArgumentNullException.ThrowIfNull(applicationRepository);
         ArgumentNullException.ThrowIfNull(submissionRepository);
-        ArgumentNullException.ThrowIfNull(scoringEngine);
+        ArgumentNullException.ThrowIfNull(evaluator);
 
         _applicationRepository = applicationRepository;
         _submissionRepository = submissionRepository;
-        _scoringEngine = scoringEngine;
+        _evaluator = evaluator;
     }
 
     public async Task<Submission> SubmitAsync(SubmitRequest request, CancellationToken ct = default)
@@ -36,55 +36,18 @@ public sealed class SubmissionService : ISubmissionService
                 $"Published application version {request.ApplicationVersionId} of application {request.ApplicationId} was not found.");
         }
 
-        var questionsById = graph.Categories
-            .SelectMany(category => category.Elements)
-            .Where(element => element.Question is not null)
-            .Select(element => element.Question!)
-            .ToDictionary(question => question.Id);
-
-        var structurallyInvalid = new List<int>();
-        foreach (var (questionId, answer) in request.Answers)
+        var evaluation = _evaluator.Evaluate(graph, request.Answers, requireComplete: true);
+        if (evaluation.DefinitionIssues.Count > 0)
+            throw new DefinitionValidationException(string.Join(" ", evaluation.DefinitionIssues.Select(issue => issue.Message)));
+        if (evaluation.AnswerIssues.Count > 0)
         {
-            if (!questionsById.TryGetValue(questionId, out var question) || !IsStructurallyValid(question, answer))
-            {
-                structurallyInvalid.Add(questionId);
-            }
-        }
-
-        if (structurallyInvalid.Count > 0)
-        {
+            var invalidQuestionIds = evaluation.AnswerIssues.Where(issue => issue.QuestionId.HasValue)
+                .Select(issue => issue.QuestionId!.Value).Distinct().ToArray();
             throw new AnswerValidationException(
-                $"Invalid answers for questions: {string.Join(", ", structurallyInvalid)}.",
-                structurallyInvalid);
+                string.Join(" ", evaluation.AnswerIssues.Select(issue => issue.Message)), invalidQuestionIds);
         }
 
-        var missingRequired = new List<int>();
-        foreach (var category in graph.Categories)
-        {
-            foreach (var element in category.Elements)
-            {
-                var question = element.Question;
-                if (question is null || !question.IsRequired)
-                {
-                    continue;
-                }
-
-                var answer = request.Answers.TryGetValue(question.Id, out var provided) ? provided : null;
-                if (!AnswerSemantics.IsAnswered(question.AnswerType, answer))
-                {
-                    missingRequired.Add(question.Id);
-                }
-            }
-        }
-
-        if (missingRequired.Count > 0)
-        {
-            throw new AnswerValidationException(
-                $"Missing required answers for questions: {string.Join(", ", missingRequired)}.",
-                missingRequired);
-        }
-
-        var score = _scoringEngine.Score(graph, request.Answers);
+        var score = evaluation.Score;
 
         var submission = new Submission
         {
@@ -96,7 +59,7 @@ public sealed class SubmissionService : ISubmissionService
         };
 
         var pointsByQuestion = score.Questions.ToDictionary(questionScore => questionScore.QuestionId, questionScore => questionScore.Points);
-        foreach (var (questionId, answer) in request.Answers)
+        foreach (var (questionId, answer) in request.Answers.Where(pair => evaluation.VisibleQuestionIds.Contains(pair.Key)))
         {
             var storedAnswer = new Answer
             {
@@ -131,39 +94,4 @@ public sealed class SubmissionService : ISubmissionService
         return submission;
     }
 
-    private static bool IsStructurallyValid(Question question, AnswerValue answer) => question.AnswerType switch
-    {
-        AnswerType.Textbox or AnswerType.Textarea =>
-            answer.Number is null
-            && answer.SelectedOptionIds is null
-            && (answer.Text is null || answer.Text.Length <= ValidationLimits.AnswerTextMaxLength),
-        AnswerType.Number =>
-            answer.Text is null
-            && answer.SelectedOptionIds is null,
-        AnswerType.Dropdown or AnswerType.RadioGroup =>
-            answer.Text is null
-            && answer.Number is null
-            && (answer.SelectedOptionIds is null || IsValidSelection(question, answer.SelectedOptionIds, allowMultiple: false)),
-        AnswerType.Checkboxes =>
-            answer.Text is null
-            && answer.Number is null
-            && (answer.SelectedOptionIds is null || IsValidSelection(question, answer.SelectedOptionIds, allowMultiple: true)),
-        _ => false
-    };
-
-    private static bool IsValidSelection(Question question, IReadOnlyCollection<int> selectedOptionIds, bool allowMultiple)
-    {
-        if (selectedOptionIds.Distinct().Count() != selectedOptionIds.Count)
-        {
-            return false;
-        }
-
-        if (!allowMultiple && selectedOptionIds.Count > 1)
-        {
-            return false;
-        }
-
-        var questionOptionIds = question.Options.Select(option => option.Id).ToHashSet();
-        return selectedOptionIds.All(questionOptionIds.Contains);
-    }
 }

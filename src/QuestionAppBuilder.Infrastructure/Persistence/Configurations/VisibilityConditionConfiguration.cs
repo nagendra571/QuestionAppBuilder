@@ -11,7 +11,7 @@ public class VisibilityConditionConfiguration : IEntityTypeConfiguration<Visibil
         builder.ToTable("VisibilityConditions");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Junction).HasConversion<string>().HasMaxLength(16).IsRequired();
-        builder.HasOne<ApplicationVersion>().WithMany().HasForeignKey(x => x.ApplicationVersionId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<ApplicationVersion>().WithMany(v => v.VisibilityConditions).HasForeignKey(x => x.ApplicationVersionId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Predicates).WithOne().HasForeignKey(x => x.VisibilityConditionId).OnDelete(DeleteBehavior.Cascade);
     }
 }

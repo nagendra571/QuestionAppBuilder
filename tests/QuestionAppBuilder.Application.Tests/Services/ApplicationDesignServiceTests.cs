@@ -110,6 +110,21 @@ public class ApplicationDesignServiceTests
     }
 
     [Fact]
+    public async Task Numeric_questions_default_to_first_match_with_explicit_rule_order()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Scoring defaults", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Numbers");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Capacity", AnswerType.Number);
+        var first = await ctx.Service.AddRuleAsync(question.Id, RuleFamily.NumericRange, 1, maxValue: 10);
+        var second = await ctx.Service.AddRuleAsync(question.Id, RuleFamily.NumericRange, 2, minValue: 11);
+
+        question.ScoringMode.Should().Be(ScoringMode.FirstMatch);
+        first.SortOrder.Should().Be(1);
+        second.SortOrder.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Out_of_range_label_is_rejected()
     {
         using var ctx = new TestContext();

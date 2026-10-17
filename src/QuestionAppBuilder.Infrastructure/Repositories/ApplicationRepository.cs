@@ -40,7 +40,7 @@ public sealed class ApplicationRepository : IApplicationRepository
 
         return version is null
             ? null
-            : new ApplicationVersionGraph { Version = version, Categories = version.Categories };
+            : new ApplicationVersionGraph { Version = version, Categories = version.Categories, VisibilityConditions = version.VisibilityConditions };
     }
 
     public async Task<ApplicationVersionGraph?> GetTrackedGraphByChildIdAsync(ChildEntityKind kind, int childId, CancellationToken ct = default)
@@ -60,7 +60,7 @@ public sealed class ApplicationRepository : IApplicationRepository
 
         return version is null
             ? null
-            : new ApplicationVersionGraph { Version = version, Categories = version.Categories };
+            : new ApplicationVersionGraph { Version = version, Categories = version.Categories, VisibilityConditions = version.VisibilityConditions };
     }
 
     public async Task<ApplicationVersionGraph> GetVersionGraphAsync(int applicationVersionId, CancellationToken ct = default)
@@ -74,7 +74,7 @@ public sealed class ApplicationRepository : IApplicationRepository
             throw new NotFoundException($"Application version {applicationVersionId} was not found.");
         }
 
-        return new ApplicationVersionGraph { Version = version, Categories = version.Categories };
+        return new ApplicationVersionGraph { Version = version, Categories = version.Categories, VisibilityConditions = version.VisibilityConditions };
     }
 
     public void Add(ApplicationEntity application) => _context.Applications.Add(application);
@@ -93,5 +93,9 @@ public sealed class ApplicationRepository : IApplicationRepository
                 .ThenInclude(c => c.Elements)
                     .ThenInclude(e => e.Question)
                         .ThenInclude(q => q!.Rules)
-                            .ThenInclude(r => r.Options);
+                            .ThenInclude(r => r.Options)
+            .Include(v => v.VisibilityConditions)
+                .ThenInclude(condition => condition.Predicates)
+                    .ThenInclude(predicate => predicate.Options);
+
 }

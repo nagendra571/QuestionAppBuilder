@@ -75,6 +75,37 @@ public class ScoringEngineTests
     }
 
     [Fact]
+    public void First_match_uses_order_and_exclusive_lower_bound()
+    {
+        var exclusive = NumericRule(2, 35m, null);
+        exclusive.MinInclusive = false;
+        exclusive.SortOrder = 1;
+        var graph = BuildGraph(CategoryWith(1,
+            QuestionElementWithOptions(1, AnswerType.Number, [], ScoringMode.FirstMatch, exclusive)));
+
+        _engine.Score(graph, Answers((1, new AnswerValue(null, 35m, null)))).Questions.Single().Points.Should().Be(0);
+        _engine.Score(graph, Answers((1, new AnswerValue(null, 36m, null)))).Questions.Single().Points.Should().Be(2);
+    }
+
+    [Fact]
+    public void First_match_trace_separates_matching_from_contributing_rules()
+    {
+        var first = NumericRule(3, 0m, 100m);
+        first.SortOrder = 1;
+        var second = NumericRule(2, 0m, 200m);
+        second.SortOrder = 2;
+        var graph = BuildGraph(CategoryWith(1, QuestionElementWithOptions(1, AnswerType.Number, [], ScoringMode.FirstMatch, first, second)));
+
+        var result = _engine.Score(graph, Answers((1, new AnswerValue(null, 50m, null))));
+
+        result.Total.Should().Be(3);
+        result.EngineVersion.Should().Be("1.0");
+        result.Questions.Single().Rules.Should().SatisfyRespectively(
+            rule => { rule.Matches.Should().BeTrue(); rule.Contributes.Should().BeTrue(); rule.Points.Should().Be(3); },
+            rule => { rule.Matches.Should().BeTrue(); rule.Contributes.Should().BeFalse(); rule.Points.Should().Be(0); });
+    }
+
+    [Fact]
     public void Rules_are_additive()
     {
         var graph = BuildGraph(CategoryWith(1,
@@ -168,7 +199,10 @@ public class ScoringEngineTests
     private static Element QuestionElement(int id, AnswerType answerType, params ScoringRule[] rules) =>
         QuestionElementWithOptions(id, answerType, [], rules);
 
-    private static Element QuestionElementWithOptions(int id, AnswerType answerType, int[] optionIds, params ScoringRule[] rules) => new()
+    private static Element QuestionElementWithOptions(int id, AnswerType answerType, int[] optionIds, params ScoringRule[] rules) =>
+        QuestionElementWithOptions(id, answerType, optionIds, ScoringMode.Additive, rules);
+
+    private static Element QuestionElementWithOptions(int id, AnswerType answerType, int[] optionIds, ScoringMode scoringMode, params ScoringRule[] rules) => new()
     {
         Id = id,
         Kind = ElementKind.Question,
@@ -178,6 +212,7 @@ public class ScoringEngineTests
             Id = id,
             ElementId = id,
             AnswerType = answerType,
+            ScoringMode = scoringMode,
             Rules = rules.ToList(),
             Options = optionIds.Select(optionId => new QuestionOption { Id = optionId, QuestionId = id }).ToList()
         }
