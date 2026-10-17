@@ -12,5 +12,6 @@ public class Element
     public int SortOrder { get; set; }
     public Guid LogicalKey { get; set; } = Guid.NewGuid();
     public int? VisibilityConditionId { get; set; }
+    public VisibilityCondition? VisibilityCondition { get; set; }
     public Question? Question { get; set; }
 }

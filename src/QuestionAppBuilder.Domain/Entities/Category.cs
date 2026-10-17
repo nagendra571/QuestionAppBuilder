@@ -8,5 +8,6 @@ public class Category
     public int SortOrder { get; set; }
     public Guid LogicalKey { get; set; } = Guid.NewGuid();
     public int? VisibilityConditionId { get; set; }
+    public VisibilityCondition? VisibilityCondition { get; set; }
     public List<Element> Elements { get; set; } = new();
 }

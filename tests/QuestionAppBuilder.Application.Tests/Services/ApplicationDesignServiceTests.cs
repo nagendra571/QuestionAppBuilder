@@ -125,6 +125,21 @@ public class ApplicationDesignServiceTests
     }
 
     [Fact]
+    public async Task Stale_revision_cannot_overwrite_an_editor_mutation()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Draft edits", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Original");
+        var revision = (await ctx.Service.GetDraftGraphAsync(application.Id)).Version.RevisionNonce.ToByteArray();
+
+        await ctx.Service.UpdateCategoryAsync(category.Id, "Winner", expectedRevision: revision);
+        Func<Task> staleEdit = () => ctx.Service.UpdateCategoryAsync(category.Id, "Stale", expectedRevision: revision);
+
+        await staleEdit.Should().ThrowAsync<QuestionAppBuilder.Application.Authoring.DraftConflictException>();
+        (await ctx.Service.GetDraftGraphAsync(application.Id)).Categories.Single().Name.Should().Be("Winner");
+    }
+
+    [Fact]
     public async Task Out_of_range_label_is_rejected()
     {
         using var ctx = new TestContext();
@@ -485,6 +500,47 @@ public class ApplicationDesignServiceTests
         var storedDraft = await new ApplicationRepository(freshContext).GetVersionGraphAsync(first.Version.Id);
         storedDraft.Version.Status.Should().Be(VersionStatus.Draft);
         storedDraft.Categories.Should().ContainSingle().Which.Name.Should().Be("Scoring");
+    }
+
+    [Fact]
+    public async Task Clone_remaps_condition_and_option_references_preserving_logical_keys()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Clone conditions", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Basics");
+        var source = await ctx.Service.AddQuestionAsync(category.Id, "Source", AnswerType.Dropdown);
+        var option = await ctx.Service.AddOptionAsync(source.Id, "Yes", "yes");
+        var dependent = await ctx.Service.AddQuestionAsync(category.Id, "Dependent", AnswerType.Textbox);
+        var graph = await ctx.Service.GetDraftGraphAsync(application.Id);
+        var sourceElement = graph.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == source.Id);
+        var dependentElement = graph.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == dependent.Id);
+        var condition = new VisibilityCondition
+        {
+            ApplicationVersionId = graph.Version.Id,
+            Predicates = [new VisibilityPredicate
+            {
+                SourceQuestionId = source.Id,
+                Operator = ConditionOperator.HasAnyOption,
+                Options = [new VisibilityPredicateOption { QuestionOptionId = option.Id }]
+            }]
+        };
+        graph.Version.VisibilityConditions.Add(condition);
+        dependentElement.VisibilityConditionId = condition.Id;
+        dependentElement.VisibilityCondition = condition;
+        ctx.Context.SaveChanges();
+        await ctx.Service.PublishAsync(application.Id);
+
+        var draft = await ctx.Service.OpenDraftAsync(application.Id);
+        var clonedElement = draft.Categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id != dependent.Id && e.Label == "Dependent");
+        var clonedCondition = draft.VisibilityConditions.Should().ContainSingle().Subject;
+        var clonedPredicate = clonedCondition.Predicates.Should().ContainSingle().Subject;
+        var clonedSource = draft.Categories.SelectMany(c => c.Elements).Single(e => e.Label == "Source").Question!;
+        var clonedOption = clonedSource.Options.Should().ContainSingle().Subject;
+
+        clonedElement.VisibilityConditionId.Should().Be(clonedCondition.Id);
+        clonedPredicate.SourceQuestionId.Should().Be(clonedSource.Id);
+        clonedPredicate.Options.Single().QuestionOptionId.Should().Be(clonedOption.Id);
+        draft.Categories.Single().LogicalKey.Should().Be(category.LogicalKey);
     }
 
     [Fact]

@@ -10,6 +10,6 @@ public class VisibilityPredicateOptionConfiguration : IEntityTypeConfiguration<V
     {
         builder.ToTable("VisibilityPredicateOptions");
         builder.HasKey(x => new { x.VisibilityPredicateId, x.QuestionOptionId });
-        builder.HasOne<QuestionOption>().WithMany().HasForeignKey(x => x.QuestionOptionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.QuestionOption).WithMany().HasForeignKey(x => x.QuestionOptionId).OnDelete(DeleteBehavior.Restrict);
     }
 }

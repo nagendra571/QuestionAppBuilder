@@ -100,7 +100,7 @@ public class EditorJourneyTests : IDisposable
 
         var publishResponse = await client.PostAsync(
             $"{BasePath}/Applications/Publish/{applicationId}",
-            BuildForm(publishToken));
+            BuildForm(publishToken, ("expectedRevision", ExtractRevision(draftHtml))));
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Found);
         publishResponse.Headers.Location.Should().NotBeNull();
         publishResponse.Headers.Location!.ToString().Should().Contain($"/Applications/Detail/{applicationId}");
@@ -154,10 +154,10 @@ public class EditorJourneyTests : IDisposable
                 ("Name", "Space Types")));
         addSecondCategoryResponse.StatusCode.Should().Be(HttpStatusCode.Found);
 
-        var (secondPublishToken, _) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
+        var (secondPublishToken, secondPublishHtml) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
         var secondPublishResponse = await client.PostAsync(
             $"{BasePath}/Applications/Publish/{applicationId}",
-            BuildForm(secondPublishToken));
+            BuildForm(secondPublishToken, ("expectedRevision", ExtractRevision(secondPublishHtml))));
         secondPublishResponse.StatusCode.Should().Be(HttpStatusCode.Found);
 
         var republishedHtml = await client.GetStringAsync(DetailUrl(applicationId));
@@ -199,9 +199,10 @@ public class EditorJourneyTests : IDisposable
         createResponse.StatusCode.Should().Be(HttpStatusCode.Found);
         var applicationId = ParseDetailId(createResponse.Headers.Location!);
 
+        var (publishToken, publishHtml) = await _factory.GetFormAsync(client, DetailUrl(applicationId));
         var publishResponse = await client.PostAsync(
             $"{BasePath}/Applications/Publish/{applicationId}",
-            BuildForm(await GetDetailTokenAsync(client, applicationId)));
+            BuildForm(publishToken, ("expectedRevision", ExtractRevision(publishHtml))));
 
         publishResponse.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Found);
@@ -282,6 +283,13 @@ public class EditorJourneyTests : IDisposable
 
         values.AddRange(fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)));
         return new FormUrlEncodedContent(values);
+    }
+
+    private static string ExtractRevision(string html)
+    {
+        var match = Regex.Match(html, "<input[^>]*name=\"expectedRevision\"[^>]*value=\"([^\"]+)\"");
+        match.Success.Should().BeTrue("a draft form should include its revision token");
+        return WebUtility.HtmlDecode(match.Groups[1].Value);
     }
 
     private static string Invariant(int value) => value.ToString(CultureInfo.InvariantCulture);

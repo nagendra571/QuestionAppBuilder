@@ -5,6 +5,7 @@
     var question = Model.Question;
     var editable = Model.Detail.IsEditable;
     var applicationId = Model.Detail.Application.Id;
+    var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
     var options = question.Options.OrderBy(option => option.SortOrder).ThenBy(option => option.Id).ToArray();
     var acceptsOptions = question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes;
     var rules = question.Rules.OrderBy(rule => rule.Id).ToArray();
@@ -44,6 +45,7 @@
                 {
                     <form method="post" asp-controller="Options" asp-action="Remove" asp-route-id="@option.Id" class="cv-opt-remove">
                         <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <button type="submit" class="cv-link">Remove</button>
                     </form>
                 }
@@ -55,6 +57,7 @@
                 <summary class="cv-link">Add option</summary>
                 <form method="post" asp-controller="Options" asp-action="Add" asp-route-id="@question.Id">
                     <input type="hidden" name="applicationId" value="@applicationId" />
+                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <div class="cv-field">
                         <label for="option-label-@question.Id">Label</label>
                         <input id="option-label-@question.Id" name="Label" type="text" maxlength="200" />
@@ -83,6 +86,7 @@
                 <summary class="cv-link">Add scoring rule</summary>
                 <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id">
                     <input type="hidden" name="applicationId" value="@applicationId" />
+                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <div class="cv-field">
                         <label for="rule-family-@question.Id">Rule family</label>
                         <select id="rule-family-@question.Id" name="Family">

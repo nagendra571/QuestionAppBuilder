@@ -1,4 +1,5 @@
 using QuestionAppBuilder.Domain.Graphs;
+using QuestionAppBuilder.Application.Authoring;
 using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
 
 namespace QuestionAppBuilder.Editor.ViewModels;
@@ -14,4 +15,6 @@ public sealed class ApplicationDetailViewModel
     public bool IsEditable => DraftGraph is not null;
 
     public string TypeName { get; init; } = string.Empty;
+
+    public PublicationReview? DraftReview { get; init; }
 }

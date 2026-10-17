@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Services;
+using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Domain.Exceptions;
 using QuestionAppBuilder.Editor.Options;
 using QuestionAppBuilder.Editor.ViewModels;
@@ -10,13 +11,16 @@ namespace QuestionAppBuilder.Editor.Controllers;
 public class ApplicationsController : EditorControllerBase
 {
     private readonly IApplicationDesignService _designService;
+    private readonly IDraftService _draftService;
 
     public ApplicationsController(
         QuestionAppBuilderEditorOptions editorOptions,
-        IApplicationDesignService designService)
+        IApplicationDesignService designService,
+        IDraftService draftService)
         : base(editorOptions)
     {
         _designService = designService;
+        _draftService = draftService;
     }
 
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -57,6 +61,7 @@ public class ApplicationsController : EditorControllerBase
         {
             var application = await _designService.GetApplicationAsync(id, ct);
             var draftGraph = await _designService.TryGetDraftGraphAsync(id, ct);
+            var draftReview = draftGraph is null ? null : await _draftService.ReviewAsync(id, ct);
             var publishedGraph = draftGraph is null
                 ? await _designService.GetLatestPublishedGraphAsync(id, ct)
                 : null;
@@ -66,6 +71,7 @@ public class ApplicationsController : EditorControllerBase
             {
                 Application = application,
                 DraftGraph = draftGraph,
+                DraftReview = draftReview,
                 PublishedGraph = publishedGraph,
                 TypeName = types.FirstOrDefault(type => type.Id == application.ApplicationTypeId)?.Name ?? string.Empty,
             };
@@ -108,11 +114,13 @@ public class ApplicationsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Publish(int id, CancellationToken ct)
+    public async Task<IActionResult> Publish(int id, byte[]? expectedRevision, string[]? acknowledgedWarningCodes, CancellationToken ct)
     {
         try
         {
-            await _designService.PublishAsync(id, ct);
+            if (expectedRevision is null)
+                throw new DraftConflictException();
+            await _draftService.PublishAsync(new PublishRequest(id, expectedRevision, (acknowledgedWarningCodes ?? []).ToHashSet(StringComparer.Ordinal)), ct);
         }
         catch (NotFoundException)
         {

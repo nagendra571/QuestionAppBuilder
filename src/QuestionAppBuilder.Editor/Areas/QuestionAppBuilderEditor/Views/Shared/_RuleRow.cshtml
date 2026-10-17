@@ -6,6 +6,7 @@
     var rule = Model.Rule;
     var editable = Model.Detail.IsEditable;
     var applicationId = Model.Detail.Application.Id;
+    var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
     var familyLabel = QuestionFormViewModel.SplitPascalCase(rule.Family.ToString());
     var optionIds = rule.Options.Select(ruleOption => ruleOption.QuestionOptionId).ToHashSet();
     var optionLabels = Model.Question.Options
@@ -54,6 +55,7 @@
     {
         <form method="post" asp-controller="Rules" asp-action="Remove" asp-route-id="@rule.Id" class="cv-remove">
             <input type="hidden" name="applicationId" value="@applicationId" />
+            <input type="hidden" name="expectedRevision" value="@revisionValue" />
             <button type="submit" class="cv-link">Remove</button>
         </form>
     }

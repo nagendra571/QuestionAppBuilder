@@ -29,7 +29,7 @@ public class OptionsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Add(int id, int applicationId, OptionFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> Add(int id, int applicationId, byte[]? expectedRevision, OptionFormViewModel form, CancellationToken ct)
     {
         if (!ModelState.IsValid)
         {
@@ -50,7 +50,7 @@ public class OptionsController : EditorControllerBase
 
         try
         {
-            await _designService.AddOptionAsync(id, form.Label, form.Value, ct);
+            await _designService.AddOptionAsync(id, form.Label, form.Value, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
@@ -66,11 +66,11 @@ public class OptionsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Remove(int id, int applicationId, CancellationToken ct)
+    public async Task<IActionResult> Remove(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)
     {
         try
         {
-            await _designService.RemoveOptionAsync(id, ct);
+            await _designService.RemoveOptionAsync(id, ct, expectedRevision);
         }
         catch (NotFoundException)
         {

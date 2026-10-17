@@ -12,7 +12,7 @@ public class VisibilityPredicateConfiguration : IEntityTypeConfiguration<Visibil
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Operator).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.NumberValue).HasPrecision(18, 4);
-        builder.HasOne<Question>().WithMany().HasForeignKey(x => x.SourceQuestionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.SourceQuestion).WithMany().HasForeignKey(x => x.SourceQuestionId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Options).WithOne().HasForeignKey(x => x.VisibilityPredicateId).OnDelete(DeleteBehavior.Cascade);
     }
 }

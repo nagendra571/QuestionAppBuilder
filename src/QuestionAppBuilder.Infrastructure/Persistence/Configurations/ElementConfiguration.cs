@@ -34,6 +34,6 @@ public class ElementConfiguration : IEntityTypeConfiguration<Element>
             .HasForeignKey<Question>(q => q.ElementId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne<VisibilityCondition>().WithMany().HasForeignKey(e => e.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.VisibilityCondition).WithMany().HasForeignKey(e => e.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
     }
 }

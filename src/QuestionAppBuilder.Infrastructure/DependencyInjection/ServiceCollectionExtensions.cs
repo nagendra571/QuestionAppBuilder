@@ -3,9 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Options;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Application.Evaluation;
+using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain.Interfaces;
 using QuestionAppBuilder.Infrastructure.Persistence;
+using QuestionAppBuilder.Infrastructure.Authoring;
 using QuestionAppBuilder.Infrastructure.Repositories;
 
 namespace QuestionAppBuilder.Infrastructure.DependencyInjection;
@@ -29,13 +31,14 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
-        services.AddDbContext<QuestionAppBuilderDbContext>(db => db.UseSqlServer(options.ConnectionString));
+        services.AddDbContextFactory<QuestionAppBuilderDbContext>(db => db.UseSqlServer(options.ConnectionString), ServiceLifetime.Scoped);
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<ISubmissionRepository, SubmissionRepository>();
         services.AddSingleton<IScoringEngine, ScoringEngine>();
         services.AddSingleton<IDefinitionEvaluator, DefinitionEvaluator>();
         services.AddScoped<IApplicationDesignService, ApplicationDesignService>();
         services.AddScoped<ISubmissionService, SubmissionService>();
+        services.AddScoped<IDraftService, DraftService>();
 
         return services;
     }

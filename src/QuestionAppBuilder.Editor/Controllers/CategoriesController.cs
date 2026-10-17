@@ -20,7 +20,7 @@ public class CategoriesController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Add(int applicationId, CategoryFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> Add(int applicationId, byte[]? expectedRevision, CategoryFormViewModel form, CancellationToken ct)
     {
         if (!ModelState.IsValid)
         {
@@ -29,7 +29,7 @@ public class CategoriesController : EditorControllerBase
 
         try
         {
-            await _designService.AddCategoryAsync(applicationId, form.Name, ct);
+            await _designService.AddCategoryAsync(applicationId, form.Name, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
@@ -45,7 +45,7 @@ public class CategoriesController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Update(int id, int applicationId, CategoryFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> Update(int id, int applicationId, byte[]? expectedRevision, CategoryFormViewModel form, CancellationToken ct)
     {
         if (!ModelState.IsValid)
         {
@@ -54,7 +54,7 @@ public class CategoriesController : EditorControllerBase
 
         try
         {
-            await _designService.UpdateCategoryAsync(id, form.Name, ct);
+            await _designService.UpdateCategoryAsync(id, form.Name, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
@@ -70,11 +70,11 @@ public class CategoriesController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Remove(int id, int applicationId, CancellationToken ct)
+    public async Task<IActionResult> Remove(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)
     {
         try
         {
-            await _designService.RemoveCategoryAsync(id, ct);
+            await _designService.RemoveCategoryAsync(id, ct, expectedRevision);
         }
         catch (NotFoundException)
         {

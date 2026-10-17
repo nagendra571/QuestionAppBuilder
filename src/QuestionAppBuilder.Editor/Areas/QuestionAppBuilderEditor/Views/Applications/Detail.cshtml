@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = Model.Application.Name;
     var graph = Model.IsEditable ? Model.DraftGraph : Model.PublishedGraph;
+    var revisionValue = Model.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.DraftGraph.Version.RevisionNonce.ToByteArray());
     var categories = graph?.Categories.OrderBy(category => category.SortOrder).ThenBy(category => category.Id).ToArray()
         ?? Array.Empty<Category>();
     var publishedVersionNumber = Model.DraftGraph is not null && Model.Application.CurrentVersionId is not null
@@ -89,10 +90,31 @@
     @if (Model.IsEditable && Model.DraftGraph is not null)
     {
         <form method="post" asp-controller="Applications" asp-action="Publish" asp-route-id="@Model.Application.Id" class="cv-publish">
+            <input type="hidden" name="expectedRevision" value="@revisionValue" />
+            @if (Model.DraftReview is not null)
+            {
+                foreach (var warning in Model.DraftReview.Warnings.DistinctBy(item => item.Code))
+                {
+                    <div class="cv-field cv-field-inline">
+                        <input id="warning-@warning.Code" name="acknowledgedWarningCodes" type="checkbox" value="@warning.Code" />
+                        <label for="warning-@warning.Code">Acknowledge: @warning.Message</label>
+                    </div>
+                }
+            }
             <button type="submit" class="cv-btn">Publish version @Model.DraftGraph.Version.VersionNumber</button>
         </form>
     }
 </div>
+
+@if (Model.DraftReview?.Errors.Count > 0)
+{
+    <div class="cv-alert" role="alert">
+        @foreach (var issue in Model.DraftReview.Errors)
+        {
+            <div>@issue.Message</div>
+        }
+    </div>
+}
 
 @if (!Model.IsEditable)
 {
@@ -120,6 +142,7 @@
         <div class="cv-cbody">
             <form method="post" asp-controller="Categories" asp-action="Add">
                 <input type="hidden" name="applicationId" value="@Model.Application.Id" />
+                <input type="hidden" name="expectedRevision" value="@revisionValue" />
                 <div class="cv-field">
                     <label for="new-category-name">Name</label>
                     <input id="new-category-name" name="Name" type="text" maxlength="200" />

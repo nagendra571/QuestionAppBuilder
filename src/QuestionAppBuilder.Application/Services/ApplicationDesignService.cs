@@ -1,4 +1,6 @@
 using QuestionAppBuilder.Domain;
+using QuestionAppBuilder.Application.Authoring;
+using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Exceptions;
@@ -11,11 +13,13 @@ namespace QuestionAppBuilder.Application.Services;
 public sealed class ApplicationDesignService : IApplicationDesignService
 {
     private readonly IApplicationRepository _repository;
+    private readonly DefinitionValidator _definitionValidator;
 
-    public ApplicationDesignService(IApplicationRepository repository)
+    public ApplicationDesignService(IApplicationRepository repository, DefinitionValidator? definitionValidator = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         _repository = repository;
+        _definitionValidator = definitionValidator ?? new DefinitionValidator(new DefinitionEvaluator());
     }
 
     public async Task<IReadOnlyList<ApplicationType>> ListApplicationTypesAsync(CancellationToken ct = default)
@@ -91,15 +95,15 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
         var application = await GetApplicationAsync(applicationId, ct);
         var published = await GetPublishedGraphAsync(application, ct);
-        var (cloneGraph, cloneMap) = CloneGraph(published, published.Version.VersionNumber + 1);
+        var (cloneGraph, cloneMap) = DefinitionCloner.Clone(published, published.Version.VersionNumber + 1);
         _repository.AddGraph(cloneGraph);
-        LinkClonedRuleOptions(cloneMap);
+        DefinitionCloner.LinkRuleOptions(cloneMap);
         await _repository.SaveChangesAsync(ct);
 
         return cloneGraph;
     }
 
-    public async Task<Category> AddCategoryAsync(int applicationId, string name, CancellationToken ct = default)
+    public async Task<Category> AddCategoryAsync(int applicationId, string name, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Category name");
 
@@ -109,11 +113,12 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         if (graph is null)
         {
             var published = await GetPublishedGraphAsync(application, ct);
-            var (cloneGraph, cloneMap) = CloneGraph(published, published.Version.VersionNumber + 1);
+            var (cloneGraph, cloneMap) = DefinitionCloner.Clone(published, published.Version.VersionNumber + 1);
             _repository.AddGraph(cloneGraph);
-            LinkClonedRuleOptions(cloneMap);
+            DefinitionCloner.LinkRuleOptions(cloneMap);
             graph = cloneGraph;
         }
+        else PrepareDraftEdit(graph, expectedRevision);
 
         var category = new Category
         {
@@ -128,30 +133,33 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return category;
     }
 
-    public async Task UpdateCategoryAsync(int categoryId, string name, CancellationToken ct = default)
+    public async Task UpdateCategoryAsync(int categoryId, string name, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         EnsureMaxLength(name, ValidationLimits.NameMaxLength, "Category name");
 
-        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
 
         editable.Target.Name = name;
         await _repository.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveCategoryAsync(int categoryId, CancellationToken ct = default)
+    public async Task RemoveCategoryAsync(int categoryId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
-        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct);
-
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
+        var removedElements = editable.Target.Elements.Select(e => e.Id).ToHashSet();
+        var removedQuestions = editable.Target.Elements.Where(e => e.Question is not null).Select(e => e.Question!.Id).ToHashSet();
+        var removedOptions = editable.Target.Elements.Where(e => e.Question is not null).SelectMany(e => e.Question!.Options).Select(o => o.Id).ToHashSet();
+        PruneVisibilityConditions(editable.Graph, removedQuestions, removedOptions, removedElements, new HashSet<int> { editable.Target.Id });
         editable.Graph.Version.Categories.Remove(editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
-    public async Task<Element> AddContentElementAsync(int categoryId, string label, string? helpText = null, CancellationToken ct = default)
+    public async Task<Element> AddContentElementAsync(int categoryId, string label, string? helpText = null, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         EnsureMaxLength(label, ValidationLimits.LabelMaxLength, "Element label");
         EnsureOptionalMaxLength(helpText, ValidationLimits.HelpTextMaxLength, "Help text");
 
-        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
 
         var element = new Element
         {
@@ -168,12 +176,12 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return element;
     }
 
-    public async Task<Question> AddQuestionAsync(int categoryId, string label, AnswerType answerType, bool isRequired = true, string? helpText = null, CancellationToken ct = default)
+    public async Task<Question> AddQuestionAsync(int categoryId, string label, AnswerType answerType, bool isRequired = true, string? helpText = null, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         EnsureMaxLength(label, ValidationLimits.LabelMaxLength, "Element label");
         EnsureOptionalMaxLength(helpText, ValidationLimits.HelpTextMaxLength, "Help text");
 
-        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
 
         var question = new Question
         {
@@ -198,12 +206,12 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return question;
     }
 
-    public async Task<QuestionOption> AddOptionAsync(int questionId, string label, string value, CancellationToken ct = default)
+    public async Task<QuestionOption> AddOptionAsync(int questionId, string label, string value, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         EnsureMaxLength(label, ValidationLimits.OptionLabelMaxLength, "Option label");
         EnsureMaxLength(value, ValidationLimits.OptionValueMaxLength, "Option value");
 
-        var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct, expectedRevision);
 
         var option = new QuestionOption
         {
@@ -219,9 +227,9 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return option;
     }
 
-    public async Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default)
+    public async Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
-        var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct, expectedRevision);
 
         var sourceQuestion = editable.Source is null
             ? editable.Target
@@ -291,18 +299,21 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return rule;
     }
 
-    public async Task RemoveElementAsync(int elementId, CancellationToken ct = default)
+    public async Task RemoveElementAsync(int elementId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
-        var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
 
         var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
+        var questionIds = editable.Target.Question is null ? new HashSet<int>() : new HashSet<int> { editable.Target.Question.Id };
+        var optionIds = editable.Target.Question?.Options.Select(o => o.Id).ToHashSet() ?? new HashSet<int>();
+        PruneVisibilityConditions(editable.Graph, questionIds, optionIds, new HashSet<int> { editable.Target.Id }, new HashSet<int>());
         category.Elements.Remove(editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveOptionAsync(int optionId, CancellationToken ct = default)
+    public async Task RemoveOptionAsync(int optionId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
-        var editable = await OpenForEditAsync(ChildEntityKind.Option, optionId, g => FindOption(g, optionId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Option, optionId, g => FindOption(g, optionId), ct, expectedRevision);
 
         if (IsOptionReferencedByAnyRule(editable.Graph, editable.Target))
         {
@@ -311,13 +322,14 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
         var question = FindQuestionContainingOption(editable.Graph, editable.Target)
             ?? throw new NotFoundException($"Option {optionId} was not found.");
+        PruneVisibilityConditions(editable.Graph, new HashSet<int>(), new HashSet<int> { optionId }, new HashSet<int>(), new HashSet<int>());
         question.Options.Remove(editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveRuleAsync(int ruleId, CancellationToken ct = default)
+    public async Task RemoveRuleAsync(int ruleId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
-        var editable = await OpenForEditAsync(ChildEntityKind.Rule, ruleId, g => FindRule(g, ruleId), ct);
+        var editable = await OpenForEditAsync(ChildEntityKind.Rule, ruleId, g => FindRule(g, ruleId), ct, expectedRevision);
 
         var question = FindQuestionContainingRule(editable.Graph, editable.Target)
             ?? throw new NotFoundException($"Rule {ruleId} was not found.");
@@ -325,7 +337,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         await _repository.SaveChangesAsync(ct);
     }
 
-    public async Task PublishAsync(int applicationId, CancellationToken ct = default)
+    public async Task PublishAsync(int applicationId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         var application = await GetApplicationAsync(applicationId, ct);
         var graph = await _repository.GetDraftGraphAsync(applicationId, ct);
@@ -333,12 +345,12 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         {
             throw new DefinitionValidationException("No draft to publish.");
         }
-
-        var scorableQuestions = graph.Categories.SelectMany(c => c.Elements).Count(e => e.Question is not null);
-        if (graph.Categories.Count == 0 || scorableQuestions == 0)
-        {
-            throw new DefinitionValidationException("An application needs at least one category and one scorable question before it can be published.");
-        }
+        var review = _definitionValidator.Review(graph, graph.Version.RevisionNonce.ToByteArray());
+        if (review.Errors.Count != 0)
+            throw new DefinitionValidationException(string.Join(" ", review.Errors.Select(issue => issue.Message)));
+        if (review.Warnings.Count != 0)
+            throw new DefinitionValidationException("Publication warnings must be reviewed and acknowledged for the current draft revision.");
+        PrepareDraftEdit(graph, expectedRevision);
 
         graph.Version.Status = VersionStatus.Published;
         graph.Version.PublishedUtc = DateTime.UtcNow;
@@ -376,7 +388,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         ChildEntityKind kind,
         int childId,
         Func<ApplicationVersionGraph, T?> locate,
-        CancellationToken ct)
+        CancellationToken ct,
+        byte[]? expectedRevision = null)
         where T : class
     {
         var graph = await _repository.GetTrackedGraphByChildIdAsync(kind, childId, ct);
@@ -388,6 +401,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
         if (graph.Version.Status == VersionStatus.Draft)
         {
+            PrepareDraftEdit(graph, expectedRevision);
             return new EditableTarget<T> { Graph = graph, Target = target };
         }
 
@@ -403,9 +417,9 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         }
 
         var nextVersionNumber = await GetNextVersionNumberAsync(application, graph.Version.VersionNumber, ct);
-        var (cloneGraph, cloneMap) = CloneGraph(graph, nextVersionNumber);
+        var (cloneGraph, cloneMap) = DefinitionCloner.Clone(graph, nextVersionNumber);
         _repository.AddGraph(cloneGraph);
-        LinkClonedRuleOptions(cloneMap);
+        DefinitionCloner.LinkRuleOptions(cloneMap);
 
         return new EditableTarget<T>
         {
@@ -414,6 +428,38 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             Source = graph,
             CloneMap = cloneMap
         };
+    }
+
+    private static void PrepareDraftEdit(ApplicationVersionGraph graph, byte[]? expectedRevision)
+    {
+        if (expectedRevision is not null && !graph.Version.RevisionNonce.ToByteArray().AsSpan().SequenceEqual(expectedRevision))
+            throw new DraftConflictException();
+        graph.Version.RevisionNonce = Guid.NewGuid();
+    }
+
+    private static void PruneVisibilityConditions(ApplicationVersionGraph graph, ISet<int> removedQuestionIds, ISet<int> removedOptionIds,
+        ISet<int> removedElementIds, ISet<int> removedCategoryIds)
+    {
+        var conditionIds = graph.VisibilityConditions
+            .Where(condition => condition.Predicates.Any(predicate => removedQuestionIds.Contains(predicate.SourceQuestionId)
+                || predicate.Options.Any(option => removedOptionIds.Contains(option.QuestionOptionId))))
+            .Select(condition => condition.Id).ToHashSet();
+        conditionIds.UnionWith(graph.Categories.Where(category => removedCategoryIds.Contains(category.Id) && category.VisibilityConditionId is not null)
+            .Select(category => category.VisibilityConditionId!.Value));
+        conditionIds.UnionWith(graph.Categories.SelectMany(category => category.Elements)
+            .Where(element => removedElementIds.Contains(element.Id) && element.VisibilityConditionId is not null)
+            .Select(element => element.VisibilityConditionId!.Value));
+        if (conditionIds.Count == 0) return;
+        foreach (var category in graph.Categories)
+        {
+            if (category.VisibilityConditionId is int categoryConditionId && conditionIds.Contains(categoryConditionId))
+            { category.VisibilityConditionId = null; category.VisibilityCondition = null; }
+            foreach (var element in category.Elements)
+                if (element.VisibilityConditionId is int elementConditionId && conditionIds.Contains(elementConditionId))
+                { element.VisibilityConditionId = null; element.VisibilityCondition = null; }
+        }
+        if (graph.Version.VisibilityConditions is { } conditions)
+            conditions.RemoveAll(condition => conditionIds.Contains(condition.Id));
     }
 
     private async Task<int> GetNextVersionNumberAsync(ApplicationEntity application, int sourceVersionNumber, CancellationToken ct)
@@ -428,123 +474,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return maxExisting + 1;
     }
 
-    private static (ApplicationVersionGraph Graph, CloneMap Map) CloneGraph(ApplicationVersionGraph source, int versionNumber)
-    {
-        var version = new ApplicationVersion
-        {
-            ApplicationId = source.Version.ApplicationId,
-            VersionNumber = versionNumber,
-            Status = VersionStatus.Draft,
-            CreatedUtc = DateTime.UtcNow,
-            PublishedUtc = null,
-            NavigationMode = source.Version.NavigationMode,
-            RespondentAccessMode = source.Version.RespondentAccessMode,
-            ResultVisibility = source.Version.ResultVisibility,
-            SubmitLabel = source.Version.SubmitLabel,
-            ConfirmationText = source.Version.ConfirmationText,
-            DisplayName = source.Version.DisplayName
-        };
-
-        var map = new CloneMap();
-
-        foreach (var sourceCategory in source.Categories)
-        {
-            var category = new Category
-            {
-                Name = sourceCategory.Name,
-                SortOrder = sourceCategory.SortOrder,
-                LogicalKey = sourceCategory.LogicalKey
-            };
-
-            map.Categories[sourceCategory.Id] = category;
-            version.Categories.Add(category);
-
-            foreach (var sourceElement in sourceCategory.Elements)
-            {
-                var element = new Element
-                {
-                    Kind = sourceElement.Kind,
-                    Label = sourceElement.Label,
-                    HelpText = sourceElement.HelpText,
-                    SortOrder = sourceElement.SortOrder,
-                    LogicalKey = sourceElement.LogicalKey
-                };
-
-                map.Elements[sourceElement.Id] = element;
-                category.Elements.Add(element);
-
-                if (sourceElement.Question is null)
-                {
-                    continue;
-                }
-
-                var question = new Question
-                {
-                    AnswerType = sourceElement.Question.AnswerType,
-                    IsRequired = sourceElement.Question.IsRequired,
-                    ScoringMode = sourceElement.Question.ScoringMode,
-                    MaxLength = sourceElement.Question.MaxLength,
-                    MinValue = sourceElement.Question.MinValue,
-                    MaxValue = sourceElement.Question.MaxValue,
-                    MinSelections = sourceElement.Question.MinSelections,
-                    MaxSelections = sourceElement.Question.MaxSelections
-                };
-
-                map.Questions[sourceElement.Question.Id] = question;
-                element.Question = question;
-
-                foreach (var sourceOption in sourceElement.Question.Options)
-                {
-                    var option = new QuestionOption
-                    {
-                        Label = sourceOption.Label,
-                        Value = sourceOption.Value,
-                        SortOrder = sourceOption.SortOrder,
-                        LogicalKey = sourceOption.LogicalKey
-                    };
-
-                    map.Options[sourceOption.Id] = option;
-                    question.Options.Add(option);
-                }
-
-                foreach (var sourceRule in sourceElement.Question.Rules)
-                {
-                    var rule = new ScoringRule
-                    {
-                        Family = sourceRule.Family,
-                        Points = sourceRule.Points,
-                        SortOrder = sourceRule.SortOrder,
-                        LogicalKey = sourceRule.LogicalKey,
-                        MinInclusive = sourceRule.MinInclusive,
-                        MaxInclusive = sourceRule.MaxInclusive,
-                        MembershipOperator = sourceRule.MembershipOperator,
-                        MinValue = sourceRule.MinValue,
-                        MaxValue = sourceRule.MaxValue
-                    };
-
-                    map.Rules[sourceRule.Id] = rule;
-                    question.Rules.Add(rule);
-
-                    foreach (var sourceRuleOption in sourceRule.Options)
-                    {
-                        map.RuleOptionLinks.Add((rule, sourceRuleOption.QuestionOptionId));
-                    }
-                }
-            }
-        }
-
-        return (new ApplicationVersionGraph { Version = version, Categories = version.Categories }, map);
-    }
-
-    private static void LinkClonedRuleOptions(CloneMap map)
-    {
-        foreach (var (rule, sourceOptionId) in map.RuleOptionLinks)
-        {
-            rule.Options.Add(new ScoringRuleOption { QuestionOption = map.Options[sourceOptionId] });
-        }
-    }
-
-    private static T FindCounterpart<T>(CloneMap map, ChildEntityKind kind, int childId)
+    private static T FindCounterpart<T>(DefinitionCloneMap map, ChildEntityKind kind, int childId)
         where T : class
         => kind switch
         {
@@ -681,16 +611,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         public required ApplicationVersionGraph Graph { get; init; }
         public required T Target { get; init; }
         public ApplicationVersionGraph? Source { get; init; }
-        public CloneMap? CloneMap { get; init; }
+        public DefinitionCloneMap? CloneMap { get; init; }
     }
 
-    private sealed class CloneMap
-    {
-        public Dictionary<int, Category> Categories { get; } = new();
-        public Dictionary<int, Element> Elements { get; } = new();
-        public Dictionary<int, Question> Questions { get; } = new();
-        public Dictionary<int, QuestionOption> Options { get; } = new();
-        public Dictionary<int, ScoringRule> Rules { get; } = new();
-        public List<(ScoringRule Rule, int OptionId)> RuleOptionLinks { get; } = new();
-    }
 }

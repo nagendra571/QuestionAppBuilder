@@ -5,6 +5,7 @@
     var category = Model.Category;
     var editable = Model.Detail.IsEditable;
     var applicationId = Model.Detail.Application.Id;
+    var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
     var elements = category.Elements.OrderBy(element => element.SortOrder).ThenBy(element => element.Id).ToArray();
 }
 
@@ -31,6 +32,7 @@
                     <summary class="cv-btn-ghost">Rename</summary>
                     <form method="post" asp-controller="Categories" asp-action="Update" asp-route-id="@category.Id" class="cv-rename-form">
                         <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">
                             <label for="category-name-@category.Id">Name</label>
                             <input id="category-name-@category.Id" name="Name" type="text" value="@category.Name" maxlength="200" />
@@ -40,6 +42,7 @@
                 </details>
                 <form method="post" asp-controller="Categories" asp-action="Remove" asp-route-id="@category.Id">
                     <input type="hidden" name="applicationId" value="@applicationId" />
+                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <button type="submit" class="cv-btn-ghost cv-danger">Remove</button>
                 </form>
             </div>
@@ -57,6 +60,7 @@
                     <summary class="cv-btn-ghost">Add question</summary>
                     <form method="post" asp-controller="Elements" asp-action="AddQuestion" asp-route-id="@category.Id">
                         <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">
                             <label for="question-label-@category.Id">Question</label>
                             <input id="question-label-@category.Id" name="Label" type="text" maxlength="500" />
@@ -86,6 +90,7 @@
                     <summary class="cv-btn-ghost">Add content</summary>
                     <form method="post" asp-controller="Elements" asp-action="AddContent" asp-route-id="@category.Id">
                         <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">
                             <label for="content-label-@category.Id">Label</label>
                             <input id="content-label-@category.Id" name="Label" type="text" maxlength="500" />

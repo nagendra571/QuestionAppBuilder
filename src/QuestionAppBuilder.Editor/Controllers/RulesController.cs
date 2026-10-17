@@ -21,7 +21,7 @@ public class RulesController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Add(int id, int applicationId, RuleFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> Add(int id, int applicationId, byte[]? expectedRevision, RuleFormViewModel form, CancellationToken ct)
     {
         if (!ModelState.IsValid)
         {
@@ -45,13 +45,13 @@ public class RulesController : EditorControllerBase
             switch (form.Family)
             {
                 case RuleFamily.Selection:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, form.MembershipOperator, form.OptionIds, ct: ct);
+                    await _designService.AddRuleAsync(id, form.Family, form.Points, form.MembershipOperator, form.OptionIds, ct: ct, expectedRevision: expectedRevision);
                     break;
                 case RuleFamily.NumericRange:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, minValue: form.MinValue, maxValue: form.MaxValue, ct: ct);
+                    await _designService.AddRuleAsync(id, form.Family, form.Points, minValue: form.MinValue, maxValue: form.MaxValue, ct: ct, expectedRevision: expectedRevision);
                     break;
                 default:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, ct: ct);
+                    await _designService.AddRuleAsync(id, form.Family, form.Points, ct: ct, expectedRevision: expectedRevision);
                     break;
             }
         }
@@ -69,11 +69,11 @@ public class RulesController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Remove(int id, int applicationId, CancellationToken ct)
+    public async Task<IActionResult> Remove(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)
     {
         try
         {
-            await _designService.RemoveRuleAsync(id, ct);
+            await _designService.RemoveRuleAsync(id, ct, expectedRevision);
         }
         catch (NotFoundException)
         {

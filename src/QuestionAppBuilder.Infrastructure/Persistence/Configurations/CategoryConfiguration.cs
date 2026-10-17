@@ -23,6 +23,6 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
             .HasForeignKey(c => c.ApplicationVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne<VisibilityCondition>().WithMany().HasForeignKey(c => c.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(c => c.VisibilityCondition).WithMany().HasForeignKey(c => c.VisibilityConditionId).OnDelete(DeleteBehavior.Restrict);
     }
 }

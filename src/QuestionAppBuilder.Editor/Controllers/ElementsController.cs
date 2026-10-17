@@ -20,7 +20,7 @@ public class ElementsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddContent(int id, int applicationId, ContentElementFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> AddContent(int id, int applicationId, byte[]? expectedRevision, ContentElementFormViewModel form, CancellationToken ct)
     {
         if (!ModelState.IsValid)
         {
@@ -29,7 +29,7 @@ public class ElementsController : EditorControllerBase
 
         try
         {
-            await _designService.AddContentElementAsync(id, form.Label, form.HelpText, ct);
+            await _designService.AddContentElementAsync(id, form.Label, form.HelpText, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
@@ -45,7 +45,7 @@ public class ElementsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddQuestion(int id, int applicationId, QuestionFormViewModel form, CancellationToken ct)
+    public async Task<IActionResult> AddQuestion(int id, int applicationId, byte[]? expectedRevision, QuestionFormViewModel form, CancellationToken ct)
     {
         if (!Enum.IsDefined(form.AnswerType))
         {
@@ -59,7 +59,7 @@ public class ElementsController : EditorControllerBase
 
         try
         {
-            await _designService.AddQuestionAsync(id, form.Label, form.AnswerType, form.IsRequired, form.HelpText, ct);
+            await _designService.AddQuestionAsync(id, form.Label, form.AnswerType, form.IsRequired, form.HelpText, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
@@ -75,11 +75,11 @@ public class ElementsController : EditorControllerBase
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Remove(int id, int applicationId, CancellationToken ct)
+    public async Task<IActionResult> Remove(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)
     {
         try
         {
-            await _designService.RemoveElementAsync(id, ct);
+            await _designService.RemoveElementAsync(id, ct, expectedRevision);
         }
         catch (NotFoundException)
         {
