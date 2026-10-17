@@ -52,7 +52,21 @@ public sealed class DraftPredicateInput
 }
 
 public sealed class PreviewAnswerInput { public string? Text { get; set; } public string? Number { get; set; } public List<int> SelectedOptionIds { get; set; } = new(); }
-public sealed class PreviewRequest { public Dictionary<int, PreviewAnswerInput> Answers { get; set; } = new(); }
+public sealed class PreviewRequest
+{
+    public Dictionary<int, PreviewAnswerInput> Answers { get; set; } = new();
+    public int CategoryIndex { get; set; }
+    public int? TargetCategoryIndex { get; set; }
+    public bool Review { get; set; }
+    public bool Submit { get; set; }
+}
 public sealed record PreviewResponse(QuestionAppBuilder.Core.Rendering.QuestionnaireRenderModel Questionnaire,
     QuestionAppBuilder.Application.Scoring.SubmissionScore Score, IReadOnlyList<QuestionAppBuilder.Application.Evaluation.DefinitionIssue> AnswerIssues,
-    IReadOnlyList<QuestionAppBuilder.Application.Evaluation.DefinitionIssue> DefinitionIssues);
+    IReadOnlyList<QuestionAppBuilder.Application.Evaluation.DefinitionIssue> DefinitionIssues)
+{
+    public string Html { get; init; } = string.Empty;
+    public QuestionAppBuilder.Domain.Enums.NavigationMode NavigationMode { get; init; }
+    public QuestionAppBuilder.Domain.Enums.ResultVisibility ResultVisibility { get; init; }
+    public int CategoryIndex { get; init; }
+    public bool IsReceipt { get; init; }
+}

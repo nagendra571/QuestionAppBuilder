@@ -1,0 +1,33 @@
+@model RuntimePreviewPageModel
+<main class="qab-runtime qab-review qab-runtime-preview">
+    <p class="qab-eyebrow">Preview review</p>
+    <h2>Review your answers</h2>
+    @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0)
+    {
+        <section class="qab-error-summary" role="alert"><h3>@(Model.SummaryMessage ?? "Complete the highlighted answers before submitting.")</h3>
+            @if (Model.FieldErrors is not null) { <ul>@foreach (var error in Model.FieldErrors) { <li><a href="#question-@error.Key">@error.Value</a></li> }</ul> }
+        </section>
+    }
+    @foreach (var category in Model.Questionnaire.Categories)
+    {
+        <section class="qab-review-category"><h3>@category.Name</h3>
+            @foreach (var element in category.Elements.Where(e => e.Question is not null))
+            {
+                var question = element.Question!;
+                var value = question.Value;
+                var shown = value?.Text ?? value?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes)
+                {
+                    shown = string.Join(", ", question.Options.Where(option => value?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label));
+                }
+                if (string.IsNullOrWhiteSpace(shown)) shown = "Not answered";
+                <dl><dt>@question.Label</dt><dd>@shown</dd></dl>
+            }
+            <button type="button" class="qab-button qab-button-secondary" data-preview-target="@category.Index">Edit @category.Name</button>
+        </section>
+    }
+    <div class="qab-action-bar">
+        <button type="button" class="qab-button qab-button-secondary" data-preview-target="@(Model.Questionnaire.Categories.Count - 1)">Back to answers</button>
+        <button type="button" class="qab-button qab-button-primary" data-preview-submit>@Model.Questionnaire.SubmitLabel</button>
+    </div>
+</main>

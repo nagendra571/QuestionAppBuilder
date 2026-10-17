@@ -55,17 +55,19 @@ public sealed class TestHostFixture : IAsyncDisposable
         private int _revision;
         public ApplicationVersionGraph Graph { get; set; } = BuildGraph();
         public bool FailNextSave { get; set; }
+        public bool AcceptingNewResponses { get; set; } = true;
+        public bool AcceptingSubmissions { get; set; } = true;
         public int SubmissionCount { get; private set; }
         public IReadOnlyDictionary<int, AnswerValue> SubmittedAnswers { get; private set; } = new Dictionary<int, AnswerValue>();
         public static Guid ResponseId { get; } = Guid.Parse("9b91b90c-0cb7-40b4-b185-57d99bcb31a2");
 
         public Task<ResponseLandingSnapshot?> GetLandingAsync(int applicationId, CancellationToken ct = default)
-            => Task.FromResult<ResponseLandingSnapshot?>(new ResponseLandingSnapshot(applicationId, "Test application", Graph, true, true));
+            => Task.FromResult<ResponseLandingSnapshot?>(new ResponseLandingSnapshot(applicationId, "Test application", Graph, AcceptingNewResponses, AcceptingSubmissions));
 
         public Task<ResponseSnapshot> StartAsync(int applicationId, CancellationToken ct = default)
         {
             var response = new ResponseSnapshot(ResponseId, applicationId, Graph.Version.Id, Graph,
-                new Dictionary<int, AnswerValue>(), ResponseStatus.InProgress, RevisionToken(), DateTime.UtcNow, true, true);
+                new Dictionary<int, AnswerValue>(), ResponseStatus.InProgress, RevisionToken(), DateTime.UtcNow, AcceptingNewResponses, AcceptingSubmissions);
             _responses[ResponseId] = response;
             return Task.FromResult(response);
         }
@@ -85,6 +87,7 @@ public sealed class TestHostFixture : IAsyncDisposable
 
         public Task<SubmissionReceipt> SubmitAsync(SubmitResponseRequest request, CancellationToken cancellationToken = default)
         {
+            if (!AcceptingSubmissions) return Task.FromException<SubmissionReceipt>(new InvalidOperationException("This questionnaire is not accepting submissions."));
             if (_receipts.TryGetValue(request.RequestId, out var prior)) return Task.FromResult(prior);
             var snapshot = _responses[request.ResponseId];
             var result = new DefinitionEvaluator().Evaluate(snapshot.Definition, snapshot.Answers, true);

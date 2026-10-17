@@ -52,6 +52,15 @@ public sealed class ResponseAccessService : IResponseAccessService
                     if (response is null || !StringComparer.Ordinal.Equals(response.OwnerKey, ownerKey)) { await transaction.CommitAsync(cancellationToken); return false; }
                     version = await db.ApplicationVersions.SingleAsync(v => v.Id == response.ApplicationVersionId, cancellationToken);
                 }
+                else if (request.ResumeOnly)
+                {
+                    var response = await db.ResponseDrafts.AsNoTracking()
+                        .Where(r => r.ApplicationId == request.ApplicationId && r.OwnerKey == ownerKey && r.Status == ResponseStatus.InProgress)
+                        .OrderByDescending(r => r.UpdatedUtc).ThenByDescending(r => r.Id).FirstOrDefaultAsync(cancellationToken);
+                    if (response is null) { await transaction.CommitAsync(cancellationToken); return false; }
+                    request = request with { ResponseId = response.Id };
+                    version = await db.ApplicationVersions.SingleAsync(v => v.Id == response.ApplicationVersionId, cancellationToken);
+                }
                 else
                 {
                     if (!application.AcceptNewResponses || currentVersionId <= 0) { await transaction.CommitAsync(cancellationToken); return false; }

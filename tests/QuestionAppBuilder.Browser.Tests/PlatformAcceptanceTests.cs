@@ -74,9 +74,27 @@ public sealed class PlatformAcceptanceTests
         await first.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
         await first.GetByLabel("Email address").FillAsync("respondent@example.test");
         var emailResponse = first.WaitForResponseAsync(response => response.Url.Contains("/Access/Request", StringComparison.Ordinal));
-        await first.GetByRole(AriaRole.Button, new() { Name = "Email me an access link" }).ClickAsync();
+        await first.GetByRole(AriaRole.Button, new() { Name = "Email me a link to start" }).ClickAsync();
         (await emailResponse).Status.Should().Be(200);
         (await first.Locator("body").InnerTextAsync()).Should().Contain("If the address matches a response, an access link has been sent");
+    }
+
+    [Fact]
+    public async Task Email_resume_recovery_remains_available_when_new_responses_are_closed()
+    {
+        var runtime = new TestHostFixture.FakeRuntime { AcceptingNewResponses = false };
+        runtime.Graph.Version.RespondentAccessMode = RespondentAccessMode.EmailLink;
+        await using var host = await BrowserTestFixture.StartAsync(runtime);
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+
+        await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
+
+        (await page.GetByLabel("Email me a link to my saved response").IsVisibleAsync()).Should().BeTrue();
+        (await page.GetByRole(AriaRole.Button, new() { Name = "Send resume link" }).CountAsync()).Should().Be(1);
+        (await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).CountAsync()).Should().Be(0);
+        (await page.GetByRole(AriaRole.Button, new() { Name = "Email me a link to start" }).CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -177,6 +195,56 @@ public sealed class PlatformAcceptanceTests
         var startResponse = await startResponseTask;
         startResponse.Status.Should().Be(403, $"unexpected Start response location: {startResponse.Headers.GetValueOrDefault("location", "<none>")}; host: {host.GetDiagnosticLogs()}");
         (await host.CountResponsesAsync()).Should().Be(0, "the host FillPolicy is enforced before a response is created");
+    }
+
+    [Fact]
+    public async Task Designer_can_close_submissions_and_respondent_review_disables_submit()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var applicationId = await host.SeedHostSignInApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var respondent = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await LoginAsync(respondent, host.BaseAddress, "filler");
+        await respondent.GotoAsync(new Uri(host.BaseAddress, $"/App/{applicationId}").ToString());
+        await respondent.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+        await respondent.WaitForURLAsync("**/Responses/*");
+        var responseUrl = new Uri(respondent.Url).GetLeftPart(UriPartial.Path);
+        var initialReview = await respondent.GotoAsync($"{responseUrl}/Review");
+        initialReview!.Status.Should().Be(200, $"review URL was {respondent.Url}; body: {await respondent.Locator("body").InnerTextAsync()}");
+        var submitButton = respondent.Locator("form[data-runtime-form] button[type=submit]");
+        (await submitButton.CountAsync()).Should().Be(1, $"review URL was {respondent.Url}; body: {await respondent.Locator("body").InnerTextAsync()}");
+        (await submitButton.IsDisabledAsync()).Should().BeFalse();
+
+        var designer = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await LoginAsync(designer, host.BaseAddress, "designer");
+        await designer.GotoAsync(new Uri(host.BaseAddress, "/ConfigureApp/Applications").ToString());
+        var detailLink = designer.Locator(".editor-app-name").First;
+        await detailLink.WaitForAsync();
+        var detailUrl = await detailLink.GetAttributeAsync("href");
+        detailUrl.Should().NotBeNullOrWhiteSpace();
+        var detail = await designer.GotoAsync(new Uri(host.BaseAddress, detailUrl!).ToString());
+        detail!.Status.Should().Be(200, $"designer detail URL was {designer.Url}; body: {await designer.Locator("body").InnerTextAsync()}");
+        await designer.Locator("#accept-new-responses").UncheckAsync();
+        await designer.Locator("#accept-submissions").UncheckAsync();
+        var update = designer.WaitForResponseAsync(response => response.Request.Method == "POST"
+            && response.Url.Contains("UpdateAvailability", StringComparison.Ordinal));
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Save availability" }).ClickAsync();
+        (await update).Status.Should().Be(302);
+
+        var availability = await host.ReadAvailabilityAsync(applicationId);
+        availability.AcceptNewResponses.Should().BeFalse();
+        availability.AcceptSubmissions.Should().BeFalse();
+        availability.AuditCount.Should().Be(1);
+        availability.ActorKey.Should().Contain(":designer");
+
+        var closedReview = await respondent.GotoAsync($"{responseUrl}/Review");
+        closedReview!.Status.Should().Be(200, $"review URL was {respondent.Url}; body: {await respondent.Locator("body").InnerTextAsync()}");
+        await respondent.GetByText("Submissions are currently closed").WaitForAsync();
+        (await submitButton.CountAsync()).Should().Be(1);
+        (await submitButton.IsDisabledAsync()).Should().BeTrue();
+        await respondent.GotoAsync(new Uri(host.BaseAddress, $"/App/{applicationId}").ToString());
+        (await respondent.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).CountAsync()).Should().Be(0);
     }
 
     private static async Task LoginAsync(IPage page, Uri baseAddress, string username)

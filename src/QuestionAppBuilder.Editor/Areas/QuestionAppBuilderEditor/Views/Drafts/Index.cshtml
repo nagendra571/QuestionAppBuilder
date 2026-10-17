@@ -172,30 +172,7 @@
 </section>
 <section class="aw-panel aw-preview" id="preview" aria-labelledby="preview-heading">
     <header><div><p class="aw-kicker">Test without submitting</p><h2 id="preview-heading">Preview and scoring trace</h2></div><button type="button" class="aw-secondary" data-preview-button data-preview-url="@Url.Action("Evaluate", "Preview", new { applicationId = Model.ApplicationId })">Evaluate preview</button></header>
-    <div class="aw-grid">
-        @foreach (var question in questions)
-        {
-            <fieldset class="aw-subpanel" data-preview-answer-group="@question.Id"><legend>@question.Id — @question.AnswerType</legend>
-                @if (question.AnswerType == AnswerType.Number)
-                {
-                    <label class="aw-field">Answer<input type="number" step="any" data-preview-question="@question.Id" data-answer-type="@question.AnswerType" /></label>
-                }
-                else if (question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup)
-                {
-                    <label class="aw-field">Answer<select data-preview-question="@question.Id" data-answer-type="@question.AnswerType"><option value="">No answer</option>@foreach (var option in question.Options.OrderBy(o => o.SortOrder)) { <option value="@option.Id">@option.Label</option> }</select></label>
-                }
-                else if (question.AnswerType == AnswerType.Checkboxes)
-                {
-                    @foreach (var option in question.Options.OrderBy(o => o.SortOrder)) { <label class="aw-field aw-check"><input type="checkbox" value="@option.Id" data-preview-question="@question.Id" data-answer-type="@question.AnswerType" /> @option.Label</label> }
-                }
-                else
-                {
-                    <label class="aw-field">Answer<input data-preview-question="@question.Id" data-answer-type="@question.AnswerType" /></label>
-                }
-            </fieldset>
-        }
-    </div>
-    <div data-preview-result aria-live="polite"></div>
+    <div data-preview-result aria-live="polite">Evaluate the draft to begin a questionnaire preview.</div>
 </section>
 <form id="publish-draft" method="post" asp-controller="Drafts" asp-action="Publish" asp-route-applicationId="@Model.ApplicationId">
     @Html.AntiForgeryToken()<input type="hidden" name="ApplicationId" value="@Model.ApplicationId" /><input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />

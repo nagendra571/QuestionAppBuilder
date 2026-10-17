@@ -182,8 +182,11 @@ public sealed class DraftWorkspaceTests : IDisposable
             var graph = await design.GetDraftGraphAsync(appId);
             var qid = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).First(q => q is not null)!.Id;
             await design.AddRuleAsync(qid, RuleFamily.NumericRange, 7, minValue: 1, maxValue: 10);
+            await design.AddRuleAsync(qid, RuleFamily.NumericRange, 5, minValue: 5, maxValue: 15);
             return qid;
         });
+        var warnings = await _factory.WithScopeAsync(async services => (await services.GetRequiredService<IDraftService>().ReviewAsync(appId)).Warnings);
+        warnings.Should().ContainSingle("overlapping scoring ranges are warnings, not preview blockers");
         var client = await _factory.CreateSignedInClientAsync("designer");
         var (token, _) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
         var before = await _factory.WithScopeAsync(async services =>
@@ -197,11 +200,28 @@ public sealed class DraftWorkspaceTests : IDisposable
         };
         request.Headers.Add("RequestVerificationToken", token);
         var response = await client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, json);
         using var parsed = JsonDocument.Parse(json);
         parsed.RootElement.GetProperty("score").GetProperty("total").GetInt32().Should().Be(7);
         parsed.RootElement.GetProperty("questionnaire").GetProperty("preview").GetBoolean().Should().BeTrue();
+        parsed.RootElement.GetProperty("html").GetString().Should().Contain("data-question-id=\"").And.Contain("Annual income");
+
+        var submitRequest = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                Answers = new Dictionary<int, object> { [questionId] = new { Number = "5", SelectedOptionIds = Array.Empty<int>() } },
+                Submit = true
+            }), Encoding.UTF8, "application/json")
+        };
+        submitRequest.Headers.Add("RequestVerificationToken", token);
+        var simulatedReceipt = await client.SendAsync(submitRequest);
+        var receiptJson = await simulatedReceipt.Content.ReadAsStringAsync();
+        simulatedReceipt.StatusCode.Should().Be(HttpStatusCode.OK, receiptJson);
+        using var receipt = JsonDocument.Parse(receiptJson);
+        receipt.RootElement.GetProperty("isReceipt").GetBoolean().Should().BeTrue($"only evaluator errors block a simulated receipt; overlap warnings are readiness guidance. Response: {receiptJson}");
+        receipt.RootElement.GetProperty("html").GetString().Should().Contain("This is a preview. No response or submission was created.");
 
         var storedGraph = await _factory.WithScopeAsync(services => services.GetRequiredService<IDraftService>().GetAsync(appId));
         var expected = new DefinitionEvaluator().Evaluate(storedGraph.Definition,
@@ -213,6 +233,79 @@ public sealed class DraftWorkspaceTests : IDisposable
             return (await db.ResponseDrafts.CountAsync(), await db.Submissions.CountAsync());
         });
         after.Should().Be(before);
+    }
+
+    [Fact]
+    public async Task Preview_uses_sequential_required_gate_preserves_answers_and_honors_result_visibility()
+    {
+        var applicationId = await CreateDraftAsync();
+        var questionIds = await _factory.WithScopeAsync(async services =>
+        {
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var category = await design.AddCategoryAsync(applicationId, "Additional details");
+            var secondQuestion = await design.AddQuestionAsync(category.Id, "Reason for applying", AnswerType.Textbox, isRequired: true);
+            var drafts = services.GetRequiredService<IDraftService>();
+            var graph = await drafts.GetAsync(applicationId);
+            graph.Definition.Version.NavigationMode = NavigationMode.Sequential;
+            await drafts.SaveAsync(new SaveDraftRequest(applicationId, graph.Revision, graph.Definition));
+            return graph.Definition.Categories.SelectMany(item => item.Elements).Where(item => item.Question is not null)
+                .Select(item => item.Question!.Id).ToArray();
+        });
+        questionIds.Should().HaveCount(2);
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, _) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{applicationId}");
+        async Task<JsonDocument> EvaluateAsync(object body)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{applicationId}/Evaluate")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("RequestVerificationToken", token);
+            var response = await client.SendAsync(request);
+            var json = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, json);
+            return JsonDocument.Parse(json);
+        }
+
+        using (var blocked = await EvaluateAsync(new { CategoryIndex = 0, TargetCategoryIndex = 1, Answers = new Dictionary<int, object>() }))
+        {
+            blocked.RootElement.GetProperty("categoryIndex").GetInt32().Should().Be(0);
+            blocked.RootElement.GetProperty("html").GetString().Should().Contain("Complete the required fields before continuing.");
+        }
+
+        var answers = new Dictionary<int, object>
+        {
+            [questionIds[0]] = new { Number = "5" },
+            [questionIds[1]] = new { Text = "To serve my community" }
+        };
+        using (var moved = await EvaluateAsync(new { CategoryIndex = 0, TargetCategoryIndex = 1, Answers = new Dictionary<int, object> { [questionIds[0]] = answers[questionIds[0]] } }))
+        {
+            moved.RootElement.GetProperty("categoryIndex").GetInt32().Should().Be(1);
+            moved.RootElement.GetProperty("html").GetString().Should().Contain("Reason for applying");
+        }
+        using (var review = await EvaluateAsync(new { CategoryIndex = 1, Review = true, Answers = answers }))
+        {
+            review.RootElement.GetProperty("html").GetString().Should().Contain("5").And.Contain("To serve my community");
+        }
+
+        foreach (var visibility in new[] { ResultVisibility.ConfirmationOnly, ResultVisibility.Total, ResultVisibility.CategoryBreakdown })
+        {
+            await _factory.WithScopeAsync(async services =>
+            {
+                var drafts = services.GetRequiredService<IDraftService>();
+                var graph = await drafts.GetAsync(applicationId);
+                graph.Definition.Version.ResultVisibility = visibility;
+                await drafts.SaveAsync(new SaveDraftRequest(applicationId, graph.Revision, graph.Definition));
+                return true;
+            });
+            using var receipt = await EvaluateAsync(new { Submit = true, Answers = answers });
+            var html = receipt.RootElement.GetProperty("html").GetString()!;
+            receipt.RootElement.GetProperty("isReceipt").GetBoolean().Should().BeTrue();
+            html.Should().Contain("This is a preview. No response or submission was created.");
+            if (visibility == ResultVisibility.ConfirmationOnly) html.Should().NotContain("data-preview-total");
+            if (visibility == ResultVisibility.Total) html.Should().Contain("data-preview-total");
+            if (visibility == ResultVisibility.CategoryBreakdown) html.Should().Contain("Category results").And.Contain("data-preview-total");
+        }
     }
 
     [Fact]

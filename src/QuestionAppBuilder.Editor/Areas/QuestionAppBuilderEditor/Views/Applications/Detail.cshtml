@@ -111,6 +111,30 @@
     }
 </div>
 
+@if (Model.Application.CurrentVersionId is not null)
+{
+    <section class="cv-card" aria-labelledby="availability-heading">
+        <header class="cv-chead"><h2 id="availability-heading">Respondent availability</h2></header>
+        <div class="cv-cbody">
+            <p>Control whether respondents can start new responses and submit saved responses. Existing drafts remain available when starts close.</p>
+            <form method="post" asp-controller="Applications" asp-action="UpdateAvailability" asp-route-id="@Model.Application.Id">
+                <input type="hidden" name="expectedRevision" value="@Convert.ToBase64String(Model.Application.RowVersion)" />
+                <div class="cv-field cv-field-inline">
+                    <input id="accept-new-responses" name="acceptNewResponses" type="checkbox" value="true" checked="@Model.Application.AcceptNewResponses" />
+                    <input type="hidden" name="acceptNewResponses" value="false" />
+                    <label for="accept-new-responses">Accept new responses</label>
+                </div>
+                <div class="cv-field cv-field-inline">
+                    <input id="accept-submissions" name="acceptSubmissions" type="checkbox" value="true" checked="@Model.Application.AcceptSubmissions" />
+                    <input type="hidden" name="acceptSubmissions" value="false" />
+                    <label for="accept-submissions">Accept submissions</label>
+                </div>
+                <button type="submit" class="cv-btn">Save availability</button>
+            </form>
+        </div>
+    </section>
+}
+
 @if (Model.DraftReview?.Errors.Count > 0)
 {
     <div class="cv-alert" role="alert">

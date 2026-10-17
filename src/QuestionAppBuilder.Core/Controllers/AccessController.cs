@@ -25,9 +25,11 @@ public sealed class AccessController : Controller
     [HttpPost]
     [EnableRateLimiting("qab-email-access-ip")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RequestLink([FromForm] int applicationId, [FromForm] Guid? responseId, [FromForm] string email, CancellationToken cancellationToken)
+    public async Task<IActionResult> RequestLink([FromForm] int applicationId, [FromForm] Guid? responseId, [FromForm] string email,
+        CancellationToken cancellationToken = default)
     {
-        await _access.RequestAsync(new AccessLinkRequest(applicationId, responseId, email), cancellationToken);
+        var resumeOnly = StringComparer.OrdinalIgnoreCase.Equals(Request.Form["resumeOnly"], "true");
+        await _access.RequestAsync(new AccessLinkRequest(applicationId, responseId, email) { ResumeOnly = resumeOnly }, cancellationToken);
         return Content("If the address matches a response, an access link has been sent.", "text/plain");
     }
 
@@ -50,7 +52,10 @@ public sealed class AccessController : Controller
         {
             var grant = await _access.RedeemAsync(token, cancellationToken);
             await _grantHandler.SignInAsync(HttpContext, grant, cancellationToken);
-            return LocalRedirect($"{_options.BasePath.TrimEnd('/')}/{grant.ApplicationId}");
+            var destination = grant.ResponseId is Guid responseId
+                ? $"{_options.BasePath.TrimEnd('/')}/Responses/{responseId}"
+                : $"{_options.BasePath.TrimEnd('/')}/{grant.ApplicationId}";
+            return LocalRedirect(destination);
         }
         catch (InvalidAccessLinkException) { return BadRequest("This access link is invalid, expired, or already used."); }
     }

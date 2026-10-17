@@ -1,0 +1,15 @@
+@model RuntimePreviewPageModel
+<main class="qab-runtime qab-receipt qab-runtime-preview">
+    <p class="qab-eyebrow">Preview result</p>
+    <h2>Thank you</h2>
+    <p>@Model.Questionnaire.ConfirmationText</p>
+    @if (Model.ResultVisibility == ResultVisibility.Total && Model.Score is not null)
+    { <p data-preview-total="@Model.Score.Total">Total score: @Model.Score.Total</p> }
+    @if (Model.ResultVisibility == ResultVisibility.CategoryBreakdown && Model.Score is not null)
+    {
+        <h3>Category results</h3>
+        <ul>@foreach (var category in Model.Score.Categories) { <li>Category @category.CategoryId: @category.Score points</li> }</ul>
+        <p data-preview-total="@Model.Score.Total">Total score: @Model.Score.Total</p>
+    }
+    <p>This is a preview. No response or submission was created.</p>
+</main>

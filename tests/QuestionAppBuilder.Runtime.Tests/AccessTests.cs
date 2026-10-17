@@ -107,6 +107,22 @@ public sealed class AccessTests
     }
 
     [Fact]
+    public async Task Redeemed_response_grant_redirects_directly_to_saved_response()
+    {
+        var responseId = Guid.NewGuid();
+        var access = new FakeAccessService(new QuestionAppBuilder.Application.Access.AccessGrant(Guid.NewGuid(), "email:owner", 3, 7,
+            responseId, DateTime.UtcNow.AddMinutes(10)));
+        var context = HttpContextWithAuthentication(_ => AuthenticateResult.NoResult());
+        var controller = new QuestionAppBuilder.Core.Controllers.AccessController(access, new ResponseGrantHandler(),
+            Options.Create(new QuestionAppBuilderRuntimeOptions { BasePath = "/custom/App" }), new FakeAntiforgery())
+        { ControllerContext = new ControllerContext { HttpContext = context } };
+
+        var result = await controller.Redeem("opaque-token", CancellationToken.None) as LocalRedirectResult;
+
+        result!.Url.Should().Be($"/custom/App/Responses/{responseId}");
+    }
+
+    [Fact]
     public async Task Custom_base_path_confirmation_route_keeps_email_scanner_from_consuming_token()
     {
         var access = new FakeAccessService();
@@ -148,12 +164,12 @@ public sealed class AccessTests
         public Task SignInAsync(HttpContext context, string? scheme, ClaimsPrincipal principal, AuthenticationProperties? properties) => Task.CompletedTask;
         public Task SignOutAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) => Task.CompletedTask;
     }
-    private sealed class FakeAccessService : QuestionAppBuilder.Application.Access.IResponseAccessService
+    private sealed class FakeAccessService(QuestionAppBuilder.Application.Access.AccessGrant? grant = null) : QuestionAppBuilder.Application.Access.IResponseAccessService
     {
         public int RedeemCount { get; private set; }
         public Task RequestAsync(QuestionAppBuilder.Application.Access.AccessLinkRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<QuestionAppBuilder.Application.Access.AccessGrant> RedeemAsync(string token, CancellationToken cancellationToken = default)
-        { RedeemCount++; throw new InvalidOperationException(); }
+        { RedeemCount++; return grant is null ? Task.FromException<QuestionAppBuilder.Application.Access.AccessGrant>(new InvalidOperationException()) : Task.FromResult(grant); }
     }
     private sealed class FakeAntiforgery : IAntiforgery
     {

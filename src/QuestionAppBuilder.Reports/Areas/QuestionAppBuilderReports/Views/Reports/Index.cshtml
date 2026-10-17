@@ -36,7 +36,7 @@
     <div class="qab-report-summary" aria-label="Submission totals">
         <div><strong>@Model.Overview.SubmittedCount</strong><span>Submitted</span></div>
         <div><strong>@Model.Overview.InProgressCount</strong><span>In progress</span></div>
-        <div><strong>@(Model.Overview.AverageTotalScore?.ToString("0.##") ?? "—")</strong><span>Average total</span></div>
+        <div><strong>@(Model.Overview.AverageTotalScore?.ToString("0.##") ?? "—")</strong><span>Average total (one version only)</span></div>
     </div>
 
     <div class="qab-report-heading-row">

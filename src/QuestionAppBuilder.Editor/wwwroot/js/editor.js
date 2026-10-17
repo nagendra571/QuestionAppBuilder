@@ -118,28 +118,80 @@
     if (await save()) window.location.assign(link.href);
   }));
   const previewButton = document.querySelector("[data-preview-button]");
-  previewButton && previewButton.addEventListener("click", async () => {
-    const token = form.querySelector("[name='__RequestVerificationToken']").value;
-    const answers = {};
-    document.querySelectorAll("[data-preview-answer-group]").forEach(group => {
-      const controls = [...group.querySelectorAll("[data-preview-question]")];
-      if (controls.length === 0) return;
-      const id = controls[0].dataset.previewQuestion, type = controls[0].dataset.answerType;
-      if (type === "Number") answers[id] = { number:controls[0].value, selectedOptionIds:[] };
-      else if (type === "Dropdown" || type === "RadioGroup") answers[id] = { text:null, selectedOptionIds:controls[0].value ? [Number(controls[0].value)] : [] };
-      else if (type === "Checkboxes") answers[id] = { text:null, selectedOptionIds:controls.filter(control => control.checked).map(control => Number(control.value)) };
-      else answers[id] = { text:controls[0].value, selectedOptionIds:[] };
+  let previewAnswers = {};
+  let previewCategory = 0;
+  const collectPreviewAnswers = () => {
+    document.querySelectorAll("[data-preview-runtime-form] [data-question-id]").forEach(group => {
+      const id = Number(group.dataset.questionId);
+      const text = group.querySelector(`[name="Answers[${id}].Text"]`);
+      const number = group.querySelector(`[name="Answers[${id}].Number"]`);
+      const selected = [...group.querySelectorAll(`[name='Answers[${id}].SelectedOptionIds']:checked, select[name='Answers[${id}].SelectedOptionIds']`)]
+        .map(control => Number(control.value)).filter(value => Number.isInteger(value) && value > 0);
+      const hasChoiceInput = group.querySelector(`[name='Answers[${id}].SelectedOptionIds']`) !== null;
+      previewAnswers[id] = {
+        text: text ? text.value : null,
+        number: number ? number.value : null,
+        selectedOptionIds: hasChoiceInput ? selected : null
+      };
     });
+  };
+  const appendPreviewInspector = (host, score) => {
+    const inspector = document.createElement("section"); inspector.className = "aw-preview-score";
+    const heading = document.createElement("h3"); heading.textContent = "Designer scoring inspector"; inspector.append(heading);
+    const total = document.createElement("p"); total.textContent = `Total score: ${score.total}`; inspector.append(total);
+    for (const category of score.categories || []) {
+      const row = document.createElement("p"); row.textContent = `Category ${category.categoryId}: ${category.score} points`; inspector.append(row);
+    }
+    for (const question of score.questions || []) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Question ${question.questionId}: ${question.isApplicable ? `${question.points} points` : "not applicable"}`;
+      details.append(summary);
+      for (const rule of question.rules || []) {
+        const line = document.createElement("p");
+        line.textContent = `Rule ${rule.ruleId}: ${rule.matches ? "matches" : "does not match"}; ${rule.contributes ? `contributes ${rule.points} points` : "does not contribute"}.`;
+        details.append(line);
+      }
+      inspector.append(details);
+    }
+    host.append(inspector);
+  };
+  const renderPreview = payload => {
+    const result = document.querySelector("[data-preview-result]");
+    previewCategory = payload.categoryIndex;
+    result.innerHTML = payload.html;
+    const runtime = result.querySelector(".qab-runtime-preview");
+    if (runtime) appendPreviewInspector(runtime, payload.score);
+  };
+  const evaluatePreview = async options => {
+    const token = form.querySelector("[name='__RequestVerificationToken']").value;
     const result = document.querySelector("[data-preview-result]");
     result.textContent = "Evaluating preview…";
     try {
       const response = await fetch(previewButton.dataset.previewUrl, { method:"POST", credentials:"same-origin",
         headers:{ "Content-Type":"application/json", "Accept":"application/json", "RequestVerificationToken":token },
-        body:JSON.stringify({ answers }) });
+        body:JSON.stringify({ answers:previewAnswers, categoryIndex:previewCategory, ...options }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || "Preview could not be evaluated.");
-      result.textContent = "Total score: " + payload.score.total + "; visible questions: " + payload.questionnaire.categories.flatMap(x => x.elements).filter(x => x.question).length;
+      renderPreview(payload);
     } catch (error) { result.textContent = error.message; }
+  };
+  const previewResult = document.querySelector("[data-preview-result]");
+  previewResult?.addEventListener("click", async event => {
+    const target = event.target.closest("[data-preview-target]");
+    const evaluate = event.target.closest("[data-preview-evaluate]");
+    const review = event.target.closest("[data-preview-review]");
+    const submit = event.target.closest("[data-preview-submit]");
+    if (!target && !evaluate && !review && !submit) return;
+    event.preventDefault(); collectPreviewAnswers();
+    if (target) await evaluatePreview({ targetCategoryIndex:Number(target.dataset.previewTarget) });
+    else if (evaluate) await evaluatePreview();
+    else if (review) await evaluatePreview({ review:true });
+    else if (submit) await evaluatePreview({ submit:true });
+  });
+  previewButton && previewButton.addEventListener("click", async () => {
+    if (previewResult.querySelector("[data-preview-runtime-form]")) collectPreviewAnswers();
+    await evaluatePreview();
   });
   publishForm && publishForm.addEventListener("submit", async event => {
     if (dirtyVersion === savedVersion && !inFlight && readinessCurrent) return;

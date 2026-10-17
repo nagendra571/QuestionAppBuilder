@@ -162,6 +162,7 @@ public sealed class ResponsesController : Controller
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         ViewData["SubmitUrl"] = SubmitUrl(responseId);
         ViewData["EditUrl"] = EditUrl(responseId, _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, false).Categories.Count - 1);
+        ViewData["EditCategoryUrlPrefix"] = $"{BasePath}/Responses/{responseId}?category=";
         return View("Review", new ReviewPageModel(snapshot, _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, false), _options.LayoutName,
             RequestId: Guid.NewGuid().ToString("D")));
     }

@@ -12,6 +12,53 @@ namespace QuestionAppBuilder.Browser.Tests;
 public sealed class AuthoringJourneyTests
 {
     [Fact]
+    public async Task Preview_keeps_answers_across_sequential_categories_and_shows_runtime_receipt()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var applicationId = await host.SeedDraftPreviewApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{applicationId}").ToString());
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Evaluate preview" }).ClickAsync();
+        var preview = page.Locator("[data-preview-result]");
+        await preview.Locator("[data-preview-category='0'] [data-question-id]").First.WaitForAsync();
+        var firstQuestionId = await preview.Locator("[data-preview-category='0'] [data-question-id]").First.GetAttributeAsync("data-question-id");
+        var number = preview.Locator($"[name='Answers[{firstQuestionId}].Number']");
+        var blockedEvaluateTask = page.WaitForResponseAsync(response => response.Url.Contains("/Preview/", StringComparison.Ordinal)
+            && response.Url.EndsWith("/Evaluate", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
+        var blockedEvaluate = await blockedEvaluateTask;
+        var blockedBody = await blockedEvaluate.TextAsync();
+        blockedEvaluate.Status.Should().Be(200, blockedBody);
+        (await preview.InnerTextAsync()).Should().Contain("Complete the required fields before continuing.", blockedBody);
+        (await preview.Locator(".qab-runtime-preview").GetAttributeAsync("data-preview-category")).Should().Be("0");
+
+        await number.FillAsync("5");
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
+        await preview.Locator("[data-preview-category='1'] [data-question-id]").WaitForAsync();
+        var secondQuestionId = await preview.Locator("[data-preview-category='1'] [data-question-id]").First.GetAttributeAsync("data-question-id");
+        await preview.Locator($"[name='Answers[{secondQuestionId}].Text']").FillAsync("To serve my community");
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Review your answers" }).ClickAsync();
+        await preview.GetByRole(AriaRole.Heading, new() { Name = "Review your answers" }).WaitForAsync();
+        var reviewText = await preview.InnerTextAsync();
+        reviewText.Should().Contain("5").And.Contain("To serve my community");
+
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Submit application" }).ClickAsync();
+        await preview.GetByRole(AriaRole.Heading, new() { Name = "Thank you" }).WaitForAsync();
+        (await preview.InnerTextAsync()).Should().Contain("Total score: 0")
+            .And.Contain("This is a preview. No response or submission was created.");
+        (await host.CountResponsesAsync()).Should().Be(0);
+        (await host.CountSubmissionsAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Designer_can_create_and_edit_a_draft_and_keep_local_input_after_conflict()
     {
         await using var host = await SampleHostFixture.StartAsync();
@@ -129,6 +176,16 @@ public sealed class AuthoringJourneyTests
         await page.WaitForTimeoutAsync(300);
         var afterRules = await page.Locator("body").InnerTextAsync();
         afterRules.Should().Contain("Numeric rules overlap; only the first matching rule contributes.", $"workspace after adding overlapping rules: {afterRules}");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Evaluate preview" }).ClickAsync();
+        var previewQuestion = page.Locator($"[data-preview-result] [data-question-id='{numericQuestionId}']");
+        await previewQuestion.WaitForAsync();
+        (await previewQuestion.InnerTextAsync()).Should().Contain("Requested amount");
+        await previewQuestion.Locator($"[name='Answers[{numericQuestionId}].Number']").FillAsync("7");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Update preview and scoring" }).ClickAsync();
+        var preview = page.Locator("[data-preview-result]");
+        await preview.GetByText("Total score: 1", new() { Exact = true }).WaitForAsync();
+        string.Join(" ", await preview.Locator(".aw-preview-score details p").AllTextContentsAsync())
+            .Should().Contain("Rule").And.Contain("contributes 1 points").And.Contain("does not contribute");
         var acknowledgments = page.Locator("#publish-draft input[name='AcknowledgedWarningCodes']");
         await acknowledgments.First.CheckAsync();
         (await acknowledgments.First.IsCheckedAsync()).Should().BeTrue();

@@ -33,6 +33,10 @@ public sealed class ReportQueryTests
         overview.Versions.Single(version => version.VersionNumber == 2).SubmissionCount.Should().Be(1);
         overview.Versions.Single(version => version.VersionNumber == 1).AverageTotalScore.Should().Be(15m);
         overview.Versions.Single(version => version.VersionNumber == 2).AverageTotalScore.Should().Be(90m);
+        overview.AverageTotalScore.Should().BeNull("different published versions may have different score scales");
+
+        var singleVersion = await fixture.Queries().GetOverviewAsync(new(fixture.ApplicationId, VersionId: fixture.VersionOneId));
+        singleVersion.AverageTotalScore.Should().Be(15m);
     }
 
     [SqlServerFact]
@@ -89,6 +93,7 @@ public sealed class ReportQueryTests
         private Fixture(SqlServerDatabase sql) => _sql = sql;
 
         public int ApplicationId { get; private set; }
+        public int VersionOneId { get; private set; }
         public int FirstSubmissionId { get; private set; }
 
         public ReportQueries Queries() => new(new Factory(_sql));
@@ -117,6 +122,7 @@ public sealed class ReportQueryTests
             app.CurrentVersionId = versionTwo.Id;
             await context.SaveChangesAsync();
             fixture.ApplicationId = app.Id;
+            fixture.VersionOneId = versionOne.Id;
 
             var q1 = versionOne.Categories[0].Elements[0];
             var q2 = versionOne.Categories[0].Elements[1];

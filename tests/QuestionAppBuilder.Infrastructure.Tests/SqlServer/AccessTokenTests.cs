@@ -83,13 +83,35 @@ public sealed class AccessTokenTests
         var startGrant = await db.Access.RedeemAsync(db.Email.Tokens.Single());
         var respondent = new TestRespondent(new RespondentIdentity(startGrant.OwnerKey, null, startGrant.ApplicationVersionId, startGrant.AccessTokenId));
         var started = await new ResponseService(new Factory(db.Sql), respondent).StartAsync(1);
-        await db.Access.RequestAsync(new AccessLinkRequest(1, started.Id, "person@example.test"));
+        await db.Access.RequestAsync(new AccessLinkRequest(1, null, "person@example.test") { ResumeOnly = true });
         var resumeToken = db.Email.Tokens.Last();
+        await using (var context = db.Context())
+            (await context.ResponseAccessTokens.OrderByDescending(t => t.CreatedUtc).FirstAsync()).ResponseId.Should().Be(started.Id);
         await db.CloseAsync();
         var resumeGrant = await db.Access.RedeemAsync(resumeToken);
         var resumed = await new ResponseService(new Factory(db.Sql), new TestRespondent(new RespondentIdentity(resumeGrant.OwnerKey,
             resumeGrant.ResponseId, resumeGrant.ApplicationVersionId, resumeGrant.AccessTokenId))).GetAsync(started.Id);
         resumed.Id.Should().Be(started.Id);
+    }
+
+    [SqlServerFact]
+    public async Task Resume_only_request_after_close_finds_latest_matching_in_progress_response()
+    {
+        await using var db = await Fixture.CreateAsync();
+        await db.Access.RequestAsync(new AccessLinkRequest(1, null, "person@example.test"));
+        var grant = await db.Access.RedeemAsync(db.Email.Tokens.Single());
+        var started = await new ResponseService(new Factory(db.Sql), new TestRespondent(new RespondentIdentity(grant.OwnerKey, null,
+            grant.ApplicationVersionId, grant.AccessTokenId))).StartAsync(1);
+        await db.CloseAsync();
+
+        await db.Access.RequestAsync(new AccessLinkRequest(1, null, "person@example.test") { ResumeOnly = true });
+
+        db.Email.Tokens.Should().HaveCount(2);
+        await using var context = db.Context();
+        var token = await context.ResponseAccessTokens.OrderByDescending(t => t.CreatedUtc).FirstAsync();
+        token.ResponseId.Should().Be(started.Id);
+        var resume = await db.Access.RedeemAsync(db.Email.Tokens.Last());
+        resume.ResponseId.Should().Be(started.Id);
     }
 
     [SqlServerFact]

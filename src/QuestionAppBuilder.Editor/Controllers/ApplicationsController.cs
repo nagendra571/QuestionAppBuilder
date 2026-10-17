@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Application.Authoring;
+using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Domain.Exceptions;
 using QuestionAppBuilder.Editor.Options;
 using QuestionAppBuilder.Editor.ViewModels;
@@ -12,15 +13,18 @@ public class ApplicationsController : EditorControllerBase
 {
     private readonly IApplicationDesignService _designService;
     private readonly IDraftService _draftService;
+    private readonly IAvailabilityService _availabilityService;
 
     public ApplicationsController(
         QuestionAppBuilderEditorOptions editorOptions,
         IApplicationDesignService designService,
-        IDraftService draftService)
+        IDraftService draftService,
+        IAvailabilityService availabilityService)
         : base(editorOptions)
     {
         _designService = designService;
         _draftService = draftService;
+        _availabilityService = availabilityService;
     }
 
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -135,6 +139,21 @@ public class ApplicationsController : EditorControllerBase
             SetEditorError(exception.Message);
         }
 
+        return RedirectToAction("Detail", new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateAvailability(int id, byte[]? expectedRevision, bool acceptNewResponses, bool acceptSubmissions, CancellationToken ct)
+    {
+        try
+        {
+            if (expectedRevision is null) throw new ResponseConflictException();
+            await _availabilityService.SetAsync(new AvailabilityUpdate(id, expectedRevision, acceptNewResponses, acceptSubmissions), ct);
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (ResponseConflictException) { SetEditorError("Availability changed in another session. Review the current settings and try again."); }
+        catch (InvalidOperationException exception) { SetEditorError(exception.Message); }
         return RedirectToAction("Detail", new { id });
     }
 

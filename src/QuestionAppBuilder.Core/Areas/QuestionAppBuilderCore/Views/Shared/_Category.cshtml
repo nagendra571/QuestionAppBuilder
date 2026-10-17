@@ -4,6 +4,6 @@
     @foreach (var element in Model.Elements)
     {
         if (element.Question is null) { <div class="qab-content-panel">@element.Label</div> }
-        else { @await Html.PartialAsync("_Question", element.Question) }
+        else { @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Question.cshtml", element.Question) }
     }
 </section>

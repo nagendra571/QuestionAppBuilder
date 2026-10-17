@@ -21,7 +21,6 @@ public sealed class ReportQueries : IReportQueries
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var submitted = ApplySubmissionFilter(db.Submissions.AsNoTracking(), filter);
         var submittedCount = await submitted.CountAsync(cancellationToken);
-        var average = submittedCount == 0 ? null : await submitted.AverageAsync(s => (decimal?)s.TotalScore, cancellationToken);
 
         var versions = await (from submission in submitted
                               join version in db.ApplicationVersions.AsNoTracking() on submission.ApplicationVersionId equals version.Id
@@ -53,6 +52,7 @@ public sealed class ReportQueries : IReportQueries
                 .OrderBy(score => score.TotalScore)
                 .Select(score => new ScoreCount(score.TotalScore, score.Count))
                 .ToArray())).ToArray();
+        var comparableAverage = distributions.Length == 1 ? distributions[0].AverageTotalScore : (decimal?)null;
 
         var applications = await db.Set<ApplicationEntity>().AsNoTracking()
             .OrderBy(application => application.Name)
@@ -85,7 +85,7 @@ public sealed class ReportQueries : IReportQueries
         }
         var inProgressCount = await drafts.CountAsync(cancellationToken);
 
-        return new ReportOverview(submittedCount, inProgressCount, average, applicationOptions, distributions);
+        return new ReportOverview(submittedCount, inProgressCount, comparableAverage, applicationOptions, distributions);
     }
 
     public async Task<SubmissionPage> GetPageAsync(ReportFilter filter, SubmissionCursor? cursor = null, int pageSize = 25,

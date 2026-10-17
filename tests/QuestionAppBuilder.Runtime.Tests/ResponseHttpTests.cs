@@ -81,6 +81,54 @@ public sealed class ResponseHttpTests
     }
 
     [Fact]
+    public async Task Closed_submissions_are_visible_and_submit_is_disabled_on_review()
+    {
+        var runtime = new TestHostFixture.FakeRuntime { AcceptingSubmissions = false };
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await StartAsync(host);
+
+        var review = await GetAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Review");
+
+        review.StatusCode.Should().Be(HttpStatusCode.OK);
+        var html = await review.Content.ReadAsStringAsync();
+        html.Should().Contain("Submissions are currently closed");
+        html.Should().Contain("disabled=\"disabled\"");
+        var csrf = await CsrfAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Review");
+        var submit = await csrf.PostAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Submit",
+            new Dictionary<string, string> { ["RequestId"] = Guid.NewGuid().ToString("D") });
+        submit.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await submit.Content.ReadAsStringAsync()).Should().Contain("This questionnaire is not accepting submissions");
+        runtime.SubmissionCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Review_shows_option_labels_unanswered_state_and_category_edit_links()
+    {
+        var runtime = new TestHostFixture.FakeRuntime();
+        var firstQuestion = runtime.Graph.Categories[0].Elements[0].Question!;
+        firstQuestion.AnswerType = AnswerType.RadioGroup;
+        firstQuestion.Options.Add(new QuestionAppBuilder.Domain.Entities.QuestionOption { Id = 51, Label = "Public services", Value = "services" });
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await StartAsync(host);
+
+        var csrf = await CsrfAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}");
+        var saved = await csrf.PostAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Navigate",
+            new Dictionary<string, string>
+            {
+                ["currentCategoryIndex"] = "0", ["targetCategoryIndex"] = "1", ["Answers[1].SelectedOptionIds"] = "51"
+            });
+        saved.StatusCode.Should().Be(HttpStatusCode.Redirect);
+
+        var review = await GetAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Review");
+        var html = await review.Content.ReadAsStringAsync();
+        review.StatusCode.Should().Be(HttpStatusCode.OK);
+        html.Should().Contain("Public services").And.Contain("Not answered")
+            .And.Contain($"href=\"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}?category=0\"")
+            .And.Contain("Edit Category 1");
+        html.Should().NotContain(">51<", "the respondent should see the option label, not the stored option identifier");
+    }
+
+    [Fact]
     public async Task Save_failure_keeps_input_and_prevents_exit()
     {
         var runtime = new TestHostFixture.FakeRuntime { FailNextSave = true };

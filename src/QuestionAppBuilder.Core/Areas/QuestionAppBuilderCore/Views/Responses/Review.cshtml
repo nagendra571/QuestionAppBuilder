@@ -3,16 +3,27 @@
 <main class="qab-runtime qab-review" data-response-id="@Model.Response.Id">
     <p class="qab-eyebrow">Review</p>
     <h1>Review your answers</h1>
+    @if (!Model.Response.AcceptingSubmissions)
+    {
+        <p class="qab-error-summary" role="status">Submissions are currently closed. Your saved response remains available, and you can submit when submissions reopen.</p>
+    }
     @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
     @foreach (var category in Model.Questionnaire.Categories)
     {
         <section class="qab-review-category"><h2>@category.Name</h2>
             @foreach (var element in category.Elements.Where(e => e.Question is not null))
             {
-                var answer = element.Question!.Value;
-                var shownValue = answer?.Text ?? answer?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Join(", ", answer?.SelectedOptionIds ?? Array.Empty<int>());
-                <dl><dt>@element.Question.Label</dt><dd>@shownValue</dd></dl>
+                var question = element.Question!;
+                var answer = question.Value;
+                var shownValue = answer?.Text ?? answer?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (question.AnswerType is QuestionAppBuilder.Domain.Enums.AnswerType.Dropdown or QuestionAppBuilder.Domain.Enums.AnswerType.RadioGroup or QuestionAppBuilder.Domain.Enums.AnswerType.Checkboxes)
+                {
+                    shownValue = string.Join(", ", question.Options.Where(option => answer?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label));
+                }
+                if (string.IsNullOrWhiteSpace(shownValue)) shownValue = "Not answered";
+                <dl><dt id="question-@question.Id">@question.Label</dt><dd>@shownValue</dd></dl>
             }
+            <a class="qab-button qab-button-secondary" href="@($"{ViewData["EditCategoryUrlPrefix"]}{category.Index}")">Edit @category.Name</a>
         </section>
     }
     <form method="post" action="@ViewData["SubmitUrl"]" data-runtime-form>
@@ -26,6 +37,6 @@
             foreach (var optionId in answer.Value.SelectedOptionIds ?? Array.Empty<int>()) { <input type="hidden" name="Answers[@answer.Key].SelectedOptionIds" value="@optionId" /> }
         }
         <div class="qab-action-bar"><a class="qab-button qab-button-secondary" href="@ViewData["EditUrl"]">Back to answers</a>
-            <button class="qab-button qab-button-primary" type="submit">@Model.Questionnaire.SubmitLabel</button></div>
+            <button class="qab-button qab-button-primary" type="submit" disabled="@(!Model.Response.AcceptingSubmissions)">@Model.Questionnaire.SubmitLabel</button></div>
     </form>
 </main>

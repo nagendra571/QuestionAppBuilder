@@ -170,11 +170,78 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> SeedDraftPreviewApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now, DisplayName = "Preview test draft",
+            NavigationMode = NavigationMode.Sequential, ResultVisibility = ResultVisibility.Total,
+            Categories =
+            {
+                new Category
+                {
+                    Name = "First category", SortOrder = 1,
+                    Elements =
+                    {
+                        new Element
+                        {
+                            Kind = ElementKind.Question, Label = "Requested amount", SortOrder = 1,
+                            Question = new Question { AnswerType = AnswerType.Number, IsRequired = true }
+                        }
+                    }
+                },
+                new Category
+                {
+                    Name = "Second category", SortOrder = 2,
+                    Elements =
+                    {
+                        new Element
+                        {
+                            Kind = ElementKind.Question, Label = "Reason for applying", SortOrder = 1,
+                            Question = new Question { AnswerType = AnswerType.Textbox, IsRequired = true }
+                        }
+                    }
+                }
+            }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Preview test " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Preview type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
     public async Task<int> CountResponsesAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
         await using var db = new QuestionAppBuilderDbContext(options);
         return await db.ResponseDrafts.CountAsync();
+    }
+
+    public async Task<int> CountSubmissionsAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        return await db.Submissions.CountAsync();
+    }
+
+    public async Task<(bool AcceptNewResponses, bool AcceptSubmissions, int AuditCount, string? ActorKey)> ReadAvailabilityAsync(int applicationId)
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var application = await db.Applications.SingleAsync(item => item.Id == applicationId);
+        var audit = await db.ApplicationAuditEvents.Where(item => item.ApplicationId == applicationId && item.EventType == "AvailabilityChanged")
+            .OrderByDescending(item => item.OccurredUtc).FirstOrDefaultAsync();
+        return (application.AcceptNewResponses, application.AcceptSubmissions,
+            await db.ApplicationAuditEvents.CountAsync(item => item.ApplicationId == applicationId && item.EventType == "AvailabilityChanged"), audit?.ActorKey);
     }
 
     public async ValueTask DisposeAsync()

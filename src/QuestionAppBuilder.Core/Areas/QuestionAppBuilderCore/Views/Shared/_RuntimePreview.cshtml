@@ -1,0 +1,31 @@
+@model RuntimePreviewPageModel
+<main class="qab-runtime qab-runtime-preview" data-preview-category="@Model.CategoryIndex">
+    <p class="qab-eyebrow">Preview</p>
+    <h2>@Model.Questionnaire.Title</h2>
+    @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0)
+    {
+        <section class="qab-error-summary" role="alert"><h3>@(Model.SummaryMessage ?? "Complete the highlighted answers before continuing.")</h3>
+            @if (Model.FieldErrors is not null) { <ul>@foreach (var error in Model.FieldErrors) { <li><a href="#question-@error.Key">@error.Value</a></li> }</ul> }
+        </section>
+    }
+    <nav class="qab-tabs" aria-label="Preview categories">
+        @foreach (var category in Model.Questionnaire.Categories)
+        {
+            <button type="button" class="qab-tab @(category.Index == Model.CategoryIndex ? "is-current" : "")"
+                    data-preview-target="@category.Index" aria-current="@(category.Index == Model.CategoryIndex ? "step" : null)"
+                    disabled="@(Model.NavigationMode == NavigationMode.Sequential && category.Index > Model.CategoryIndex)">@category.Name</button>
+        }
+    </nav>
+    <p class="qab-progress">Category @(Model.CategoryIndex + 1) of @Model.Questionnaire.Categories.Count</p>
+    <form data-preview-runtime-form novalidate>
+        @{ ViewData["FieldErrors"] = Model.FieldErrors; }
+        @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Category.cshtml", Model.Questionnaire.Categories[Model.CategoryIndex])
+        <div class="qab-action-bar">
+            @if (Model.CategoryIndex > 0) { <button type="button" class="qab-button qab-button-secondary" data-preview-target="@(Model.CategoryIndex - 1)">Back</button> }
+            @if (Model.CategoryIndex < Model.Questionnaire.Categories.Count - 1)
+            { <button type="button" class="qab-button qab-button-primary" data-preview-target="@(Model.CategoryIndex + 1)">Continue</button> }
+            else { <button type="button" class="qab-button qab-button-primary" data-preview-review>Review your answers</button> }
+        </div>
+        <button type="button" class="qab-button qab-button-secondary" data-preview-evaluate>Update preview and scoring</button>
+    </form>
+</main>
