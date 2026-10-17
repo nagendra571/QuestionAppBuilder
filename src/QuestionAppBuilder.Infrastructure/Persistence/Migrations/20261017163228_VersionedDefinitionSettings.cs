@@ -567,4 +567,3 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
         }
     }
 }
-
