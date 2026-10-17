@@ -28,6 +28,12 @@ public class QuestionAppBuilderDbContext : DbContext
     public DbSet<VisibilityPredicate> VisibilityPredicates => Set<VisibilityPredicate>();
     public DbSet<VisibilityPredicateOption> VisibilityPredicateOptions => Set<VisibilityPredicateOption>();
     public DbSet<ApplicationAuditEvent> ApplicationAuditEvents => Set<ApplicationAuditEvent>();
+    public DbSet<ResponseDraft> ResponseDrafts => Set<ResponseDraft>();
+    public DbSet<ResponseAnswer> ResponseAnswers => Set<ResponseAnswer>();
+    public DbSet<ResponseSelectedOption> ResponseSelectedOptions => Set<ResponseSelectedOption>();
+    public DbSet<SubmissionQuestionState> SubmissionQuestionStates => Set<SubmissionQuestionState>();
+    public DbSet<SubmissionRuleTrace> SubmissionRuleTraces => Set<SubmissionRuleTrace>();
+    public DbSet<ResponseAccessToken> ResponseAccessTokens => Set<ResponseAccessToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +42,10 @@ public class QuestionAppBuilderDbContext : DbContext
         {
             modelBuilder.Entity<ApplicationVersion>()
                 .Property(version => version.RowVersion)
+                .ValueGeneratedNever()
+                .IsConcurrencyToken();
+            modelBuilder.Entity<ResponseDraft>()
+                .Property(response => response.RowVersion)
                 .ValueGeneratedNever()
                 .IsConcurrencyToken();
         }

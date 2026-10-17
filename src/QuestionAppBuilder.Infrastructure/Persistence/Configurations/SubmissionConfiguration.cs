@@ -11,6 +11,9 @@ public class SubmissionConfiguration : IEntityTypeConfiguration<Submission>
     {
         builder.ToTable("Submissions");
         builder.HasKey(s => s.Id);
+        builder.Property(s => s.EngineVersion).HasMaxLength(64).HasDefaultValue("legacy-v1").IsRequired();
+        builder.HasIndex(s => s.ResponseId).IsUnique().HasFilter("[ResponseId] IS NOT NULL");
+        builder.HasIndex(s => new { s.ApplicationId, s.RequestId }).IsUnique().HasFilter("[RequestId] IS NOT NULL");
 
         builder.HasOne<ApplicationEntity>()
             .WithMany()
@@ -22,6 +25,8 @@ public class SubmissionConfiguration : IEntityTypeConfiguration<Submission>
             .HasForeignKey(s => s.ApplicationVersionId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne<ResponseDraft>().WithMany().HasForeignKey(s => s.ResponseId).OnDelete(DeleteBehavior.Restrict);
+
         builder.HasMany(s => s.Answers)
             .WithOne()
             .HasForeignKey(a => a.SubmissionId)
@@ -31,5 +36,8 @@ public class SubmissionConfiguration : IEntityTypeConfiguration<Submission>
             .WithOne()
             .HasForeignKey(c => c.SubmissionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(s => s.QuestionStates).WithOne().HasForeignKey(x => x.SubmissionId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(s => s.RuleTraces).WithOne().HasForeignKey(x => x.SubmissionId).OnDelete(DeleteBehavior.Cascade);
     }
 }
