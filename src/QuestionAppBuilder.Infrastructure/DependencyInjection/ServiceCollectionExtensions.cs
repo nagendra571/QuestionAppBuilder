@@ -4,10 +4,13 @@ using QuestionAppBuilder.Application.Options;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Authoring;
+using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain.Interfaces;
 using QuestionAppBuilder.Infrastructure.Persistence;
 using QuestionAppBuilder.Infrastructure.Authoring;
+using QuestionAppBuilder.Infrastructure.Responses;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using QuestionAppBuilder.Infrastructure.Repositories;
 
 namespace QuestionAppBuilder.Infrastructure.DependencyInjection;
@@ -39,6 +42,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApplicationDesignService, ApplicationDesignService>();
         services.AddScoped<ISubmissionService, SubmissionService>();
         services.AddScoped<IDraftService, DraftService>();
+        services.TryAddScoped<IRespondentContext, UnconfiguredRespondentContext>();
+        services.AddScoped<IResponseService, ResponseService>();
 
         return services;
     }
