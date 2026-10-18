@@ -11,22 +11,7 @@
     <form method="post" action="@ViewData["NavigateUrl"]" class="qab-form" data-runtime-form>
         @Html.AntiForgeryToken()
         <input type="hidden" name="ExpectedRevision" value="@Model.ExpectedRevision" />
-        <input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
         <div data-live-content>@await Html.PartialAsync("_LiveContent", Model)</div>
-        <div class="qab-action-bar">
-            @if (Model.CurrentCategoryIndex > 0)
-            {
-                <button class="qab-button qab-button-secondary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex - 1)">Back</button>
-            }
-            @if (Model.CurrentCategoryIndex < Model.Questionnaire.Categories.Count - 1)
-            {
-                <button class="qab-button qab-button-primary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex + 1)">Save &amp; Continue</button>
-            }
-            else
-            {
-                <button class="qab-button qab-button-primary" type="submit" name="Intent" value="Review">Review your answers</button>
-            }
-        </div>
     </form>
     <p class="qab-footer-note">You can leave and return to this response from the same account or access link.</p>
 </main>

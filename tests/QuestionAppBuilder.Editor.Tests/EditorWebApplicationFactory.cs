@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using QuestionAppBuilder.Infrastructure.Persistence;
 using QuestionAppBuilder.SampleHost.DevAuth;
+using QuestionAppBuilder.Application.Authoring;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace QuestionAppBuilder.Editor.Tests;
 
@@ -32,6 +34,10 @@ public class EditorWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // These editor tests exercise the authoring service directly in a scope, without an HTTP request.
+            // Keep the production actor context fail-closed; provide an explicitly test-only actor for this host.
+            services.RemoveAll<ITrustedActorContext>();
+            services.AddScoped<ITrustedActorContext, EditorTestTrustedActorContext>();
             var dbContextOptions = services.Single(descriptor => descriptor.ServiceType == typeof(DbContextOptions<QuestionAppBuilderDbContext>));
             services.Remove(dbContextOptions);
             services.AddDbContext<QuestionAppBuilderDbContext>(options =>
@@ -86,4 +92,9 @@ public class EditorWebApplicationFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         return await action(scope.ServiceProvider);
     }
+}
+
+internal sealed class EditorTestTrustedActorContext : ITrustedActorContext
+{
+    public string GetRequiredActorKey() => "host:editor-tests:explicit-test-actor";
 }

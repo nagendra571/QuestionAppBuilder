@@ -80,9 +80,16 @@
     if (allowSubmit) { allowSubmit = false; return; }
     if (dirtyVersion === savedVersion && !inFlight) return;
     event.preventDefault();
+    const requestedAction = event.submitter && event.submitter.dataset.qabAction;
     window.clearTimeout(timer);
     const saved = await save();
-    if (saved) { allowSubmit = true; form.requestSubmit(event.submitter); }
+    if (saved) {
+      const actions = { back: ["back"], continue: ["continue", "review"], review: ["review", "continue"] };
+      const candidates = actions[requestedAction] || ["back", "continue", "review"];
+      const submitter = candidates.map(action => form.querySelector(`[data-qab-action='${action}']`)).find(Boolean);
+      if (submitter) { allowSubmit = true; form.requestSubmit(submitter); }
+      else announce("Your answers were saved, but navigation changed. Choose an available action to continue.");
+    }
   });
   root.addEventListener("click", async event => {
     const link = event.target.closest(".qab-tabs a");

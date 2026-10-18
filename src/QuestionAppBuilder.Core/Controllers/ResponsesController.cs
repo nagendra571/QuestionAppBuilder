@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Authorization;
@@ -45,9 +46,15 @@ public sealed class ResponsesController : Controller
     {
         var landing = await _responses.GetLandingAsync(applicationId, cancellationToken);
         if (landing is null) { Response.StatusCode = StatusCodes.Status404NotFound; return View("Unavailable", "This questionnaire has not been published."); }
+        var grant = await HttpContext.AuthenticateAsync(ResponseGrantHandler.Scheme);
+        var hasStartGrant = landing.AcceptingNewResponses
+            && grant.Succeeded
+            && int.TryParse(grant.Principal?.FindFirst(ResponseGrantHandler.ApplicationIdClaim)?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var grantedApplicationId)
+            && grantedApplicationId == applicationId
+            && grant.Principal?.FindFirst(ResponseGrantHandler.ResponseIdClaim) is null;
         ViewData["StartUrl"] = $"{BasePath}/{applicationId}/Start";
         ViewData["AccessRequestUrl"] = $"{BasePath}/Access/Request";
-        return View("Landing", new LandingPageModel(landing, applicationId, _options.LayoutName));
+        return View("Landing", new LandingPageModel(landing, applicationId, _options.LayoutName) { HasStartGrant = hasStartGrant });
     }
 
     [HttpPost]

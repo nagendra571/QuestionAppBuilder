@@ -7,7 +7,7 @@
     <h1 id="detail-title">Submission @Model.Id</h1>
     <dl class="qab-report-metadata">
         <dt>Application</dt><dd>@Model.ApplicationName</dd>
-        <dt>Version</dt><dd>v@Model.VersionNumber · @Model.DisplayName</dd>
+        <dt>Version</dt><dd>v@(Model.VersionNumber) · @Model.DisplayName</dd>
         <dt>Submitted (UTC)</dt><dd><time datetime="@Model.SubmittedUtc.ToString("O")">@Model.SubmittedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</time></dd>
         <dt>Owner reference</dt><dd>@(Model.OwnerReference ?? "Not recorded")</dd>
         <dt>Total score</dt><dd>@Model.TotalScore</dd>

@@ -23,7 +23,7 @@
                 <option value="">All versions</option>
                 @foreach (var version in Model.Overview.Applications.SelectMany(app => app.Versions))
                 {
-                    <option value="@version.Id" selected="@(Model.Filter.VersionId == version.Id)">v@version.VersionNumber · @version.DisplayName</option>
+                    <option value="@version.Id" selected="@(Model.Filter.VersionId == version.Id)">v@(version.VersionNumber) · @version.DisplayName</option>
                 }
             </select>
         </div>
@@ -73,7 +73,7 @@
                     <tr>
                         @if (score == version.ScoreCounts[0])
                         {
-                            <th scope="rowgroup" rowspan="@version.ScoreCounts.Count">v@version.VersionNumber · @version.DisplayName</th>
+                            <th scope="rowgroup" rowspan="@version.ScoreCounts.Count">v@(version.VersionNumber) · @version.DisplayName</th>
                             <td rowspan="@version.ScoreCounts.Count">@version.SubmissionCount</td>
                             <td rowspan="@version.ScoreCounts.Count">@version.AverageTotalScore.ToString("0.##")</td>
                         }

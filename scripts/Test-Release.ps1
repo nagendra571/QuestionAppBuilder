@@ -59,7 +59,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Reporting scale benchmark failed (exit $LASTEXITCODE); inspect $results." }
     if (-not (Test-Path -LiteralPath $env:QAB_REPORT_BENCHMARK_PLAN)) { throw 'Reporting scale test did not produce its SQL Server actual-plan artifact.' }
 
-    & (Join-Path $PSScriptRoot 'Test-Packages.ps1') -FeedPath $feed -Version $version
+    & (Join-Path $PSScriptRoot 'Test-Packages.ps1') -FeedPath $feed -Version $version -SqlConnection $SqlConnection -KeepEvidence
     if ($LASTEXITCODE -ne 0) { throw "Installed-package acceptance failed (exit $LASTEXITCODE)." }
     Write-Output "Release acceptance passed. Package version: $version. Sequential test TRX and reporting plan: $results. Build artifacts: $artifacts."
 } finally {

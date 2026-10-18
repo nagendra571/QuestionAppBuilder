@@ -28,7 +28,7 @@
             {
                 <tr>
                     <th scope="row"><a asp-area="QuestionAppBuilderReports" asp-action="Detail" asp-route-id="@item.Id">@item.Id</a></th>
-                    <td>@item.ApplicationName</td><td>v@item.VersionNumber · @item.DisplayName</td>
+                    <td>@item.ApplicationName</td><td>v@(item.VersionNumber) · @item.DisplayName</td>
                     <td><time datetime="@item.SubmittedUtc.ToString("O")">@item.SubmittedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</time></td>
                     <td>@(item.OwnerReference ?? "Not recorded")</td><td>@item.TotalScore</td>
                 </tr>

@@ -1,5 +1,6 @@
 @model ResponsePageModel
 @{ ViewData["FieldErrors"] = Model.FieldErrors; ViewData["InputValues"] = Model.InputValues; }
+<input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
 <nav class="qab-tabs" aria-label="Questionnaire categories">
     @foreach (var category in Model.Questionnaire.Categories)
     {
@@ -21,3 +22,17 @@
     foreach (var optionId in answer.Value.SelectedOptionIds ?? Array.Empty<int>()) { <input type="hidden" name="Answers[@answer.Key].SelectedOptionIds" value="@optionId" /> }
 }
 @await Html.PartialAsync("_Category", categoryModel)
+<div class="qab-action-bar">
+    @if (Model.CurrentCategoryIndex > 0)
+    {
+        <button class="qab-button qab-button-secondary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex - 1)" data-qab-action="back">Back</button>
+    }
+    @if (Model.CurrentCategoryIndex < Model.Questionnaire.Categories.Count - 1)
+    {
+        <button class="qab-button qab-button-primary" type="submit" name="TargetCategoryIndex" value="@(Model.CurrentCategoryIndex + 1)" data-qab-action="continue">Save &amp; Continue</button>
+    }
+    else
+    {
+        <button class="qab-button qab-button-primary" type="submit" name="Intent" value="Review" data-qab-action="review">Review your answers</button>
+    }
+</div>

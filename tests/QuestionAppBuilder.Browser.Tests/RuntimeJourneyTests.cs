@@ -79,6 +79,45 @@ public sealed class RuntimeJourneyTests
     }
 
     [Fact]
+    public async Task Newly_visible_final_category_replaces_review_button_during_pending_save()
+    {
+        var graph = TestHostFixture.FakeRuntime.BuildGraph();
+        var condition = new VisibilityCondition { Id = 99, ApplicationVersionId = graph.Version.Id, Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { Id = 99, SourceQuestionId = 5, Operator = ConditionOperator.Answered } } };
+        var category = new Category { Id = 99, Name = "Conditional category", SortOrder = 6, VisibilityConditionId = condition.Id,
+            Elements = { new Element { Id = 99, Kind = ElementKind.Question, Label = "Branch question", SortOrder = 1,
+                LogicalKey = Guid.NewGuid(), Question = new Question { Id = 99, AnswerType = AnswerType.Textbox, IsRequired = true } } } };
+        ((List<Category>)graph.Categories).Add(category);
+        ((List<VisibilityCondition>)graph.VisibilityConditions).Add(condition);
+        var runtime = new TestHostFixture.FakeRuntime { Graph = graph };
+        await using var host = await BrowserTestFixture.StartAsync(runtime);
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+        for (var question = 1; question < 5; question++)
+        {
+            await page.Locator($"[name='Answers[{question}].Text']").FillAsync($"answer {question}");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Save & Continue" }).ClickAsync();
+            await page.GetByRole(AriaRole.Heading, new() { Name = $"Category {question + 1}" }).WaitForAsync();
+        }
+
+        await page.Locator("[data-response-id]").EvaluateAsync("element => element.dataset.saveDelay = '1'");
+        var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await page.RouteAsync("**/Save", async route => { saveStarted.TrySetResult(); await releaseSave.Task; await route.ContinueAsync(); });
+        await page.Locator("[name='Answers[5].Text']").FillAsync("reveal the final category");
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await page.GetByRole(AriaRole.Button, new() { Name = "Review your answers" }).ClickAsync();
+        releaseSave.TrySetResult();
+
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Conditional category" }).WaitForAsync(new() { Timeout = 10000 });
+        await page.Locator("[name='Answers[99].Text']").WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
+        (await runtime.GetAsync(TestHostFixture.FakeRuntime.ResponseId)).Answers[5].Text.Should().Be("reveal the final category");
+    }
+
+    [Fact]
     public async Task Respondent_can_save_resume_and_submit_in_a_real_browser()
     {
         await using var host = await BrowserTestFixture.StartAsync();

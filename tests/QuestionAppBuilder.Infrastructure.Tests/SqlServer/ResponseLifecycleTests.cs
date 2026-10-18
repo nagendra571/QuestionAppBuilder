@@ -17,7 +17,7 @@ public class ResponseLifecycleTests
     public async Task Save_then_new_context_resume_preserves_answers()
     {
         await using var db = await TestDatabase.CreateAsync();
-        var (service, _) = db.CreateService("owner-1");
+        var (service, respondent) = db.CreateService("owner-1");
         var started = await service.StartAsync(1);
         var questionId = db.QuestionId;
         var saved = await service.SaveAsync(new SaveResponseRequest(started.Id, started.Revision,
@@ -146,7 +146,7 @@ public class ResponseLifecycleTests
     public async Task Invalid_option_is_rejected_but_missing_required_saves()
     {
         await using var db = await TestDatabase.CreateAsync(choiceQuestion: true);
-        var (service, _) = db.CreateService("owner-1");
+        var (service, respondent) = db.CreateService("owner-1");
         var started = await service.StartAsync(1);
         var (optionId, _) = db.ChoiceIds;
 
@@ -159,6 +159,18 @@ public class ResponseLifecycleTests
         var good = await service.SaveAsync(new SaveResponseRequest(started.Id, incomplete.Revision,
             new Dictionary<int, AnswerValue> { [db.QuestionId] = new(null, null, [optionId]) }));
         good.Answers[db.QuestionId].SelectedOptionIds.Should().ContainSingle().Which.Should().Be(optionId);
+
+        await using var freshContext = db.CreateContext();
+        var persisted = await freshContext.ResponseAnswers.Include(answer => answer.SelectedOptions)
+            .SingleAsync(answer => answer.ResponseDraftId == started.Id && answer.QuestionId == db.QuestionId);
+        persisted.SelectedOptions.Select(option => option.QuestionOptionId).Should().ContainSingle().Which.Should().Be(optionId);
+
+        var receipt = await db.CreateSubmissionCoordinator(respondent).SubmitAsync(
+            new SubmitResponseRequest(started.Id, good.Revision, Guid.NewGuid()));
+        await using var submissionContext = db.CreateContext();
+        var submittedAnswer = await submissionContext.Answers.Include(answer => answer.SelectedOptions)
+            .SingleAsync(answer => answer.SubmissionId == receipt.SubmissionId && answer.QuestionId == db.QuestionId);
+        submittedAnswer.SelectedOptions.Select(option => option.QuestionOptionId).Should().ContainSingle().Which.Should().Be(optionId);
     }
 
     [SqlServerFact]

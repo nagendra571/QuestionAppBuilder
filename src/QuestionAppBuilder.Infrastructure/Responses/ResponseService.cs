@@ -143,7 +143,7 @@ public sealed class ResponseService : IResponseService
             foreach (var optionId in value.SelectedOptionIds ?? Array.Empty<int>())
                 answer.SelectedOptions.Add(new ResponseSelectedOption { QuestionOptionId = optionId });
             response.Answers.Add(answer);
-            db.Entry(answer).State = EntityState.Added;
+            db.ResponseAnswers.Add(answer);
         }
         response.RevisionNonce = Guid.NewGuid();
         response.UpdatedUtc = DateTime.UtcNow;

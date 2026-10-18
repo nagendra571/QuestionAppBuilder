@@ -66,6 +66,8 @@ public sealed class AuthoringJourneyTests
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
         var context = await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
         var page = await context.NewPageAsync();
+        var pageErrors = new List<string>();
+        page.PageError += (_, message) => pageErrors.Add(message);
         page.SetDefaultNavigationTimeout(90_000);
 
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
@@ -99,6 +101,8 @@ public sealed class AuthoringJourneyTests
         var jsStatus = await page.EvaluateAsync<int>("async () => (await fetch('/_content/QuestionAppBuilder.Editor/js/editor.js')).status");
         cssStatus.Should().Be((int)HttpStatusCode.OK);
         jsStatus.Should().Be((int)HttpStatusCode.OK);
+        var editorScript = await page.EvaluateAsync<string>("async () => await (await fetch('/_content/QuestionAppBuilder.Editor/js/editor.js', { cache: 'no-store' })).text()");
+        editorScript.Should().Contain("const saveCurrentDraft", "the isolated host must serve the implementation under test");
 
         await page.Locator("[name='categoryName']").FillAsync("Applicant details");
         await page.GetByRole(AriaRole.Button, new() { Name = "Add category" }).ClickAsync();
@@ -158,10 +162,24 @@ public sealed class AuthoringJourneyTests
         await page.Locator("input[name='minValue']").FillAsync("0");
         await page.Locator("input[name='maxValue']").FillAsync("10");
         await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
+        var addRuleRequests = new List<string>();
+        page.Request += (_, request) =>
+        {
+            if (request.Method == "POST" && request.Url.Contains("/Structure/AddRule", StringComparison.Ordinal))
+                addRuleRequests.Add(request.Url);
+        };
         var firstRuleResponseTask = page.WaitForResponseAsync(response => response.Request.Method == "POST"
             && response.Url.Contains("/Structure/AddRule", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule" }).ClickAsync();
-        (await firstRuleResponseTask).Status.Should().Be((int)HttpStatusCode.Redirect);
+        IResponse firstRuleResponse;
+        try { firstRuleResponse = await firstRuleResponseTask; }
+        catch (TimeoutException exception)
+        {
+            var state = await page.EvaluateAsync<string>("() => JSON.stringify({ url: location.href, active: document.activeElement?.outerHTML, status: document.querySelector('[data-save-status]')?.textContent, readiness: document.querySelector('[data-readiness-status]')?.textContent, ruleButton: [...document.querySelectorAll('button')].find(button => button.textContent.includes('Add scoring rule'))?.outerHTML, form: document.querySelector('#draft-workspace')?.action, invalid: [...(document.querySelector('#draft-workspace')?.querySelectorAll(':invalid') || [])].map(input => ({ name: input.name, message: input.validationMessage })) })");
+            throw new TimeoutException($"AddRule did not receive a response. Browser state: {state}; page errors: {string.Join(" | ", pageErrors)}{Environment.NewLine}{host.GetDiagnosticLogs()}", exception);
+        }
+        firstRuleResponse.Status.Should().Be((int)HttpStatusCode.Redirect);
+        addRuleRequests.Should().ContainSingle("one click on Add scoring rule must submit exactly one structure request");
         await page.GetByText("No scoring rules are defined.").WaitForAsync(new() { State = WaitForSelectorState.Detached });
         await page.Locator("#structure-question").SelectOptionAsync(numericQuestionId!);
         await page.Locator("select[name='family']").SelectOptionAsync("NumericRange");

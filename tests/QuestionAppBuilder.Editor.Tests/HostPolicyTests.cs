@@ -41,7 +41,8 @@ public sealed class HostPolicyTests
         editor.StatusCode.Should().Be(HttpStatusCode.OK, await editor.Content.ReadAsStringAsync());
         var html = await editor.Content.ReadAsStringAsync();
         html.Should().Contain("href=\"/forms/Mine\"").And.Contain("Platform surfaces");
-        var mine = await designer.GetAsync("/forms/Mine");
+        var filler = await factory.CreateSignedInClientAsync("filler");
+        var mine = await filler.GetAsync("/forms/Mine");
         mine.StatusCode.Should().Be(HttpStatusCode.OK, await mine.Content.ReadAsStringAsync());
     }
 }

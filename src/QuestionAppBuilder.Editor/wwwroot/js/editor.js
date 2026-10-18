@@ -7,8 +7,31 @@
   const readinessContent = readiness && readiness.querySelector("[data-readiness-content]");
   const readinessStatus = readiness && readiness.querySelector("[data-readiness-status]");
   const publishButton = publishForm && publishForm.querySelector("button[type='submit']");
-  let timer = 0, inFlight = false, inFlightPromise = null, dirtyVersion = 0, savedVersion = 0, allowSubmit = false;
+  let timer = 0, inFlight = false, inFlightPromise = null, dirtyVersion = 0, savedVersion = 0;
   let readinessCurrent = true;
+  const lastControlStates = new WeakMap();
+  const controlState = control => {
+    if (control instanceof HTMLSelectElement && control.multiple)
+      return JSON.stringify([...control.selectedOptions].map(option => option.value));
+    if (control instanceof HTMLInputElement && (control.type === "checkbox" || control.type === "radio"))
+      return `${control.value}\u0000${control.checked}`;
+    return control.value ?? control.textContent;
+  };
+  form.querySelectorAll("input, select, textarea, [contenteditable='true']").forEach(control => lastControlStates.set(control, controlState(control)));
+  const recordEdit = event => {
+    const control = event.target;
+    const state = controlState(control);
+    if (lastControlStates.get(control) === state) return;
+    if (control instanceof HTMLInputElement && control.type === "radio" && control.name) {
+      form.querySelectorAll("input[type='radio']").forEach(radio => {
+        if (radio.form === form && radio.name === control.name) lastControlStates.set(radio, controlState(radio));
+      });
+    } else lastControlStates.set(control, state);
+    dirtyVersion++;
+    markReadinessStale();
+    announce("Unsaved changes", "pending");
+    queueSave(Number(form.dataset.saveDelay) || 600);
+  };
   const announce = (message, state) => { status.textContent = message; status.dataset.state = state || ""; };
   const syncRevision = revision => {
     if (!revision) return;
@@ -75,14 +98,14 @@
   };
   const save = async () => {
     if (inFlight) {
-      await inFlightPromise;
-      if (dirtyVersion !== savedVersion || !readinessCurrent) return save();
-      return true;
+      const outcome = await inFlightPromise;
+      if (outcome === "failed") return "failed";
+      return dirtyVersion !== savedVersion || !readinessCurrent ? "changed" : "saved";
     }
     if (dirtyVersion === savedVersion) {
-      if (readinessCurrent) return true;
-      try { return await refreshReadiness(form.querySelector("[name='ExpectedRevision']").value); }
-      catch (error) { announce(error.message, "error"); return false; }
+      if (readinessCurrent) return "saved";
+      try { return await refreshReadiness(form.querySelector("[name='ExpectedRevision']").value) ? "saved" : "changed"; }
+      catch (error) { announce(error.message, "error"); return "failed"; }
     }
     inFlight = true;
     const saveVersion = dirtyVersion;
@@ -96,26 +119,46 @@
         const result = await response.json();
         syncRevision(result.revision);
         savedVersion = saveVersion;
-        if (!await refreshReadiness(result.revision)) return false;
+        if (!await refreshReadiness(result.revision)) return "changed";
         announce(dirtyVersion === saveVersion ? "All changes saved" : "Saving newer changes…", "saved");
-        return dirtyVersion === saveVersion;
-      } catch (error) { failed = true; announce(error.message || "The draft could not be saved. Your edits are still here.", "error"); return false; }
+        return dirtyVersion === saveVersion ? "saved" : "changed";
+      } catch (error) { failed = true; announce(error.message || "The draft could not be saved. Your edits are still here.", "error"); return "failed"; }
       finally { inFlight = false; inFlightPromise = null; if (!failed && dirtyVersion > savedVersion) queueSave(0); }
     })();
     return await inFlightPromise;
   };
   const queueSave = delay => { clearTimeout(timer); timer = setTimeout(() => { void save(); }, delay); };
-  form.addEventListener("input", () => { dirtyVersion++; markReadinessStale(); announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
-  form.addEventListener("change", () => { dirtyVersion++; markReadinessStale(); announce("Unsaved changes", "pending"); queueSave(Number(form.dataset.saveDelay) || 600); });
+  const saveCurrentDraft = async () => {
+    while (true) {
+      const saved = await save();
+      if (saved === "saved" && dirtyVersion === savedVersion && !inFlight && readinessCurrent) return "saved";
+      if (saved === "failed") return "failed";
+    }
+  };
+  form.addEventListener("input", recordEdit);
+  // Some controls (and older browsers) report edits only through `change`. When
+  // both events fire for one edit, the state comparison prevents blur from
+  // marking a freshly saved value dirty a second time.
+  form.addEventListener("change", recordEdit);
   form.addEventListener("submit", async event => {
-    if (allowSubmit) { allowSubmit = false; return; }
+    if (dirtyVersion === savedVersion && !inFlight && readinessCurrent) return;
     event.preventDefault(); clearTimeout(timer);
-    if (await save() && readinessCurrent) { allowSubmit = true; form.requestSubmit(event.submitter); }
+    const submitter = event.submitter;
+    const outcome = await saveCurrentDraft();
+    if (outcome === "saved") {
+      setTimeout(() => {
+        const liveSubmitter = submitter?.isConnected && submitter.form === form ? submitter :
+          submitter && [...form.querySelectorAll("button[type='submit'], input[type='submit']")].find(button => button.formAction === submitter.formAction);
+        if (submitter && !liveSubmitter) { announce("The requested action is no longer available. Review the workspace and try again.", "error"); return; }
+        if (liveSubmitter) form.requestSubmit(liveSubmitter);
+        else form.requestSubmit();
+      }, 0);
+    }
   });
   document.querySelectorAll("a[href^='#']").forEach(link => link.addEventListener("click", async event => {
     if (dirtyVersion === savedVersion && !inFlight) return;
     event.preventDefault(); clearTimeout(timer);
-    if (await save()) window.location.assign(link.href);
+    if (await saveCurrentDraft() === "saved") window.location.assign(link.href);
   }));
   const previewButton = document.querySelector("[data-preview-button]");
   let previewAnswers = {};
@@ -196,7 +239,16 @@
   publishForm && publishForm.addEventListener("submit", async event => {
     if (dirtyVersion === savedVersion && !inFlight && readinessCurrent) return;
     event.preventDefault(); clearTimeout(timer);
-    if (await save() && readinessCurrent) event.target.submit();
+    const submitter = event.submitter;
+    if (await saveCurrentDraft() === "saved") {
+      setTimeout(() => {
+        const liveSubmitter = submitter?.isConnected && submitter.form === publishForm ? submitter :
+          submitter && [...publishForm.querySelectorAll("button[type='submit'], input[type='submit']")].find(button => button.formAction === submitter.formAction);
+        if (submitter && !liveSubmitter) { announce("The requested publication action is no longer available. Review the workspace and try again.", "error"); return; }
+        if (liveSubmitter) publishForm.requestSubmit(liveSubmitter);
+        else publishForm.requestSubmit();
+      }, 0);
+    }
   });
   const conditionForm = document.querySelector("#add-condition-form");
   if (conditionForm) {
@@ -207,7 +259,7 @@
     conditionForm.addEventListener("submit", async event => {
       event.preventDefault();
       clearTimeout(timer);
-      if (dirtyVersion !== savedVersion && !(await save())) return;
+      if (dirtyVersion !== savedVersion && await saveCurrentDraft() !== "saved") return;
       const response = await fetch(conditionForm.dataset.actionUrl, { method:"POST", credentials:"same-origin",
         body:new URLSearchParams(new FormData(conditionForm)), headers:{ "Accept":"application/json", "X-Requested-With":"QuestionAppBuilder" } });
       const result = await response.json().catch(() => ({}));
@@ -228,7 +280,7 @@
   }
   document.querySelectorAll("[data-structure-action]").forEach(button => button.addEventListener("click", async () => {
     clearTimeout(timer);
-    if (dirtyVersion !== savedVersion && !(await save())) return;
+    if (dirtyVersion !== savedVersion && await saveCurrentDraft() !== "saved") return;
     const token = form.querySelector("[name='__RequestVerificationToken']").value;
     const revision = form.querySelector("[name='ExpectedRevision']").value;
     announce("Updating questionnaire structure…", "pending");
