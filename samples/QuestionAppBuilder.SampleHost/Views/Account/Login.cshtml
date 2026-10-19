@@ -1,20 +1,67 @@
 @model QuestionAppBuilder.SampleHost.DevAuth.LoginRequest
-@{
-    ViewData["Title"] = "Sign in";
-}
-
-<h1>Sign in</h1>
-
-<form method="post" action="/Account/Login">
-    @Html.AntiForgeryToken()
-    @Html.ValidationSummary(false)
-    <div class="field">
-        <label for="Username">Username</label>
-        <input id="Username" name="Username" type="text" value="@Model.Username" autocomplete="username" />
-    </div>
-    <div class="field">
-        <label for="Password">Password</label>
-        <input id="Password" name="Password" type="password" autocomplete="current-password" />
-    </div>
-    <button type="submit">Sign in</button>
-</form>
+@using QuestionAppBuilder.SampleHost.DevAuth
+@{ Layout = null; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in — QuestionAppBuilder</title>
+    <link rel="stylesheet" href="@Url.Content("~/css/login.css")" asp-append-version="true" />
+    <script src="@Url.Content("~/js/login.js")" asp-append-version="true" defer></script>
+</head>
+<body>
+<main class="login-shell">
+    <section class="login-story" aria-labelledby="story-title">
+        <a class="brand" href="@Url.Content("~/")" aria-label="QuestionAppBuilder home">
+            <svg viewBox="0 0 32 32" width="30" height="30" fill="none" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="7" stroke="currentColor" stroke-width="2"/><path d="m9 15 4 4 10-10M18 23h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            QuestionAppBuilder
+        </a>
+        <div class="story-content">
+            <h1 id="story-title">Thoughtful questions.<br /><span>Meaningful answers.</span></h1>
+            <p>Build a questionnaire. Shape the experience.<br class="desktop-break" /> Turn every response into insight.</p>
+            <img class="questionnaire-art" src="@Url.Content("~/images/questionnaire.svg")" width="560" height="310" alt="An illustrated questionnaire with answer choices, a completed checklist, and a results chart." />
+        </div>
+        <div class="story-footer"><span>Design</span><span>Collect</span><span>Understand</span></div>
+    </section>
+    <section class="login-panel" aria-labelledby="login-title">
+        <div class="login-content">
+            <div class="login-heading"><h2 id="login-title">Welcome back.</h2><p>Sign in to your questionnaire workspace.</p></div>
+            <form method="post" action="@Url.Content("~/Account/Login")" id="login-form">
+                @Html.AntiForgeryToken()
+                @if (!ViewData.ModelState.IsValid)
+                {
+                    <div class="login-error" role="alert">@Html.ValidationSummary(false)</div>
+                }
+                <div class="field">
+                    <label for="Username">Username</label>
+                    <input id="Username" name="Username" type="text" value="@Model.Username" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="Enter your username" />
+                </div>
+                <div class="field">
+                    <label for="Password">Password</label>
+                    <div class="password-field">
+                        <input id="Password" name="Password" type="password" autocomplete="current-password" required placeholder="Enter your password" />
+                        <button class="password-toggle" type="button" aria-controls="Password" aria-label="Show password" aria-pressed="false" hidden>Show</button>
+                    </div>
+                </div>
+                <button class="sign-in" type="submit"><span>Sign in</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </form>
+            <section class="demo-access" aria-labelledby="demo-title">
+                <div class="demo-heading"><h3 id="demo-title">Explore the demo</h3><span class="demo-badge">Development accounts</span></div>
+                <p>Choose a role to fill in its credentials, then sign in.</p>
+                <div class="demo-roles">
+                    <button type="button" class="demo-role" data-username="designer"><span class="role-name">Designer <code>designer</code></span><span class="role-description">Create apps, configure questions &amp; publish.</span></button>
+                    <button type="button" class="demo-role" data-username="filler"><span class="role-name">Filler <code>filler</code></span><span class="role-description">Complete questionnaires &amp; resume responses.</span></button>
+                    <button type="button" class="demo-role" data-username="analyst"><span class="role-name">Analyst <code>analyst</code></span><span class="role-description">Review submissions, scores &amp; reports.</span></button>
+                </div>
+                <p class="shared-password">Password for all three <code id="demo-password">@DevUserStore.SharedPassword</code></p>
+                <p class="demo-note">Start with <strong>Designer</strong> to explore the builder. Filler and Analyst accounts cannot access the editor.</p>
+                <p class="sr-only" id="role-status" role="status" aria-live="polite"></p>
+                <noscript><p>Enter one of the usernames and the shared password above to sign in.</p></noscript>
+            </section>
+            <p class="login-footnote">Sample workspace · Use demo data when exploring.</p>
+        </div>
+    </section>
+</main>
+</body>
+</html>

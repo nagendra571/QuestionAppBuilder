@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="310" viewBox="0 0 560 310" fill="none">
+  <path d="M55 147H20v109h94M448 86h81v128h-36" stroke="#567e9d" stroke-width="1.5" stroke-dasharray="5 7"/>
+  <rect x="62" y="18" width="322" height="270" rx="14" fill="#f5f8fc"/>
+  <path d="M62 32a14 14 0 0 1 14-14h294a14 14 0 0 1 14 14v32H62Z" fill="#e0eaf3"/>
+  <circle cx="84" cy="41" r="4" fill="#456e91"/><circle cx="99" cy="41" r="4" fill="#7799b4"/><circle cx="114" cy="41" r="4" fill="#a6bfd2"/>
+  <text x="84" y="95" fill="#1b3c58" font-family="Arial,sans-serif" font-size="12" font-weight="700">YOUR NEXT QUESTIONNAIRE</text>
+  <text x="84" y="124" fill="#1b3c58" font-family="Arial,sans-serif" font-size="15" font-weight="700">What matters to your community?</text>
+  <rect x="84" y="143" width="278" height="36" rx="5" fill="#e4efdf"/>
+  <rect x="96" y="153" width="16" height="16" rx="4" fill="#346d43"/>
+  <path d="m100 160 3 3 6-7" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="125" y="165" fill="#254b32" font-family="Arial,sans-serif" font-size="12">Better access to services</text>
+  <rect x="96" y="193" width="16" height="16" rx="4" stroke="#8ba1b3"/>
+  <text x="125" y="205" fill="#526c80" font-family="Arial,sans-serif" font-size="12">More places to connect</text>
+  <rect x="96" y="233" width="16" height="16" rx="4" stroke="#8ba1b3"/>
+  <text x="125" y="245" fill="#526c80" font-family="Arial,sans-serif" font-size="12">Opportunities to learn</text>
+  <rect x="354" y="170" width="170" height="117" rx="12" fill="#bfe6a5"/>
+  <text x="374" y="198" fill="#234831" font-family="Arial,sans-serif" font-size="12" font-weight="700">Answers into insight</text>
+  <path d="M375 266h128" stroke="#7ca272"/>
+  <path d="M389 253v-20m27 20v-33m27 33v-24m27 24v-42m27 42v-54" stroke="#366747" stroke-width="12"/>
+  <circle cx="428" cy="69" r="34" fill="#86b9df"/>
+  <path d="m412 69 11 11 22-24" stroke="#143856" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
