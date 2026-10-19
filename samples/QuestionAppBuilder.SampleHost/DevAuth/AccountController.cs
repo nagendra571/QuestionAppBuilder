@@ -19,12 +19,11 @@ public sealed class LoginRequest
 public class AccountController : Controller
 {
     private readonly DevUserStore _userStore;
-    private readonly QuestionAppBuilderEditorOptions _editorOptions;
 
     public AccountController(DevUserStore userStore, QuestionAppBuilderEditorOptions editorOptions)
     {
-        _userStore = userStore;
-        _editorOptions = editorOptions;
+        _userStore = userStore ?? throw new ArgumentNullException(nameof(userStore));
+        ArgumentNullException.ThrowIfNull(editorOptions);
     }
 
     [HttpGet]
@@ -57,7 +56,7 @@ public class AccountController : Controller
             HostIdentityRegistration.CookieScheme,
             new ClaimsPrincipal(identity));
 
-        return Redirect($"{_editorOptions.BasePath.TrimEnd('/')}/Applications");
+        return LocalRedirect(Url.Content("~/"));
     }
 
     [HttpPost]
@@ -65,6 +64,6 @@ public class AccountController : Controller
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(HostIdentityRegistration.CookieScheme);
-        return RedirectToAction(nameof(Login));
+        return LocalRedirect(Url.Content("~/Account/Login"));
     }
 }

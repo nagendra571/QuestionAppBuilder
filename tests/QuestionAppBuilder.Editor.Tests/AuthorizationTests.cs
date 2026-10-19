@@ -48,7 +48,7 @@ public class AuthorizationTests : IClassFixture<EditorWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Root_redirects_to_editor()
+    public async Task Anonymous_root_challenges_to_login()
     {
         var client = CreateAnonymousClient();
 
@@ -56,7 +56,7 @@ public class AuthorizationTests : IClassFixture<EditorWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.Found);
         response.Headers.Location.Should().NotBeNull();
-        response.Headers.Location!.ToString().Should().Be("/ConfigureApp/Applications");
+        response.Headers.Location!.AbsolutePath.Should().Be("/Account/Login");
     }
 
     private HttpClient CreateAnonymousClient() =>

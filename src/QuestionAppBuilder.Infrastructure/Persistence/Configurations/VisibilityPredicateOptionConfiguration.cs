@@ -10,6 +10,7 @@ public class VisibilityPredicateOptionConfiguration : IEntityTypeConfiguration<V
     {
         builder.ToTable("VisibilityPredicateOptions");
         builder.HasKey(x => new { x.VisibilityPredicateId, x.QuestionOptionId });
-        builder.HasOne(x => x.QuestionOption).WithMany().HasForeignKey(x => x.QuestionOptionId).OnDelete(DeleteBehavior.Restrict);
+        // This is a reference edge, not ownership; service-level pruning removes links before owners.
+        builder.HasOne(x => x.QuestionOption).WithMany().HasForeignKey(x => x.QuestionOptionId).OnDelete(DeleteBehavior.ClientNoAction);
     }
 }

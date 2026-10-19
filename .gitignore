@@ -480,3 +480,17 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Superpowers brainstorm/SDD scratch (Visual Companion mockups, SDD workspaces)
+.superpowers/
+
+# Local AI tooling, planning, and generated review artifacts
+.claude/
+.codex/
+.cursor/
+.gemini/
+.impeccable/
+.superpowers/
+*.[mM][dD]
+docs/design/comps/
+docs/qa/

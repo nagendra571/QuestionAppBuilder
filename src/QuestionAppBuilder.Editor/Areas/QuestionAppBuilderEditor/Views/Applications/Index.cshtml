@@ -19,13 +19,15 @@
     .editor-empty { color: #565C65; }
 </style>
 
-<main>
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor.css" />
+<main class="aw-applications">
 <div class="editor-page-head">
-    <h1>Applications</h1>
-    <a class="editor-new-link" href="@Url.Action("Index", "ApplicationTypes", new { area = EditorArea.Name })">Manage types</a>
+    <div><p class="aw-kicker">Workspace</p><h1>Applications</h1><p class="aw-muted">Design questionnaires, publish versions, and manage response availability.</p></div>
+    <a class="aw-back" href="@Url.Action("Index", "ApplicationTypes", new { area = EditorArea.Name })">Manage types</a>
     <a class="editor-new-link" href="@Url.Action("Create", "Applications", new { area = EditorArea.Name })">New application</a>
 </div>
 
+<p class="aw-list-count">@Model.Count @(Model.Count == 1 ? "application" : "applications")</p>
 <table class="editor-app-table">
     <thead>
         <tr>
@@ -37,7 +39,7 @@
         @if (Model.Count == 0)
         {
             <tr>
-                <td class="editor-empty" colspan="2">No applications yet.</td>
+                <td class="editor-empty" colspan="2">No applications yet. Choose New application to create your first questionnaire.</td>
             </tr>
         }
         @foreach (var application in Model)

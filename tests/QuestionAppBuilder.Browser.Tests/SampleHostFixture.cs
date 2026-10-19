@@ -219,6 +219,60 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> SeedResponsiveAuthoringApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var selected = new QuestionOption { Label = "An unusually long option label for narrow responsive layouts", Value = "responsive-selected", SortOrder = 1 };
+        var other = new QuestionOption { Label = "Another long option label that should wrap safely", Value = "responsive-other", SortOrder = 2 };
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now,
+            DisplayName = "ApplicationTitle_" + new string('A', 100),
+            NavigationMode = NavigationMode.Sequential, ResultVisibility = ResultVisibility.Total,
+            Categories =
+            {
+                new Category
+                {
+                    Name = "Category_" + new string('C', 84), SortOrder = 1,
+                    Elements =
+                    {
+                        new Element { Kind = ElementKind.Content, Label = "Content_" + new string('H', 126), HelpText = "Responsive content block", SortOrder = 1 },
+                        new Element
+                        {
+                            Kind = ElementKind.Question, Label = "Question_" + new string('Q', 142), SortOrder = 2,
+                            Question = new Question
+                            {
+                                AnswerType = AnswerType.Checkboxes, IsRequired = true, ScoringMode = ScoringMode.Additive,
+                                Options = { selected, other },
+                                Rules =
+                                {
+                                    new ScoringRule
+                                    {
+                                        Family = RuleFamily.Selection, Points = 7, SortOrder = 1,
+                                        MembershipOperator = MembershipOperator.AnyOf,
+                                        Options = { new ScoringRuleOption { QuestionOption = selected } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "ApplicationTitle_" + new string('A', 100) + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Responsive type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
     public async Task<int> CountResponsesAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;

@@ -1,6 +1,7 @@
 @model ResponsePageModel
 @{ ViewData["FieldErrors"] = Model.FieldErrors; ViewData["InputValues"] = Model.InputValues; }
 <input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
+<div class="qab-response-layout">
 <nav class="qab-tabs" aria-label="Questionnaire categories">
     @foreach (var category in Model.Questionnaire.Categories)
     {
@@ -10,6 +11,7 @@
         </a>
     }
 </nav>
+<div class="qab-response-content">
 <p class="qab-progress">Category @(Model.CurrentCategoryIndex + 1) of @Model.Questionnaire.Categories.Count</p>
 @{
     var categoryModel = Model.Questionnaire.Categories[Model.CurrentCategoryIndex];
@@ -35,4 +37,6 @@
     {
         <button class="qab-button qab-button-primary" type="submit" name="Intent" value="Review" data-qab-action="review">Review your answers</button>
     }
+</div>
+</div>
 </div>

@@ -1,6 +1,11 @@
 (() => {
   const form = document.querySelector("#draft-workspace");
   if (!form) return;
+  const outline = form.querySelector(".aw-outline");
+  const compactViewport = window.matchMedia("(max-width: 800px)");
+  const adaptOutline = () => { if (outline) outline.open = !compactViewport.matches; };
+  adaptOutline();
+  compactViewport.addEventListener("change", adaptOutline);
   const status = document.querySelector("[data-save-status]");
   const publishForm = document.querySelector("#publish-draft");
   const readiness = document.querySelector("#readiness");

@@ -1,0 +1,7 @@
+<Project>
+  <!-- Keep Markdown out of source control while supplying NuGet's required .md readme. -->
+  <Target Name="GeneratePackageReadme" BeforeTargets="_GetPackageFiles" Condition="'$(PackageReadmeFile)' == 'README.md'">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)docs/integration.txt"
+          DestinationFiles="$(BaseIntermediateOutputPath)package-readme/README.md" />
+  </Target>
+</Project>

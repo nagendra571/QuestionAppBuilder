@@ -15,6 +15,9 @@ public class ScoringRuleOptionConfiguration : IEntityTypeConfiguration<ScoringRu
         builder.HasOne(o => o.QuestionOption)
             .WithMany()
             .HasForeignKey(o => o.QuestionOptionId)
-            .OnDelete(DeleteBehavior.Restrict);
+            // The owning ScoringRule cascades deletion of this link. Do not null its
+            // required option FK while EF traverses the question's other children.
+            // SQL Server still enforces NO ACTION for direct option deletion.
+            .OnDelete(DeleteBehavior.ClientNoAction);
     }
 }

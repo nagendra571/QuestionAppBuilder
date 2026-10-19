@@ -43,4 +43,27 @@ public sealed class AccessibilityTests
         var form = await page.RunAxe();
         form.Violations.Should().BeEmpty("the respondent answer form must meet WCAG 2.1 AA automated checks");
     }
+
+    [Fact]
+    public async Task Designer_workspace_exposes_one_banner_without_duplicate_landmark_violations()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var id = await host.SeedResponsiveAuthoringApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}").ToString());
+
+        (await page.GetByRole(AriaRole.Banner).CountAsync()).Should().Be(1);
+        var results = await page.RunAxe();
+        var violationDetails = System.Text.Json.JsonSerializer.Serialize(results.Violations);
+        results.Violations.Select(violation => violation.Id).Should()
+            .NotContain("landmark-no-duplicate-banner", "violations: {0}", violationDetails)
+            .And.NotContain("landmark-unique", "violations: {0}", violationDetails);
+    }
 }

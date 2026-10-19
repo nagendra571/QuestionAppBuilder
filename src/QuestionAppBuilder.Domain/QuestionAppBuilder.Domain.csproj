@@ -4,5 +4,5 @@
     <Description>Domain definitions and invariants for the QuestionAppBuilder questionnaire platform.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
-  <ItemGroup><None Include="..\..\docs\integration.md" Pack="true" PackagePath="README.md" /></ItemGroup>
+  <ItemGroup><None Include="$(BaseIntermediateOutputPath)package-readme\README.md" Pack="true" PackagePath="/" /></ItemGroup>
 </Project>

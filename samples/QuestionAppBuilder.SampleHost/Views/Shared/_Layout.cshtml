@@ -24,14 +24,14 @@
             --qab-text: #1B1B1B;
         }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: "Public Sans", "Helvetica Neue", Arial, sans-serif; color: var(--qab-text); background: var(--qab-ground); }
+        body { margin: 0; font-size:14px; line-height:1.5; font-family: "Public Sans", "Helvetica Neue", Arial, sans-serif; color: var(--qab-text); background: var(--qab-ground); }
         .qab-host-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--qab-navy); color: #fff; padding: 0.75rem 1.5rem; }
         .qab-host-bar a { color: #fff; text-decoration: none; font-weight: 600; }
         .qab-host-nav { display: flex; gap: 1rem; margin-right: auto; margin-left: 1.5rem; }
         .qab-host-bar form { display: flex; align-items: center; gap: 0.75rem; margin: 0; }
         .qab-host-bar button { background: transparent; border: 1px solid #fff; }
-        main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
-        h1 { font-size: 26px; font-weight: 700; margin: 0 0 1rem; }
+        main { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+        h1 { font-size: 24px; font-weight: 700; margin: 0 0 1rem; }
         a { color: var(--qab-primary); }
         a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--qab-focus); outline-offset: 1px; }
         table { width: 100%; border-collapse: collapse; background: var(--qab-panel); border: 1px solid var(--qab-border); border-radius: 4px; }
@@ -48,15 +48,32 @@
             .qab-host-nav { flex: 1 0 100%; flex-wrap: wrap; margin: 0.5rem 0 0; gap: 0.5rem 0.75rem; }
             .qab-host-content main { padding: 1rem 0.75rem; }
         }
+        .qab-host-bar { min-height:56px; padding:8px 24px; background:#183b65; }
+        .qab-host-bar > a { font-size:15px; letter-spacing:-.3px; }
+        .qab-host-nav { gap:4px; }
+        .qab-host-nav a { padding:8px 12px; border-radius:4px; font-size:13px; }
+        .qab-host-nav a:hover,.qab-host-nav a[aria-current="page"] { background:#31547b; }
+        .qab-host-bar form { font-size:12px; }
+        .qab-host-bar button { padding:6px 10px; border-color:#829ab6; }
+        h2 { font-size:18px; }
+        button:hover { filter:brightness(.94); }
+        select,textarea { font:inherit; }
+        @@media (max-width:760px) {
+            .qab-host-bar { flex-wrap:wrap; padding:10px 16px; gap:8px; }
+            .qab-host-nav { order:3; width:100%; margin:0; }
+            .qab-host-bar form { margin-left:auto; }
+            .qab-host-nav a { min-height:44px; display:flex; align-items:center; }
+            input,select,textarea { font-size:16px; }
+        }
     </style>
 </head>
 <body>
     <header class="qab-host-bar">
         <a href="/">QuestionAppBuilder</a>
         <nav aria-label="Platform surfaces" class="qab-host-nav">
-            <a href="@(editorBasePath.TrimEnd('/') + "/Applications")">Design</a>
-            <a href="@(runtimeBasePath.TrimEnd('/') + "/Mine")">My responses</a>
-            <a href="@(reportsBasePath.TrimEnd('/') + "/")">Reports</a>
+            <a href="@(editorBasePath.TrimEnd('/') + "/Applications")" aria-current="@(Context.Request.Path.StartsWithSegments(editorBasePath) ? "page" : null)">Design</a>
+            <a href="@(runtimeBasePath.TrimEnd('/') + "/Mine")" aria-current="@(Context.Request.Path.StartsWithSegments(runtimeBasePath) ? "page" : null)">My responses</a>
+            <a href="@(reportsBasePath.TrimEnd('/') + "/")" aria-current="@(Context.Request.Path.StartsWithSegments(reportsBasePath) ? "page" : null)">Reports</a>
         </nav>
         @if (User.Identity?.IsAuthenticated == true)
         {

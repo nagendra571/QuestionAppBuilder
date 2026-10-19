@@ -1,8 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Core.DependencyInjection;
 using QuestionAppBuilder.Core.Routing;
+using QuestionAppBuilder.Core.Options;
 using QuestionAppBuilder.Editor.DependencyInjection;
 using QuestionAppBuilder.Editor.Options;
 using QuestionAppBuilder.Editor.Routing;
@@ -61,18 +65,39 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 
-var editorOptions = app.Services.GetRequiredService<QuestionAppBuilderEditorOptions>();
-
 app.MapQuestionAppBuilderEditor();
 app.MapQuestionAppBuilderRuntime();
 app.MapQuestionAppBuilderReports();
 app.MapControllerRoute(name: "area-conventional", pattern: "{area:exists}/{controller=Applications}/{action=Index}/{id?}");
-app.MapGet("/", () => Results.Redirect($"{editorOptions.BasePath.TrimEnd('/')}/Applications"));
+app.MapGet("/", async (HttpContext context, IAuthorizationService authorization,
+    [FromServices] QuestionAppBuilderEditorOptions editorOptions, IOptions<QuestionAppBuilderRuntimeOptions> runtimeOptions,
+    [FromServices] QuestionAppBuilderReportsOptions reportsOptions) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true)
+        return Results.Challenge();
+
+    if ((await authorization.AuthorizeAsync(context.User, context, HostIdentityRegistration.DesignPolicy)).Succeeded)
+        return Results.Redirect(SurfacePath(context.Request.PathBase, editorOptions.BasePath, "Applications"));
+    if ((await authorization.AuthorizeAsync(context.User, context, HostIdentityRegistration.FillPolicy)).Succeeded)
+        return Results.Redirect(SurfacePath(context.Request.PathBase, runtimeOptions.Value.BasePath, "Mine"));
+    if ((await authorization.AuthorizeAsync(context.User, context, HostIdentityRegistration.ReportPolicy)).Succeeded)
+        return Results.Redirect(SurfacePath(context.Request.PathBase, reportsOptions.BasePath, string.Empty, trailingSlash: true));
+
+    return Results.Forbid();
+});
 if (builder.Environment.IsDevelopment())
 {
     app.MapControllerRoute(name: "development-account", pattern: "{controller=Account}/{action=Login}/{id?}");
 }
 
 app.Run();
+
+static string SurfacePath(PathString pathBase, string basePath, string endpoint, bool trailingSlash = false)
+{
+    var relativePath = string.Join('/', new[] { basePath, endpoint }.Select(segment => segment.Trim('/')).Where(segment => segment.Length > 0));
+    var targetPath = relativePath.Length == 0 ? new PathString("/") : new PathString("/" + relativePath);
+    var result = pathBase.Add(targetPath).Value ?? "/";
+    return trailingSlash && !result.EndsWith('/') ? result + "/" : result;
+}
 
 public partial class Program { }

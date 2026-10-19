@@ -1,5 +1,4 @@
 @model DraftWorkspaceViewModel
-<h2>On this questionnaire</h2>
 <p class="aw-muted">Select a section to edit it.</p>
 <nav aria-label="Questionnaire outline">
     @foreach (var category in Model.Graph.Categories.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))

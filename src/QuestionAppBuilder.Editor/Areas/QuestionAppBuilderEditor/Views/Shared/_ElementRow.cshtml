@@ -10,18 +10,18 @@
 
 <style>
     .cv-content-el { padding: 16px 0; border-bottom: 1px solid #E4E8EC; }
-    .cv-content-head { display: flex; align-items: flex-start; gap: 12px; }
-    .cv-content-head h3 { flex: 1; font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
+    .cv-content-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex-wrap: wrap; }
+    .cv-content-head h3 { flex: 1 1 12rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 15px; font-weight: 700; line-height: 1.4; margin: 0; }
     .cv-content-el p { font-size: 14px; color: #565C65; margin-top: 4px; }
     .cv-q { padding: 18px 0; border-bottom: 1px solid #E4E8EC; }
-    .cv-qhead { display: flex; align-items: flex-start; gap: 12px; }
-    .cv-qhead h3 { flex: 1; font-size: 15.5px; font-weight: 700; line-height: 1.4; margin: 0; }
+    .cv-qhead { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex-wrap: wrap; }
+    .cv-qhead h3 { flex: 1 1 12rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 15.5px; font-weight: 700; line-height: 1.4; margin: 0; }
     .cv-req { font-size: 12px; font-weight: 600; color: #B50909; padding-top: 2px; }
     .cv-qmeta { font-size: 12.5px; color: #565C65; margin-top: 3px; }
     .cv-help { font-size: 14px; color: #565C65; margin-top: 4px; }
     .cv-link { font-family: inherit; background: none; border: 0; color: #005EA2; font-size: 13.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; padding: 0; }
     .cv-link:focus-visible { outline: 3px solid #2491FF; outline-offset: 1px; }
-    .cv-el-remove { margin-left: 8px; padding-top: 2px; white-space: nowrap; }
+    .cv-el-remove { margin-left: 0; padding-top: 2px; white-space: nowrap; flex: 0 0 auto; }
 </style>
 
 @if (element.Kind == ElementKind.Content)

@@ -9,16 +9,16 @@
 }
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor.css" />
 <script src="~/_content/QuestionAppBuilder.Editor/js/editor.js" defer></script>
-<header class="aw-page-head">
-    <div><a asp-controller="Applications" asp-action="Detail" asp-route-id="@Model.ApplicationId" class="aw-back">Back to application</a><h1>Authoring workspace</h1><p>Shape the questionnaire, preview its behavior, and resolve readiness before publishing.</p></div>
+<div class="aw-page-head" role="region" aria-labelledby="workspace-heading">
+    <div><a asp-controller="Applications" asp-action="Detail" asp-route-id="@Model.ApplicationId" class="aw-back">Back to application</a><h1 id="workspace-heading">Authoring workspace</h1><p>Shape the questionnaire, preview its behavior, and resolve readiness before publishing.</p></div>
     <div class="aw-save-state" role="status" aria-live="polite" data-save-status>All changes saved</div>
-</header>
+</div>
 <form id="draft-workspace" method="post" asp-controller="Drafts" asp-action="Save" asp-route-applicationId="@Model.ApplicationId" data-save-url="@Url.Action("Save", "Drafts", new { applicationId = Model.ApplicationId })" data-save-delay="600">
     @Html.AntiForgeryToken()
     <input type="hidden" name="ApplicationId" value="@Model.ApplicationId" />
     <input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
     <div class="aw-layout">
-        <aside class="aw-rail" aria-label="Questionnaire outline"><partial name="_Outline" model="Model" /></aside>
+        <aside class="aw-rail" aria-label="Questionnaire outline"><details class="aw-outline" open><summary>On this questionnaire</summary><partial name="_Outline" model="Model" /></details></aside>
         <main class="aw-editor">
             @if (TempData["EditorError"] is string error) { <p class="aw-alert" role="alert">@error</p> }
             <section class="aw-panel" aria-labelledby="definition-heading">

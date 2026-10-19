@@ -1076,7 +1076,7 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.HasOne("QuestionAppBuilder.Domain.Entities.QuestionOption", "QuestionOption")
                         .WithMany()
                         .HasForeignKey("QuestionOptionId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.ClientNoAction)
                         .IsRequired();
 
                     b.HasOne("QuestionAppBuilder.Domain.Entities.ScoringRule", null)
@@ -1173,7 +1173,7 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.HasOne("QuestionAppBuilder.Domain.Entities.Question", "SourceQuestion")
                         .WithMany()
                         .HasForeignKey("SourceQuestionId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.ClientNoAction)
                         .IsRequired();
 
                     b.HasOne("QuestionAppBuilder.Domain.Entities.VisibilityCondition", null)
@@ -1190,7 +1190,7 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.HasOne("QuestionAppBuilder.Domain.Entities.QuestionOption", "QuestionOption")
                         .WithMany()
                         .HasForeignKey("QuestionOptionId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.ClientNoAction)
                         .IsRequired();
 
                     b.HasOne("QuestionAppBuilder.Domain.Entities.VisibilityPredicate", null)
