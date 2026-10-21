@@ -1,16 +1,24 @@
+@using QuestionAppBuilder.Domain.Graphs
 @model DraftWorkspaceViewModel
 <p class="aw-muted">Select a section to edit it.</p>
 <nav aria-label="Questionnaire outline">
     @foreach (var category in Model.Graph.Categories.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
     {
         <a href="#category-@category.Id" class="aw-outline-category">@category.Name</a>
-        @foreach (var element in category.Elements.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
+        @foreach (var element in FollowUpStructure.Ordered(category.Elements))
         {
-            <a href="#element-@element.Id" class="aw-outline-element">@element.Label</a>
+            <a href="#element-@element.Id" class="aw-outline-element @(element.ParentOptionId is not null ? "aw-follow-up-link" : "")" style="--branch-depth: @Math.Min(FollowUpStructure.Depth(element, category.Elements), 3)" title="@(element.ParentOptionId is null ? null : "Follow-up question")">@element.Label</a>
         }
     }
 </nav>
-<a class="aw-outline-action" href="#visibility">Visibility rules</a>
-<a class="aw-outline-action" href="#scoring">Scoring</a>
-<a class="aw-outline-action" href="#readiness">Readiness</a>
-<a class="aw-outline-action" href="#preview">Preview</a>
+<div class="aw-outline-tools">
+<a class="aw-outline-action aw-add-category-link" href="#add-category"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg><span>Add category</span></a>
+@if (Model.Graph.Categories.Count > 0)
+{
+<a class="aw-outline-action" href="#add-element">Add question or content</a>
+}
+@if (Model.Graph.Categories.SelectMany(c => c.Elements).Any(e => e.Question is not null))
+{
+<a class="aw-outline-action" href="#question-assets">Add options or scoring</a>
+}
+</div>

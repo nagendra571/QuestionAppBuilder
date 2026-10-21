@@ -178,11 +178,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         {
             ApplicationVersionId = editable.Graph.Version.Id,
             Name = source.Name + " copy",
+            VisibilityConditionId = source.VisibilityConditionId,
             SortOrder = source.SortOrder,
             LogicalKey = Guid.NewGuid(),
         };
-        foreach (var element in source.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
-            duplicate.Elements.Add(CloneElement(element, duplicate.Elements.Count + 1));
+        duplicate.Elements.AddRange(CloneBranch(FollowUpStructure.Ordered(source.Elements), editable.Graph));
         var categories = editable.Graph.Version.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).ToList();
         var index = categories.IndexOf(source);
         categories.Insert(index + 1, duplicate);
@@ -276,6 +276,29 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return option;
     }
 
+    public async Task<Element> AddFollowUpAsync(int optionId, string label, AnswerType answerType, bool isRequired = true,
+        string? helpText = null, CancellationToken ct = default, byte[]? expectedRevision = null)
+    {
+        if (string.IsNullOrWhiteSpace(label)) throw new DefinitionValidationException("Enter a question label for the follow-up.");
+        EnsureMaxLength(label, ValidationLimits.LabelMaxLength, "Question label");
+        EnsureOptionalMaxLength(helpText, ValidationLimits.HelpTextMaxLength, "Help text");
+        if (!Enum.IsDefined(answerType)) throw new DefinitionValidationException("Select a supported answer type.");
+        var editable = await OpenForEditAsync(ChildEntityKind.Option, optionId, g => FindOption(g, optionId), ct, expectedRevision);
+        var category = editable.Graph.Categories.Single(c => c.Elements.Any(e => e.Question?.Options.Contains(editable.Target) == true));
+        var parent = category.Elements.Single(e => e.Question?.Options.Contains(editable.Target) == true);
+        if (parent.Question!.AnswerType is not (AnswerType.RadioGroup or AnswerType.Checkboxes or AnswerType.Dropdown))
+            throw new DefinitionValidationException("Follow-ups require an option on a choice question.");
+        var child = new Element { Kind = ElementKind.Question, Label = label.Trim(), HelpText = helpText,
+            ParentOption = editable.Target, CategoryId = category.Id,
+            SortOrder = NextSortOrder(category.Elements.Select(e => e.SortOrder)),
+            Question = new Question { AnswerType = answerType, IsRequired = isRequired,
+                ScoringMode = answerType == AnswerType.Number ? ScoringMode.FirstMatch : ScoringMode.Additive } };
+        category.Elements.Add(child);
+        NormalizeElements(category);
+        await _repository.SaveChangesAsync(ct);
+        return child;
+    }
+
     public async Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct, expectedRevision);
@@ -352,12 +375,15 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
         var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
-        var ordered = category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id).ToList();
-        var index = ordered.IndexOf(editable.Target);
-        var duplicate = CloneElement(editable.Target, index + 2);
-        ordered.Insert(index + 1, duplicate);
+        var ordered = FollowUpStructure.Ordered(category.Elements).ToList();
+        var branch = FollowUpStructure.Branch(editable.Target, category.Elements);
+        var copies = CloneBranch(branch, editable.Graph);
+        var duplicate = copies[0];
+        if (editable.Target.ParentOptionId is int parentId) duplicate.ParentOption = FindOption(editable.Graph, parentId);
+        var index = ordered.IndexOf(branch.Last());
+        ordered.InsertRange(index + 1, copies);
+        category.Elements.AddRange(copies);
         for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
-        category.Elements.Add(duplicate);
         await _repository.SaveChangesAsync(ct);
         return duplicate;
     }
@@ -366,11 +392,20 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
         var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
-        var ordered = category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id).ToList();
+        var ordered = FollowUpStructure.Ordered(category.Elements).ToList();
         EnsureIndex(targetIndex, ordered.Count);
-        ordered.Remove(editable.Target);
-        ordered.Insert(targetIndex, editable.Target);
-        for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+        var target = ordered[targetIndex];
+        if (target.ParentOptionId != editable.Target.ParentOptionId)
+            throw new DefinitionValidationException("Move a follow-up within its option branch. Move its parent to move the whole branch.");
+        if (!ReferenceEquals(target, editable.Target))
+        {
+            var branch = FollowUpStructure.Branch(editable.Target, category.Elements);
+            var movingDown = ordered.IndexOf(editable.Target) < targetIndex;
+            ordered.RemoveAll(branch.Contains);
+            var insertion = movingDown ? ordered.IndexOf(FollowUpStructure.Branch(target, category.Elements).Last()) + 1 : ordered.IndexOf(target);
+            ordered.InsertRange(insertion, branch);
+            for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+        }
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -422,10 +457,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
 
         var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
-        var questionIds = editable.Target.Question is null ? new HashSet<int>() : new HashSet<int> { editable.Target.Question.Id };
-        var optionIds = editable.Target.Question?.Options.Select(o => o.Id).ToHashSet() ?? new HashSet<int>();
-        PruneVisibilityConditions(editable.Graph, questionIds, optionIds, new HashSet<int> { editable.Target.Id }, new HashSet<int>());
-        category.Elements.Remove(editable.Target);
+        RemoveBranch(editable.Graph, category, FollowUpStructure.Branch(editable.Target, category.Elements));
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -440,7 +472,11 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
         var question = FindQuestionContainingOption(editable.Graph, editable.Target)
             ?? throw new NotFoundException($"Option {optionId} was not found.");
-        PruneVisibilityConditions(editable.Graph, new HashSet<int>(), new HashSet<int> { optionId }, new HashSet<int>(), new HashSet<int>());
+        var category = editable.Graph.Categories.Single(c => c.Elements.Any(e => ReferenceEquals(e.Question, question)));
+        var removed = category.Elements.Where(e => e.ParentOptionId == editable.Target.Id)
+            .SelectMany(e => FollowUpStructure.Branch(e, category.Elements)).Distinct().ToArray();
+        RemoveBranch(editable.Graph, category, removed);
+        PruneVisibilityConditions(editable.Graph, new HashSet<int>(), new HashSet<int> { editable.Target.Id }, new HashSet<int>(), new HashSet<int>());
         question.Options.Remove(editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
@@ -722,11 +758,60 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         if (index < 0 || index >= count) throw new DefinitionValidationException("The requested order position is outside the current list.");
     }
 
+    private static void NormalizeElements(Category category)
+    {
+        var ordered = FollowUpStructure.Ordered(category.Elements);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
+    }
+
+    private static List<Element> CloneBranch(IReadOnlyList<Element> source, ApplicationVersionGraph graph)
+    {
+        var copies = source.Select((element, index) => CloneElement(element, index + 1)).ToList();
+        var options = new Dictionary<int, QuestionOption>();
+        for (var i = 0; i < source.Count; i++)
+            if (source[i].Question is { } question)
+                foreach (var pair in question.Options.OrderBy(o => o.SortOrder).ThenBy(o => o.Id).Zip(copies[i].Question!.Options)) options[pair.First.Id] = pair.Second;
+        var questions = source.Select((element, index) => (element.Question, Copy: copies[index].Question))
+            .Where(pair => pair.Question is not null).ToDictionary(pair => pair.Question!.Id, pair => pair.Copy!);
+        var conditions = new Dictionary<int, VisibilityCondition>();
+        for (var i = 0; i < source.Count; i++)
+        {
+            if (source[i].ParentOptionId is int id && options.TryGetValue(id, out var option)) copies[i].ParentOption = option;
+            if (source[i].VisibilityConditionId is not int conditionId) continue;
+            if (!conditions.TryGetValue(conditionId, out var condition))
+            {
+                var original = graph.VisibilityConditions.Single(c => c.Id == conditionId);
+                condition = new VisibilityCondition { ApplicationVersionId = graph.Version.Id, Junction = original.Junction };
+                foreach (var predicate in original.Predicates)
+                {
+                    var clone = new VisibilityPredicate { Operator = predicate.Operator, NumberValue = predicate.NumberValue,
+                        SourceQuestion = questions.GetValueOrDefault(predicate.SourceQuestionId) ?? FindQuestion(graph, predicate.SourceQuestionId) };
+                    foreach (var link in predicate.Options)
+                        clone.Options.Add(new VisibilityPredicateOption { QuestionOption = options.GetValueOrDefault(link.QuestionOptionId) ?? FindOption(graph, link.QuestionOptionId) });
+                    condition.Predicates.Add(clone);
+                }
+                conditions[conditionId] = condition;
+                graph.Version.VisibilityConditions.Add(condition);
+            }
+            copies[i].VisibilityCondition = condition;
+        }
+        return copies;
+    }
+
+    private static void RemoveBranch(ApplicationVersionGraph graph, Category category, IReadOnlyCollection<Element> removed)
+    {
+        var questions = removed.Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
+        PruneVisibilityConditions(graph, questions.Select(q => q.Id).ToHashSet(), questions.SelectMany(q => q.Options).Select(o => o.Id).ToHashSet(),
+            removed.Select(e => e.Id).ToHashSet(), new HashSet<int>());
+        foreach (var element in removed) { element.ParentOption = null; element.ParentOptionId = null; category.Elements.Remove(element); }
+        NormalizeElements(category);
+    }
+
     private static Element CloneElement(Element source, int sortOrder)
     {
         var clone = new Element { Kind = source.Kind, Label = source.Label + " copy", HelpText = source.HelpText, SortOrder = sortOrder, LogicalKey = Guid.NewGuid() };
         if (source.Question is not { } question) return clone;
-        var newQuestion = new Question { AnswerType = question.AnswerType, IsRequired = question.IsRequired, ScoringMode = question.ScoringMode,
+        var newQuestion = new Question { AnswerType = question.AnswerType, IsRequired = question.IsRequired, RequiredMessage = question.RequiredMessage, ScoringMode = question.ScoringMode,
             MaxLength = question.MaxLength, MinValue = question.MinValue, MaxValue = question.MaxValue, MinSelections = question.MinSelections, MaxSelections = question.MaxSelections };
         var optionMap = new Dictionary<int, QuestionOption>();
         foreach (var option in question.Options.OrderBy(o => o.SortOrder).ThenBy(o => o.Id))

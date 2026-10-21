@@ -1,9 +1,16 @@
 @using QuestionAppBuilder.Domain.Entities
 @using QuestionAppBuilder.Domain.Enums
+@using QuestionAppBuilder.Domain.Graphs
 @model (ApplicationDetailViewModel Detail, Element Element)
 @{
     var element = Model.Element;
+    var displayNumber = ViewData["ElementNumber"] as string;
+    var graphElements = (Model.Detail.DraftGraph ?? Model.Detail.PublishedGraph)?.Categories.SelectMany(c => c.Elements).ToArray() ?? Array.Empty<Element>();
+    var parent = FollowUpStructure.Parent(element, graphElements);
+    var branchCount = FollowUpStructure.Branch(element, graphElements).Count - 1;
+    var depth = FollowUpStructure.Depth(element, graphElements);
     var editable = Model.Detail.IsEditable;
+    var itemKind = element.Question is null ? "content" : "question";
     var applicationId = Model.Detail.Application.Id;
     var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
 }
@@ -26,16 +33,19 @@
 
 @if (element.Kind == ElementKind.Content)
 {
-    <div class="cv-content-el">
+    <div class="cv-content-el" id="manage-element-@element.Id">
         <div class="cv-content-head">
-            <h3>@element.Label</h3>
+            <h3><span class="cv-element-number">@displayNumber</span><span>@element.Label</span></h3>
             @if (editable)
             {
-                <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove">
-                    <input type="hidden" name="applicationId" value="@applicationId" />
-                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                    <button type="submit" class="cv-link">Remove</button>
-                </form>
+                <div class="cv-row-actions" role="group" aria-label="Actions for @element.Label">
+                    <a class="qab-icon-action" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="element-@element.Id" aria-label="Edit @itemKind: @element.Label" title="Edit @itemKind: @element.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
+                    <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove" data-confirm="@(branchCount > 0 ? $"Remove this question and its {branchCount} follow-up question(s)?" : null)">
+                        <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
+                        <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
+                    </form>
+                </div>
             }
         </div>
         @if (!string.IsNullOrWhiteSpace(element.HelpText))
@@ -46,20 +56,24 @@
 }
 else if (element.Question is not null)
 {
-    <div class="cv-q">
+    <div class="cv-q @(parent is null ? "" : "cv-follow-up")" style="--branch-depth: @Math.Min(depth, 3)" id="manage-element-@element.Id">
+        @if (parent is not null) { <p class="cv-help">Shows when: <strong>@parent.Label / @parent.Question!.Options.Single(o => o.Id == element.ParentOptionId).Label</strong> is selected.</p> }
         <div class="cv-qhead">
-            <h3>@element.Label</h3>
+            <h3><span class="cv-element-number">@displayNumber</span><span>@element.Label</span></h3>
             @if (element.Question.IsRequired)
             {
                 <span class="cv-req">Required</span>
             }
             @if (editable)
             {
-                <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove">
-                    <input type="hidden" name="applicationId" value="@applicationId" />
-                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                    <button type="submit" class="cv-link">Remove</button>
-                </form>
+                <div class="cv-row-actions" role="group" aria-label="Actions for @element.Label">
+                    <a class="qab-icon-action" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="element-@element.Id" aria-label="Edit @itemKind: @element.Label" title="Edit @itemKind: @element.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
+                    <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove" data-confirm="@(branchCount > 0 ? $"Remove this question and its {branchCount} follow-up question(s)?" : null)">
+                        <input type="hidden" name="applicationId" value="@applicationId" />
+                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
+                        <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
+                    </form>
+                </div>
             }
         </div>
         <div class="cv-qmeta">@QuestionFormViewModel.SplitPascalCase(element.Question.AnswerType.ToString())</div>

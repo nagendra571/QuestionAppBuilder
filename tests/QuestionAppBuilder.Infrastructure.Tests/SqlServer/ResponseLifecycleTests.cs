@@ -204,6 +204,91 @@ public class ResponseLifecycleTests
         exact.Answers[db.QuestionId].Number.Should().Be(1.2345m);
     }
 
+    [SqlServerFact]
+    public async Task Documents_cannot_be_forged_by_answer_saves_and_survive_resume_and_submission()
+    {
+        await using var db = await TestDatabase.CreateAsync(answerType: AnswerType.UploadDocument);
+        var (responses, identity) = db.CreateService("document-owner");
+        var documents = db.CreateDocuments(responses);
+        var started = await responses.StartAsync(1);
+        var fake = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new("fake.pdf", null, null) }));
+        fake.Answers.Should().BeEmpty();
+        Func<Task> incomplete = () => db.CreateSubmissionCoordinator(identity).SubmitAsync(new(fake.Id, fake.Revision, Guid.NewGuid()));
+        await incomplete.Should().ThrowAsync<AnswerValidationException>();
+        var bytes = System.Text.Encoding.UTF8.GetBytes("%PDF-1.7\nTest document");
+        var uploaded = await documents.UploadAsync(fake.Id, db.QuestionId, fake.Revision, "../../budget.pdf", new MemoryStream(bytes));
+        uploaded.Answers[db.QuestionId].Text.Should().Be("budget.pdf");
+        var resumed = await responses.SaveAsync(new(uploaded.Id, uploaded.Revision, new Dictionary<int, AnswerValue>()));
+        resumed.Answers[db.QuestionId].Text.Should().Be("budget.pdf");
+        (await documents.DownloadAsync(resumed.Id, db.QuestionId))!.Content.Should().Equal(bytes);
+        var (other, _) = db.CreateService("another-owner");
+        Func<Task> steal = () => db.CreateDocuments(other).DownloadAsync(resumed.Id, db.QuestionId);
+        await steal.Should().ThrowAsync<NotFoundException>();
+        Func<Task> stale = () => documents.RemoveAsync(resumed.Id, db.QuestionId, fake.Revision);
+        await stale.Should().ThrowAsync<ResponseConflictException>();
+        var receipt = await db.CreateSubmissionCoordinator(identity).SubmitAsync(new(resumed.Id, resumed.Revision, Guid.NewGuid()));
+        (await documents.DownloadSubmissionAsync(receipt.SubmissionId, db.QuestionId))!.Content.Should().Equal(bytes);
+        var submitted = await responses.GetAsync(resumed.Id);
+        Func<Task> editSubmitted = () => documents.RemoveAsync(submitted.Id, db.QuestionId, submitted.Revision);
+        await editSubmitted.Should().ThrowAsync<ResponseConflictException>();
+    }
+
+    [SqlServerFact]
+    public async Task Document_replacement_removal_and_invalid_content_preserve_consistent_answers()
+    {
+        await using var db = await TestDatabase.CreateAsync(answerType: AnswerType.UploadDocument);
+        var (responses, _) = db.CreateService("document-owner");
+        var documents = db.CreateDocuments(responses);
+        var response = await responses.StartAsync(1);
+        foreach (var file in new[] { ("bad.exe", "executable"), ("fake.pdf", "not PDF"), ("empty.txt", ""), ("macro.docx", "not a zip") })
+        {
+            Func<Task> invalid = () => documents.UploadAsync(response.Id, db.QuestionId, response.Revision,
+                file.Item1, new MemoryStream(System.Text.Encoding.UTF8.GetBytes(file.Item2)));
+            await invalid.Should().ThrowAsync<ArgumentException>();
+        }
+        Func<Task> oversized = () => documents.UploadAsync(response.Id, db.QuestionId, response.Revision,
+            "large.txt", new MemoryStream(new byte[IResponseDocumentService.MaximumBytes + 1]));
+        await oversized.Should().ThrowAsync<ArgumentException>();
+        var first = await documents.UploadAsync(response.Id, db.QuestionId, response.Revision, "first.txt", new MemoryStream("First document"u8.ToArray()));
+        var replaced = await documents.UploadAsync(response.Id, db.QuestionId, first.Revision, "second.txt", new MemoryStream("Replacement"u8.ToArray()));
+        replaced.Answers[db.QuestionId].Text.Should().Be("second.txt");
+        (await documents.DownloadAsync(response.Id, db.QuestionId))!.Content.Should().Equal("Replacement"u8.ToArray());
+        using var wordBuffer = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(wordBuffer, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            using (var writer = new StreamWriter(archive.CreateEntry("[Content_Types].xml").Open()))
+                writer.Write("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\" />");
+            using (var writer = new StreamWriter(archive.CreateEntry("word/document.xml").Open()))
+                writer.Write("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body /></w:document>");
+        }
+        var word = await documents.UploadAsync(response.Id, db.QuestionId, replaced.Revision, "document.docx", new MemoryStream(wordBuffer.ToArray()));
+        word.Answers[db.QuestionId].Text.Should().Be("document.docx");
+        var removed = await documents.RemoveAsync(response.Id, db.QuestionId, word.Revision);
+        removed.Answers.Should().BeEmpty();
+        (await documents.DownloadAsync(response.Id, db.QuestionId)).Should().BeNull();
+    }
+
+    [SqlServerFact]
+    public async Task Hidden_document_follow_ups_are_restored_but_excluded_from_submission_downloads()
+    {
+        await using var db = await TestDatabase.CreateAsync(answerType: AnswerType.UploadDocument, followUp: true);
+        var (responses, identity) = db.CreateService("document-owner");
+        var documents = db.CreateDocuments(responses);
+        var response = await responses.StartAsync(1);
+        var parent = response.Definition.Categories.Single().Elements.Single(e => e.Question!.AnswerType == AnswerType.RadioGroup).Question!;
+        Func<Task> hiddenUpload = () => documents.UploadAsync(response.Id, db.QuestionId, response.Revision, "notes.txt", new MemoryStream("Notes"u8.ToArray()));
+        await hiddenUpload.Should().ThrowAsync<NotFoundException>();
+        var shown = await responses.SaveAsync(new(response.Id, response.Revision,
+            new Dictionary<int, AnswerValue> { [parent.Id] = new(null, null, [parent.Options.Single().Id]) }));
+        var uploaded = await documents.UploadAsync(response.Id, db.QuestionId, shown.Revision, "notes.txt", new MemoryStream("Notes"u8.ToArray()));
+        var hidden = await responses.SaveAsync(new(response.Id, uploaded.Revision, new Dictionary<int, AnswerValue>()));
+        hidden.Answers[db.QuestionId].Text.Should().Be("notes.txt");
+        var receipt = await db.CreateSubmissionCoordinator(identity).SubmitAsync(new(hidden.Id, hidden.Revision, Guid.NewGuid()));
+        (await documents.DownloadSubmissionAsync(receipt.SubmissionId, db.QuestionId)).Should().BeNull();
+        (await documents.DownloadAsync(hidden.Id, db.QuestionId)).Should().BeNull();
+    }
+
     private sealed class TestDatabase : IAsyncDisposable
     {
         private readonly SqlServerDatabase _sql;
@@ -219,9 +304,11 @@ public class ResponseLifecycleTests
             var respondent = new TestRespondentContext(identity);
             return (new ResponseService(new DatabaseContextFactory(_sql), respondent), respondent);
         }
+        public IResponseDocumentService CreateDocuments(IResponseService responses)
+            => new ResponseDocumentService(new DatabaseContextFactory(_sql), responses, new DefinitionEvaluator());
         public ISubmissionCoordinator CreateSubmissionCoordinator(IRespondentContext identity)
             => new SubmissionCoordinator(new DatabaseContextFactory(_sql), identity, new DefinitionEvaluator());
-        public static async Task<TestDatabase> CreateAsync(bool choiceQuestion = false, AnswerType answerType = AnswerType.Textbox)
+        public static async Task<TestDatabase> CreateAsync(bool choiceQuestion = false, AnswerType answerType = AnswerType.Textbox, bool followUp = false)
         {
             var db = new TestDatabase(await SqlServerDatabase.CreateAsync());
             await using var context = db.CreateContext();
@@ -240,6 +327,14 @@ public class ResponseLifecycleTests
                     PublishedUtc = DateTime.UtcNow, DisplayName = "v1", Categories = { new Category { Name = "Basics", SortOrder = 1,
                         Elements = { new Element { Kind = ElementKind.Question, Label = "Answer", SortOrder = 1, Question = question } } } } } }
             };
+            if (followUp)
+            {
+                var category = app.Versions.Single().Categories.Single();
+                var option = new QuestionOption { Label = "Other", Value = "other" };
+                category.Elements.Single().ParentOption = option;
+                category.Elements.Insert(0, new Element { Kind = ElementKind.Question, Label = "Type", SortOrder = 0,
+                    Question = new Question { AnswerType = AnswerType.RadioGroup, Options = { option } } });
+            }
             context.Applications.Add(app);
             await context.SaveChangesAsync();
             app.CurrentVersionId = app.Versions.Single().Id;

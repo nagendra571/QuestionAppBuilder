@@ -349,6 +349,9 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("NEWID()");
 
+                    b.Property<int?>("ParentOptionId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
@@ -356,6 +359,8 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentOptionId");
 
                     b.HasIndex("VisibilityConditionId");
 
@@ -400,6 +405,10 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.Property<decimal?>("MinValue")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("RequiredMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("ScoringMode")
                         .IsRequired()
@@ -533,6 +542,30 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("ResponseAnswers", (string)null);
+                });
+
+            modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.ResponseDocument", b =>
+                {
+                    b.Property<Guid>("ResponseDraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("ResponseDraftId", "QuestionId");
+
+                    b.HasIndex("QuestionId");
+
+                    b.ToTable("ResponseDocuments", (string)null);
                 });
 
             modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.ResponseDraft", b =>
@@ -971,10 +1004,17 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("QuestionAppBuilder.Domain.Entities.QuestionOption", "ParentOption")
+                        .WithMany()
+                        .HasForeignKey("ParentOptionId")
+                        .OnDelete(DeleteBehavior.ClientNoAction);
+
                     b.HasOne("QuestionAppBuilder.Domain.Entities.VisibilityCondition", "VisibilityCondition")
                         .WithMany()
                         .HasForeignKey("VisibilityConditionId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentOption");
 
                     b.Navigation("VisibilityCondition");
                 });
@@ -1027,6 +1067,21 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
 
                     b.HasOne("QuestionAppBuilder.Domain.Entities.ResponseDraft", null)
                         .WithMany("Answers")
+                        .HasForeignKey("ResponseDraftId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.ResponseDocument", b =>
+                {
+                    b.HasOne("QuestionAppBuilder.Domain.Entities.Question", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("QuestionAppBuilder.Domain.Entities.ResponseDraft", null)
+                        .WithMany()
                         .HasForeignKey("ResponseDraftId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

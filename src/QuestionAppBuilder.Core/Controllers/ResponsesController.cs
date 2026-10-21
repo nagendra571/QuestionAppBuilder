@@ -132,6 +132,57 @@ public sealed class ResponsesController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [RequestSizeLimit(11 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 11 * 1024 * 1024)]
+    public async Task<IActionResult> UploadDocument(Guid responseId, int questionId, string expectedRevision,
+        IFormFile? document, int currentCategoryIndex, [FromServices] IResponseDocumentService documents, CancellationToken cancellationToken)
+    {
+        if (document is null || document.Length == 0) return BadRequest(new { message = "Choose a document to upload." });
+        if (document.Length > IResponseDocumentService.MaximumBytes) return BadRequest(new { message = "The document must be 10 MB or smaller." });
+        try
+        {
+            await using var stream = document.OpenReadStream();
+            var saved = await documents.UploadAsync(responseId, questionId, DecodeRevision(expectedRevision), document.FileName, stream, cancellationToken);
+            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(CreateResponsePage(saved, currentCategoryIndex)) });
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (ResponseConflictException) { return Conflict(new { message = "This response changed in another window. Reload before uploading." }); }
+        catch (FormatException) { return BadRequest(new { message = "The response revision is invalid. Reload and try again." }); }
+        catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveDocument(Guid responseId, int questionId, string expectedRevision,
+        int currentCategoryIndex, [FromServices] IResponseDocumentService documents, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var saved = await documents.RemoveAsync(responseId, questionId, DecodeRevision(expectedRevision), cancellationToken);
+            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(CreateResponsePage(saved, currentCategoryIndex)) });
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (ResponseConflictException) { return Conflict(new { message = "This response changed in another window. Reload before removing the document." }); }
+        catch (FormatException) { return BadRequest(new { message = "The response revision is invalid. Reload and try again." }); }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Document(Guid responseId, int questionId,
+        [FromServices] IResponseDocumentService documents, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var document = await documents.DownloadAsync(responseId, questionId, cancellationToken);
+            if (document is null) return NotFound();
+            Response.Headers.CacheControl = "no-store";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return File(document.Content, "application/octet-stream", document.FileName);
+        }
+        catch (NotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Navigate(Guid responseId, ResponseFormInput form, CancellationToken cancellationToken)
     {
         ResponseSnapshot snapshot;
@@ -169,6 +220,7 @@ public sealed class ResponsesController : Controller
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         ViewData["SubmitUrl"] = SubmitUrl(responseId);
         ViewData["EditUrl"] = EditUrl(responseId, _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, false).Categories.Count - 1);
+        ViewData["DocumentUrl"] = $"{BasePath}/Responses/{responseId}/Document";
         ViewData["EditCategoryUrlPrefix"] = $"{BasePath}/Responses/{responseId}?category=";
         return View("Review", new ReviewPageModel(snapshot, _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, false), _options.LayoutName,
             RequestId: Guid.NewGuid().ToString("D")));
@@ -201,7 +253,10 @@ public sealed class ResponsesController : Controller
         { return SaveError(snapshot, form, answers, new Dictionary<int, string>(), StatusCodes.Status409Conflict, "This response changed in another window. Your typed answers are still shown; reload before submitting."); }
         catch (AnswerValidationException exception)
         {
-            var errors = exception.QuestionIds.ToDictionary(id => id, _ => exception.Message);
+            var issues = _evaluator.Evaluate(snapshot.Definition, answers, requireComplete: true).AnswerIssues
+                .Where(issue => issue.QuestionId.HasValue).GroupBy(issue => issue.QuestionId!.Value)
+                .ToDictionary(group => group.Key, group => group.First().Message);
+            var errors = exception.QuestionIds.ToDictionary(id => id, id => issues.GetValueOrDefault(id, exception.Message));
             return SubmitError(snapshot with { Answers = answers }, answers, errors, "Complete the required fields before submitting.");
         }
         catch (DefinitionValidationException exception)
@@ -236,6 +291,8 @@ public sealed class ResponsesController : Controller
     {
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         var rendered = _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, preview: false);
+        ViewData["CanonicalEditUrl"] = EditUrl(snapshot.Id, categoryIndex);
+        ViewData["DocumentUrl"] = $"{BasePath}/Responses/{snapshot.Id}/Document";
         ViewData["SaveUrl"] = SaveUrl(snapshot.Id); ViewData["NavigateUrl"] = NavigateUrl(snapshot.Id); ViewData["ReviewUrl"] = ReviewUrl(snapshot.Id);
         return new ResponsePageModel(snapshot, rendered, categoryIndex, _options.LayoutName, errors, summary, null, null, inputs);
     }
@@ -248,6 +305,7 @@ public sealed class ResponsesController : Controller
         var viewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), ModelState) { Model = model };
         viewData["FieldErrors"] = model.FieldErrors;
         viewData["InputValues"] = model.InputValues;
+        viewData["DocumentUrl"] = $"{BasePath}/Responses/{model.Response.Id}/Document";
         using var writer = new StringWriter();
         var viewContext = new ViewContext(ControllerContext, result.View, viewData, TempData, writer, new HtmlHelperOptions());
         await result.View.RenderAsync(viewContext);
@@ -270,6 +328,7 @@ public sealed class ResponsesController : Controller
     {
         Response.StatusCode = StatusCodes.Status200OK;
         var evaluation = _evaluator.Evaluate(snapshot.Definition, answers, requireComplete: false);
+        ViewData["DocumentUrl"] = $"{BasePath}/Responses/{snapshot.Id}/Document";
         ViewData["SubmitUrl"] = SubmitUrl(snapshot.Id); ViewData["EditUrl"] = EditUrl(snapshot.Id, 0);
         return View("Review", new ReviewPageModel(snapshot with { Answers = answers }, _renderer.Create(snapshot.Definition, answers, evaluation, false), _options.LayoutName,
             errors, summary, Guid.NewGuid().ToString("D")));
@@ -295,6 +354,8 @@ public sealed class ResponsesController : Controller
             AnswerValue value;
             switch (question.AnswerType)
             {
+                case AnswerType.UploadDocument:
+                    continue; // Stored by the dedicated document endpoint, never by form text.
                 case AnswerType.Textbox:
                 case AnswerType.Textarea:
                     value = new AnswerValue(input.Text, null, null);
@@ -334,7 +395,7 @@ public sealed class ResponsesController : Controller
         {
             var question = element.Question!;
             if (question.IsRequired && !AnswerSemantics.IsAnswered(question.AnswerType, answers.GetValueOrDefault(question.Id)))
-                mapped.TryAdd(question.Id, "A response is required.");
+                mapped.TryAdd(question.Id, question.GetRequiredMessage());
         }
         errors = mapped;
         if (mapped.Count == 0) return target;

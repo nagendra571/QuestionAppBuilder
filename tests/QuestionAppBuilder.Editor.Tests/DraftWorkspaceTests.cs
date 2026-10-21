@@ -22,6 +22,46 @@ public sealed class DraftWorkspaceTests : IDisposable
     public void Dispose() => _factory.Dispose();
 
     [Fact]
+    public async Task Required_message_saves_duplicates_and_survives_new_version_without_changing_published_question()
+    {
+        var appId = await CreateDraftAsync();
+        var questionId = await _factory.WithScopeAsync(async services =>
+            (await services.GetRequiredService<IDraftService>().GetAsync(appId)).Definition.Categories.First().Elements.First().Question!.Id);
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        html.Should().Contain("Required-answer message (optional)").And.Contain("Leave blank");
+        var response = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = token, ["ApplicationId"] = appId.ToString(),
+            ["ExpectedRevision"] = ReadRevision(html), ["Version.DisplayName"] = "Custom validation",
+            ["Version.SubmitLabel"] = "Submit", ["Questions[0].Id"] = questionId.ToString(),
+            ["Questions[0].AnswerType"] = "Number", ["Questions[0].IsRequired"] = "true",
+            ["Questions[0].RequiredMessage"] = "Please enter your annual income."
+        }));
+        response.StatusCode.Should().Be(HttpStatusCode.Found, await response.Content.ReadAsStringAsync());
+        await _factory.WithScopeAsync(async services =>
+        {
+            var drafts = services.GetRequiredService<IDraftService>();
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var saved = await drafts.GetAsync(appId);
+            var element = saved.Definition.Categories.First().Elements.First();
+            element.Question!.RequiredMessage.Should().Be("Please enter your annual income.");
+            var duplicate = await design.DuplicateElementAsync(element.Id, expectedRevision: saved.Revision);
+            duplicate.Question!.RequiredMessage.Should().Be(element.Question.RequiredMessage);
+            var review = await drafts.ReviewAsync(appId);
+            await drafts.PublishAsync(new PublishRequest(appId, review.Revision, review.Warnings.Select(w => w.Code).ToHashSet()));
+            await design.OpenDraftAsync(appId);
+            var next = await drafts.GetAsync(appId);
+            next.Definition.Categories.First().Elements.First().Question!.RequiredMessage.Should().Be("Please enter your annual income.");
+            next.Definition.Categories.First().Elements.First().Question!.RequiredMessage = "New draft message";
+            await drafts.SaveAsync(new SaveDraftRequest(appId, next.Revision, next.Definition));
+            var published = await design.GetLatestPublishedGraphAsync(appId);
+            published.Categories.First().Elements.First().Question!.RequiredMessage.Should().Be("Please enter your annual income.");
+            return true;
+        });
+    }
+
+    [Fact]
     public async Task Workspace_exposes_all_six_answer_types_and_revision_bound_readiness()
     {
         var appId = await CreateDraftAsync();

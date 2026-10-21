@@ -55,7 +55,7 @@ public sealed class AccessibilityTests
         var page = await context.NewPageAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("designer");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}").ToString());
 

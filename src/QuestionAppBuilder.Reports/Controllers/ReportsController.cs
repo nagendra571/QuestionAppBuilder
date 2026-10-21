@@ -67,6 +67,17 @@ public sealed class ReportsController : ReportControllerBase
         return View(detail);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Document(int id, int questionId,
+        [FromServices] QuestionAppBuilder.Application.Responses.IResponseDocumentService documents, CancellationToken cancellationToken)
+    {
+        var document = await documents.DownloadSubmissionAsync(id, questionId, cancellationToken);
+        if (document is null) return NotFound();
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File(document.Content, "application/octet-stream", document.FileName);
+    }
+
     private bool TryBuildFilter(int? applicationId, int? versionId, DateOnly? from, DateOnly? through, string? search,
         out ReportFilter filter)
     {

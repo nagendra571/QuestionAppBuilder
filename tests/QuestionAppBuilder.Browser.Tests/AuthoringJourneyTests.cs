@@ -21,11 +21,31 @@ public sealed class AuthoringJourneyTests
         var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("designer");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{applicationId}").ToString());
+        await page.Locator(".aw-outline-element").First.ClickAsync();
+        await page.Locator(".aw-element:visible .aw-disclosure").First.Locator("summary").ClickAsync();
+        var messageInput = page.Locator(".aw-element:visible").GetByLabel("Required-answer message (optional)", new() { Exact = true });
+        await messageInput.FillAsync("Please enter the grant amount you are requesting.");
+        var save = page.WaitForResponseAsync(response => response.Request.Method == "POST" && response.Url.EndsWith("/Save"));
+        await messageInput.BlurAsync();
+        (await save).Ok.Should().BeTrue();
+        await page.ReloadAsync();
+        (await page.Locator(".aw-element:visible").GetByLabel("Required-answer message (optional)", new() { Exact = true }).InputValueAsync()).Should().Be("Please enter the grant amount you are requesting.");
+        await page.Locator(".aw-element:visible .aw-disclosure").First.Locator("summary").ClickAsync();
+        foreach (var width in new[] { 1440, 375 })
+        {
+            await page.SetViewportSizeAsync(width, 900);
+            var dimensions = await page.EvaluateAsync<int[]>("[document.documentElement.scrollWidth, innerWidth]");
+            dimensions[0].Should().BeLessThanOrEqualTo(dimensions[1]);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), $"qab-required-message-{width}.png"), FullPage = true });
+        }
+        await page.SetViewportSizeAsync(1440, 900);
+        await page.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
 
+        await page.GetByRole(AriaRole.Link, new() { Name = "Preview", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Evaluate preview" }).ClickAsync();
         var preview = page.Locator("[data-preview-result]");
         await preview.Locator("[data-preview-category='0'] [data-question-id]").First.WaitForAsync();
@@ -37,7 +57,8 @@ public sealed class AuthoringJourneyTests
         var blockedEvaluate = await blockedEvaluateTask;
         var blockedBody = await blockedEvaluate.TextAsync();
         blockedEvaluate.Status.Should().Be(200, blockedBody);
-        (await preview.InnerTextAsync()).Should().Contain("Complete the required fields before continuing.", blockedBody);
+        (await preview.InnerTextAsync()).Should().Contain("Complete the required fields before continuing.", blockedBody)
+            .And.Contain("Please enter the grant amount you are requesting.");
         (await preview.Locator(".qab-runtime-preview").GetAttributeAsync("data-preview-category")).Should().Be("0");
 
         await number.FillAsync("5");
@@ -72,7 +93,7 @@ public sealed class AuthoringJourneyTests
 
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("designer");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
         await page.GetByRole(AriaRole.Heading, new() { Name = "Applications" }).WaitForAsync();
@@ -96,6 +117,7 @@ public sealed class AuthoringJourneyTests
         await page.WaitForURLAsync("**/ConfigureApp/Applications/**", new() { Timeout = 90_000 });
 
         await page.GetByRole(AriaRole.Link, new() { Name = "Open authoring workspace" }).ClickAsync();
+        await page.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
         var cssStatus = await page.EvaluateAsync<int>("async () => (await fetch('/_content/QuestionAppBuilder.Editor/css/editor.css')).status");
         var jsStatus = await page.EvaluateAsync<int>("async () => (await fetch('/_content/QuestionAppBuilder.Editor/js/editor.js')).status");
@@ -104,17 +126,21 @@ public sealed class AuthoringJourneyTests
         var editorScript = await page.EvaluateAsync<string>("async () => await (await fetch('/_content/QuestionAppBuilder.Editor/js/editor.js', { cache: 'no-store' })).text()");
         editorScript.Should().Contain("const saveCurrentDraft", "the isolated host must serve the implementation under test");
 
+        await page.Locator(".aw-outline-action[href='#add-category']").ClickAsync();
         await page.Locator("[name='categoryName']").FillAsync("Applicant details");
         await page.GetByRole(AriaRole.Button, new() { Name = "Add category" }).ClickAsync();
         (await page.Locator("[name='Categories[0].Name']").InputValueAsync()).Should().Be("Applicant details");
+        await page.Locator(".aw-outline-action[href='#add-element']").ClickAsync();
         await page.Locator("[name='elementLabel']").FillAsync("Application method");
         await page.Locator("[name='elementType']").SelectOptionAsync("RadioGroup");
         await page.GetByRole(AriaRole.Button, new() { Name = "Add element" }).ClickAsync();
         (await page.Locator("[name='Elements[0].Label']").InputValueAsync()).Should().Be("Application method");
+        await page.Locator(".aw-outline-action[href='#question-assets']").ClickAsync();
         await page.Locator("[name='optionLabel']").FillAsync("Online");
         await page.Locator("[name='optionValue']").FillAsync("online");
         await page.GetByRole(AriaRole.Button, new() { Name = "Add option" }).ClickAsync();
         (await page.Locator("[name='Options[0].Label']").InputValueAsync()).Should().Be("Online");
+        await page.Locator(".aw-outline-element").Filter(new() { HasText = "Application method" }).ClickAsync();
         var duplicateButton = page.GetByRole(AriaRole.Button, new() { Name = "Duplicate element" });
         var duplicateResponseTask = page.WaitForResponseAsync(response => response.Url.Contains("/Structure/DuplicateElement", StringComparison.Ordinal),
             new PageWaitForResponseOptions { Timeout = 10000 });
@@ -123,6 +149,7 @@ public sealed class AuthoringJourneyTests
         await duplicateButton.ClickAsync();
         (await duplicateResponseTask).Status.Should().Be((int)HttpStatusCode.OK);
         (await duplicateWorkspaceTask).Status.Should().Be((int)HttpStatusCode.OK);
+        await page.Locator(".aw-outline-element").Filter(new() { HasText = "Application method copy" }).ClickAsync();
         await page.Locator("[name='Elements[1].Label']").WaitForAsync();
         (await page.Locator("[name='Elements[1].Label']").InputValueAsync()).Should().Be("Application method copy");
         var moveResponseTask = page.WaitForResponseAsync(response => response.Url.Contains("/Structure/MoveElement", StringComparison.Ordinal),
@@ -135,6 +162,7 @@ public sealed class AuthoringJourneyTests
         await page.Locator("[name='Elements[0].Label']").WaitForAsync();
         (await page.Locator("[name='Elements[0].Label']").InputValueAsync()).Should().Be("Application method copy");
 
+        await page.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         var displayName = page.Locator("[name='Version.DisplayName']");
         var savedRequest = page.WaitForResponseAsync(response =>
             response.Url.Contains("/Drafts/", StringComparison.Ordinal) && response.Url.EndsWith("/Save", StringComparison.Ordinal),
@@ -146,6 +174,7 @@ public sealed class AuthoringJourneyTests
         await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync(new() { Timeout = 10000 });
         (await displayName.InputValueAsync()).Should().Be("Saved from a real browser");
 
+        await page.Locator(".aw-outline-action[href='#add-element']").ClickAsync();
         await page.Locator("[name='elementLabel']").FillAsync("Requested amount");
         await page.Locator("[name='elementType']").SelectOptionAsync("Number");
         var addNumberResponseTask = page.WaitForResponseAsync(response => response.Request.Method == "POST"
@@ -156,6 +185,7 @@ public sealed class AuthoringJourneyTests
         await page.GetByText("Requested amount").First.WaitForAsync();
         var numericQuestionId = await page.Locator("#structure-question option").Last.GetAttributeAsync("value");
         numericQuestionId.Should().NotBeNullOrWhiteSpace();
+        await page.Locator(".aw-outline-action[href='#question-assets']").ClickAsync();
         await page.Locator("#structure-question").SelectOptionAsync(numericQuestionId!);
         await page.Locator("select[name='family']").SelectOptionAsync("NumericRange");
         await page.Locator("input[name='points']").FillAsync("1");
@@ -181,6 +211,7 @@ public sealed class AuthoringJourneyTests
         firstRuleResponse.Status.Should().Be((int)HttpStatusCode.Redirect);
         addRuleRequests.Should().ContainSingle("one click on Add scoring rule must submit exactly one structure request");
         await page.GetByText("No scoring rules are defined.").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await page.Locator(".aw-outline-action[href='#question-assets']").ClickAsync();
         await page.Locator("#structure-question").SelectOptionAsync(numericQuestionId!);
         await page.Locator("select[name='family']").SelectOptionAsync("NumericRange");
         await page.Locator("input[name='points']").FillAsync("2");
@@ -192,8 +223,11 @@ public sealed class AuthoringJourneyTests
         await page.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule" }).ClickAsync();
         (await secondRuleResponseTask).Status.Should().Be((int)HttpStatusCode.Redirect);
         await page.WaitForTimeoutAsync(300);
+        await page.GetByRole(AriaRole.Link, new() { Name = "Review & publish", Exact = true }).ClickAsync();
+        await page.Locator("#readiness:visible").WaitForAsync();
         var afterRules = await page.Locator("body").InnerTextAsync();
         afterRules.Should().Contain("Numeric rules overlap; only the first matching rule contributes.", $"workspace after adding overlapping rules: {afterRules}");
+        await page.GetByRole(AriaRole.Link, new() { Name = "Preview", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Evaluate preview" }).ClickAsync();
         var previewQuestion = page.Locator($"[data-preview-result] [data-question-id='{numericQuestionId}']");
         await previewQuestion.WaitForAsync();
@@ -204,12 +238,14 @@ public sealed class AuthoringJourneyTests
         await preview.GetByText("Total score: 1", new() { Exact = true }).WaitForAsync();
         string.Join(" ", await preview.Locator(".aw-preview-score details p").AllTextContentsAsync())
             .Should().Contain("Rule").And.Contain("contributes 1 points").And.Contain("does not contribute");
+        await page.GetByRole(AriaRole.Link, new() { Name = "Review & publish", Exact = true }).ClickAsync();
         var acknowledgments = page.Locator("#publish-draft input[name='AcknowledgedWarningCodes']");
         await acknowledgments.First.CheckAsync();
         (await acknowledgments.First.IsCheckedAsync()).Should().BeTrue();
 
         var refreshedReadiness = page.WaitForResponseAsync(response => response.Url.Contains("/Drafts/", StringComparison.Ordinal)
             && response.Url.Contains("/Readiness", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 10000 });
+        await page.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         var updatedName = page.Locator("[name='Version.DisplayName']");
         await updatedName.FillAsync("Changed after acknowledging warnings");
         var readinessResponse = await refreshedReadiness;

@@ -40,6 +40,7 @@
                     else if (!question.HasAnswer) { <span>Unanswered</span> }
                     else if (question.SelectedOptions.Count > 0) { @string.Join(", ", question.SelectedOptions) }
                     else if (question.NumberValue.HasValue) { @question.NumberValue.Value }
+                    else if (question.AnswerType == "UploadDocument") { <a href="@Url.RouteUrl("questionappbuilder-reports", new { action = "Document", id = Model.Id, questionId = question.QuestionId })">@question.TextValue</a> }
                     else { @question.TextValue }
                 </td>
                 <td>@question.PointsEarned</td>

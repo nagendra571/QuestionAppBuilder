@@ -1,12 +1,15 @@
 @model ApplicationDetailViewModel
 @using System.Globalization
 @using QuestionAppBuilder.Domain.Entities
+@using QuestionAppBuilder.Domain.Enums
 @{
     ViewData["Title"] = Model.Application.Name;
     var graph = Model.IsEditable ? Model.DraftGraph : Model.PublishedGraph;
     var revisionValue = Model.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.DraftGraph.Version.RevisionNonce.ToByteArray());
     var categories = graph?.Categories.OrderBy(category => category.SortOrder).ThenBy(category => category.Id).ToArray()
         ?? Array.Empty<Category>();
+    var questionCount = categories.SelectMany(category => category.Elements).Count(element => element.Question is not null);
+    var contentCount = categories.SelectMany(category => category.Elements).Count(element => element.Kind == ElementKind.Content);
     var publishedVersionNumber = Model.DraftGraph is not null && Model.Application.CurrentVersionId is not null
         ? Model.DraftGraph.Version.VersionNumber - 1
         : 0;
@@ -63,7 +66,12 @@
     }
 </style>
 
-<main>
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/authoring-detail.css" />
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor-actions.css" />
+<script src="~/_content/QuestionAppBuilder.Editor/js/editor-panels.js" defer></script>
+<script src="~/_content/QuestionAppBuilder.Editor/js/authoring-context.js" defer></script>
+<script src="~/_content/QuestionAppBuilder.Editor/js/authoring-detail.js" defer></script>
+<main class="cv-management" data-authoring-context>
 <a class="cv-back" asp-controller="Applications" asp-action="Index">&#8592; All applications</a>
 
 @if (TempData["EditorError"] is string editorError)
@@ -71,14 +79,9 @@
     <div class="cv-alert" role="alert">@editorError</div>
 }
 
-<div class="cv-head">
-    <h1>@Model.Application.Name</h1>
-    @if (Model.IsEditable && Model.DraftGraph is not null)
-    {
-        <a class="cv-btn" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@Model.Application.Id">Open authoring workspace</a>
-    }
-</div>
-
+<div class="cv-head cv-compact-head">
+    <div class="cv-app-identity">
+        <h1>@Model.Application.Name</h1>
 <div class="cv-statusline">
     @if (Model.IsEditable && Model.DraftGraph is not null)
     {
@@ -92,17 +95,22 @@
     {
         <span class="cv-badge cv-published">Published version @Model.PublishedGraph.Version.VersionNumber &mdash; read-only</span>
     }
-</div>
-
-<div class="cv-toolbar">
     @if (!string.IsNullOrEmpty(Model.TypeName))
     {
         <span class="cv-type">@Model.TypeName</span>
     }
     <span class="cv-updated">Updated @Model.Application.UpdatedUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</span>
+</div>
+
+    </div>
     @if (Model.IsEditable && Model.DraftGraph is not null)
     {
+        <div class="cv-app-actions">
+            <a class="cv-btn" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@Model.Application.Id">Open authoring workspace</a>
+            <details class="cv-publish-panel" id="application-publishing">
+                <summary class="cv-btn-ghost">Review &amp; publish</summary>
         <form method="post" asp-controller="Applications" asp-action="Publish" asp-route-id="@Model.Application.Id" class="cv-publish">
+                <partial name="_ClosePanel" model='@("publishing")' />
             <input type="hidden" name="expectedRevision" value="@revisionValue" />
             @if (Model.DraftReview is not null)
             {
@@ -116,16 +124,20 @@
             }
             <button type="submit" class="cv-btn">Publish version @Model.DraftGraph.Version.VersionNumber</button>
         </form>
+            </details>
+        </div>
     }
 </div>
 
 @if (Model.Application.CurrentVersionId is not null)
 {
-    <section class="cv-card" aria-labelledby="availability-heading">
-        <header class="cv-chead"><h2 id="availability-heading">Respondent availability</h2></header>
+    <section class="cv-availability" aria-labelledby="availability-heading">
+        <details id="respondent-availability">
+        <summary><span id="availability-heading">Respondent availability</span><span class="cv-availability-status">New responses: @(Model.Application.AcceptNewResponses ? "Open" : "Closed") &middot; Submissions: @(Model.Application.AcceptSubmissions ? "Open" : "Closed")</span></summary>
         <div class="cv-cbody">
             <p>Control whether respondents can start new responses and submit saved responses. Existing drafts remain available when starts close.</p>
             <form method="post" asp-controller="Applications" asp-action="UpdateAvailability" asp-route-id="@Model.Application.Id">
+                <partial name="_ClosePanel" model='@("respondent availability")' />
                 <input type="hidden" name="expectedRevision" value="@Convert.ToBase64String(Model.Application.RowVersion)" />
                 <div class="cv-field cv-field-inline">
                     <input id="accept-new-responses" name="acceptNewResponses" type="checkbox" value="true" checked="@Model.Application.AcceptNewResponses" />
@@ -140,6 +152,7 @@
                 <button type="submit" class="cv-btn">Save availability</button>
             </form>
         </div>
+        </details>
     </section>
 }
 
@@ -165,16 +178,26 @@
     </section>
 }
 
-@foreach (var category in categories)
+<p class="cv-questionnaire-summary"><strong>@questionCount @(questionCount == 1 ? "question" : "questions")</strong> across @categories.Length @(categories.Length == 1 ? "category" : "categories")<span class="cv-summary-content"> &middot; @contentCount @(contentCount == 1 ? "content block" : "content blocks")</span></p>
+<nav class="cv-category-nav" aria-label="Application categories">
+    @foreach (var category in categories) { <a href="#manage-category-@category.Id">@category.Name</a> }
+    @if (Model.IsEditable)
+    {
+        <a class="cv-add-category-link" href="#manage-add-category"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg><span>Add category</span></a>
+    }
+</nav>
+@for (var categoryIndex = 0; categoryIndex < categories.Length; categoryIndex++)
 {
-    <partial name="_CategoryPanel" model="(Detail: Model, Category: category)" />
+    var categoryViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { ["CategoryNumber"] = categoryIndex + 1 };
+    <partial name="_CategoryPanel" model="(Detail: Model, Category: categories[categoryIndex])" view-data="categoryViewData" />
 }
 
 @if (Model.IsEditable)
 {
-    <section class="cv-card">
+    <section class="cv-card" id="manage-add-category" data-close-return="#manage-category-@categories.FirstOrDefault()?.Id">
         <header class="cv-chead">
             <h2>Add category</h2>
+            @if (categories.Length > 0) { <partial name="_ClosePanel" model='@("category form")' /> }
         </header>
         <div class="cv-cbody">
             <form method="post" asp-controller="Categories" asp-action="Add">

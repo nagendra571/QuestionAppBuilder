@@ -54,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IResponseEmailSender, UnconfiguredResponseEmailSender>();
         services.TryAddScoped<IResponseAccessLinkBuilder, UnconfiguredResponseAccessLinkBuilder>();
         services.AddScoped<IResponseService, ResponseService>();
+        services.AddScoped<IResponseDocumentService, ResponseDocumentService>();
         services.AddScoped<ISubmissionCoordinator, SubmissionCoordinator>();
         services.AddScoped<IAvailabilityService, AvailabilityService>();
         services.TryAddScoped<ITrustedActorContext, UnconfiguredTrustedActorContext>();

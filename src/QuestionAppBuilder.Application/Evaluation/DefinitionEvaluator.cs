@@ -16,7 +16,7 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(answers);
         var orderedCategories = graph.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).ToArray();
-        var questions = orderedCategories.SelectMany(c => c.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
+        var questions = orderedCategories.SelectMany(c => FollowUpStructure.Ordered(c.Elements))
             .Where(e => e.Question is not null).Select(e => e.Question!).ToDictionary(q => q.Id);
         var conditions = graph.VisibilityConditions.ToDictionary(c => c.Id);
         var definitionIssues = ValidateDefinition(graph, orderedCategories, conditions);
@@ -31,12 +31,16 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
             if (!categoryVisible) continue;
             visibleCategories.Add(category.Id);
 
-            foreach (var element in category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
+            foreach (var element in FollowUpStructure.Ordered(category.Elements))
             {
                 var question = element.Question;
                 if (question is null) continue;
-                var isVisible = element.VisibilityConditionId is null
-                    || EvaluateCondition(element.VisibilityConditionId.Value, conditions, questions, answers, visibleQuestions);
+                var parent = FollowUpStructure.Parent(element, category.Elements);
+                var parentVisible = element.ParentOptionId is null || parent?.Question is { } parentQuestion
+                    && visibleQuestions.Contains(parentQuestion.Id)
+                    && answers.GetValueOrDefault(parentQuestion.Id)?.SelectedOptionIds?.Contains(element.ParentOptionId.Value) == true;
+                var isVisible = parentVisible && (element.VisibilityConditionId is null
+                    || EvaluateCondition(element.VisibilityConditionId.Value, conditions, questions, answers, visibleQuestions));
                 if (isVisible) visibleQuestions.Add(question.Id);
             }
         }
@@ -54,7 +58,7 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
             if (answer is not null && !ValidateAnswer(question, answer, out var code, out var message))
                 answerIssues.Add(new DefinitionIssue(code!, FindElementId(orderedCategories, questionId), message!, questionId));
             if (requireComplete && question.IsRequired && !AnswerSemantics.IsAnswered(question.AnswerType, answer))
-                answerIssues.Add(new DefinitionIssue("required", FindElementId(orderedCategories, questionId), "A response is required.", questionId));
+                answerIssues.Add(new DefinitionIssue("required", FindElementId(orderedCategories, questionId), question.GetRequiredMessage(), questionId));
         }
 
         var score = _scoring.Score(graph, answers, visibleQuestions);
@@ -74,14 +78,25 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         foreach (var category in categories)
         {
             categoryPositions[category.Id] = position++;
-            foreach (var element in category.Elements.OrderBy(e => e.SortOrder).ThenBy(e => e.Id))
+            foreach (var element in FollowUpStructure.Ordered(category.Elements))
             {
                 elementPositions[element.Id] = position;
                 if (element.Question is not null) sourcePositions[element.Question.Id] = position;
                 position++;
             }
         }
-        foreach (var element in categories.SelectMany(c => c.Elements))
+        var allElements = categories.SelectMany(c => c.Elements).ToArray();
+        foreach (var category in categories)
+        foreach (var element in category.Elements.Where(e => e.ParentOptionId is not null))
+        {
+            var parent = FollowUpStructure.Parent(element, allElements);
+            if (parent?.Question is not { } parentQuestion || !category.Elements.Contains(parent)
+                || parentQuestion.AnswerType is not (AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes)
+                || element.Question is null || ReferenceEquals(parent, element)
+                || FollowUpStructure.Branch(element, allElements).Contains(parent))
+                issues.Add(new DefinitionIssue("invalid-follow-up", element.Id, "A follow-up must belong to an option on a choice question in the same category, without circular branches."));
+        }
+        foreach (var element in allElements)
         {
             var question = element.Question;
             if (question is null) continue;
@@ -192,6 +207,8 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         {
             AnswerType.Textbox or AnswerType.Textarea => answer.Number is null && answer.SelectedOptionIds is null
                 && (answer.Text is null || answer.Text.Length <= 4000 && (question.MaxLength is null || answer.Text.Length <= question.MaxLength)),
+            AnswerType.UploadDocument => answer.Number is null && answer.SelectedOptionIds is null
+                && (answer.Text is null || answer.Text.Length <= 255),
             AnswerType.Number => answer.Text is null && answer.SelectedOptionIds is null
                 && (answer.Number is null || (question.MinValue is null || answer.Number >= question.MinValue) && (question.MaxValue is null || answer.Number <= question.MaxValue)),
             AnswerType.Dropdown or AnswerType.RadioGroup => answer.Text is null && answer.Number is null

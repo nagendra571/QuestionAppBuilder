@@ -1,7 +1,7 @@
 (() => {
   const form = document.querySelector("#draft-workspace");
   if (!form) return;
-  const outline = form.querySelector(".aw-outline");
+  const outline = document.querySelector(".aw-outline");
   const compactViewport = window.matchMedia("(max-width: 800px)");
   const adaptOutline = () => { if (outline) outline.open = !compactViewport.matches; };
   adaptOutline();
@@ -25,6 +25,7 @@
   form.querySelectorAll("input, select, textarea, [contenteditable='true']").forEach(control => lastControlStates.set(control, controlState(control)));
   const recordEdit = event => {
     const control = event.target;
+    if (!/^(Version\.|Categories\[|Elements\[|Questions\[|Options\[|Rules\[|Conditions\[)/.test(control.name || '')) return;
     const state = controlState(control);
     if (lastControlStates.get(control) === state) return;
     if (control instanceof HTMLInputElement && control.type === "radio" && control.name) {
@@ -45,6 +46,8 @@
     if (publishRevision) publishRevision.value = revision;
     const conditionRevision = document.querySelector("#add-condition-form [name='ExpectedRevision']");
     if (conditionRevision) conditionRevision.value = revision;
+    const followUpRevision = document.querySelector("#add-follow-up-form [name='expectedRevision']");
+    if (followUpRevision) followUpRevision.value = revision;
   };
   const markReadinessStale = () => {
     readinessCurrent = false;
@@ -146,6 +149,12 @@
   // marking a freshly saved value dirty a second time.
   form.addEventListener("change", recordEdit);
   form.addEventListener("submit", async event => {
+    const action = event.submitter?.getAttribute("formaction");
+    if (!action) {
+      event.preventDefault(); clearTimeout(timer);
+      await saveCurrentDraft();
+      return;
+    }
     if (dirtyVersion === savedVersion && !inFlight && readinessCurrent) return;
     event.preventDefault(); clearTimeout(timer);
     const submitter = event.submitter;
@@ -270,7 +279,31 @@
       const result = await response.json().catch(() => ({}));
       if (!response.ok) { announce(result.message || "The visibility rule could not be saved.", "error"); return; }
       syncRevision(result.revision);
+      window.qabAuthoringContext?.remember();
       window.location.reload();
+    });
+  }
+  const followUpForm = document.querySelector('[data-follow-up-form]');
+  if (followUpForm) {
+    followUpForm.addEventListener('submit', async event => {
+      event.preventDefault(); clearTimeout(timer);
+      const status = followUpForm.querySelector('[data-follow-up-status]');
+      const submit = followUpForm.querySelector('button[type="submit"]');
+      if (submit.disabled) return;
+      submit.disabled = true;
+      try {
+        if (await saveCurrentDraft() !== 'saved') return;
+        status.textContent = 'Adding follow-up question…';
+        followUpForm.querySelector('[name="expectedRevision"]').value = form.querySelector('[name="ExpectedRevision"]').value;
+        const response = await fetch(followUpForm.action, { method: 'POST', credentials: 'same-origin', body: new FormData(followUpForm),
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'QuestionAppBuilder' } });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || 'The follow-up could not be added. Your entries are still here.');
+        window.qabAuthoringContext?.remember();
+        const destination = new URL(location.href); destination.searchParams.delete('followUpOption'); destination.hash = `element-${result.elementId}`;
+        history.replaceState(null, "", destination.href); location.reload();
+      } catch (error) { status.textContent = error.message; }
+      finally { submit.disabled = false; }
     });
   }
   const structureQuestion = document.querySelector("#structure-question");
@@ -294,6 +327,7 @@
       const response = await fetch(button.dataset.structureAction, { method:"POST", credentials:"same-origin",
         headers:{ "Accept":"application/json", "X-Requested-With":"QuestionAppBuilder" }, body });
       if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.message || "The structure change could not be saved."); }
+      window.qabAuthoringContext?.remember();
       window.location.reload();
     } catch (error) { announce(error.message || "The structure change could not be saved.", "error"); }
   }));

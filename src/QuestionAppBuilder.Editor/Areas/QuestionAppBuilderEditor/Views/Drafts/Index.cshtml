@@ -1,5 +1,6 @@
 @model DraftWorkspaceViewModel
 @using System.Globalization
+@using QuestionAppBuilder.Domain.Graphs
 @using QuestionAppBuilder.Domain.Enums
 @{
     ViewData["Title"] = "Authoring workspace";
@@ -8,21 +9,32 @@
     var questions = categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
 }
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor.css" />
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor-actions.css" />
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/workspace-help.css" />
+<script src="~/_content/QuestionAppBuilder.Editor/js/editor-panels.js" defer></script>
+<script src="~/_content/QuestionAppBuilder.Editor/js/workspace-focus.js" defer></script>
 <script src="~/_content/QuestionAppBuilder.Editor/js/editor.js" defer></script>
+<script src="~/_content/QuestionAppBuilder.Editor/js/authoring-context.js" defer></script>
+<script src="~/_content/QuestionAppBuilder.Editor/js/workspace-help.js" defer></script>
+<div data-authoring-context>
 <div class="aw-page-head" role="region" aria-labelledby="workspace-heading">
-    <div><a asp-controller="Applications" asp-action="Detail" asp-route-id="@Model.ApplicationId" class="aw-back">Back to application</a><h1 id="workspace-heading">Authoring workspace</h1><p>Shape the questionnaire, preview its behavior, and resolve readiness before publishing.</p></div>
+    <div><a asp-controller="Applications" asp-action="Detail" asp-route-id="@Model.ApplicationId" class="aw-back">Back to application</a><h1 id="workspace-heading">Authoring workspace</h1><p>Select a category or question to edit. Changes save automatically.</p></div>
     <div class="aw-save-state" role="status" aria-live="polite" data-save-status>All changes saved</div>
 </div>
+<nav class="aw-workspace-nav" data-workspace-nav aria-label="Authoring tasks">
+    <a href="#content">Questionnaire</a><a href="#definition">Settings</a><a href="#visibility">Visibility</a><a href="#scoring">Scoring guide</a><a href="#preview">Preview</a><a href="#readiness">Review &amp; publish</a>
+</nav>
+    <div class="aw-layout">
+        <aside class="aw-rail" aria-label="Questionnaire outline"><details class="aw-outline" id="questionnaire-outline" open><summary>On this questionnaire</summary><partial name="_Outline" model="Model" /></details></aside>
+        <main class="aw-editor">
 <form id="draft-workspace" method="post" asp-controller="Drafts" asp-action="Save" asp-route-applicationId="@Model.ApplicationId" data-save-url="@Url.Action("Save", "Drafts", new { applicationId = Model.ApplicationId })" data-save-delay="600">
     @Html.AntiForgeryToken()
     <input type="hidden" name="ApplicationId" value="@Model.ApplicationId" />
     <input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
-    <div class="aw-layout">
-        <aside class="aw-rail" aria-label="Questionnaire outline"><details class="aw-outline" open><summary>On this questionnaire</summary><partial name="_Outline" model="Model" /></details></aside>
-        <main class="aw-editor">
+
             @if (TempData["EditorError"] is string error) { <p class="aw-alert" role="alert">@error</p> }
-            <section class="aw-panel" aria-labelledby="definition-heading">
-                <header><div><p class="aw-kicker">Definition</p><h2 id="definition-heading">Questionnaire settings</h2></div></header>
+            <section class="aw-panel" id="definition" data-workspace-pane="definition" aria-labelledby="definition-heading">
+                <header><div><h2 id="definition-heading">Questionnaire settings</h2></div></header>
                 <div class="aw-grid">
                     <label class="aw-field">Display name<input name="Version.DisplayName" value="@Model.Graph.Version.DisplayName" maxlength="200" /></label>
                     <label class="aw-field">Submit button text<input name="Version.SubmitLabel" value="@Model.Graph.Version.SubmitLabel" maxlength="100" /></label>
@@ -32,65 +44,85 @@
                     <label class="aw-field aw-wide">Confirmation text<textarea name="Version.ConfirmationText" rows="3" maxlength="2000">@Model.Graph.Version.ConfirmationText</textarea></label>
                 </div>
             </section>
-            <section class="aw-panel" id="content" aria-labelledby="content-heading">
-                <header><div><p class="aw-kicker">Structure</p><h2 id="content-heading">Categories and questions</h2></div><span class="aw-muted">Use the controls to add, duplicate, or move items.</span></header>
+            <section class="aw-panel" id="content" data-workspace-pane="content" aria-labelledby="content-heading">
+                <header><div><h2 id="content-heading">Categories and questions</h2></div><span class="aw-muted">Select a category, then choose a question to edit.</span></header>
+                @if (categories.Length == 0)
+                {
+                    <p class="aw-muted">Start with a category to group related questions.</p>
+                    <a class="aw-secondary" href="#add-category">Add your first category</a>
+                }
                 @{ var categoryIndex = 0; var elementIndex = 0; var questionIndex = 0; var optionIndex = 0; var ruleIndex = 0; }
                 @foreach (var category in categories)
                 {
                     <section class="aw-category" id="category-@category.Id">
+                        <h2 class="aw-category-title" data-item-title>@category.Name</h2>
                         <input type="hidden" name="Categories[@categoryIndex].Id" value="@category.Id" />
                         <input type="hidden" name="Categories[@categoryIndex].SortOrder" value="@category.SortOrder" />
                         <div class="aw-category-head"><label class="aw-field">Category name<input name="Categories[@categoryIndex].Name" value="@category.Name" maxlength="200" /></label>
                             <label class="aw-field">Show when<select name="Categories[@categoryIndex].VisibilityConditionId"><option value="">Always show</option>@foreach (var condition in conditions) { <option value="@condition.Id" selected="@(condition.Id == category.VisibilityConditionId)">Condition @condition.Id (@condition.Junction)</option> }</select></label>
-                            <div class="aw-order"><button type="button" data-structure-action="@Url.Action("MoveCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id, direction = "up" })" aria-label="Move @category.Name up">↑</button><button type="button" data-structure-action="@Url.Action("MoveCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id, direction = "down" })" aria-label="Move @category.Name down">↓</button><button type="button" data-structure-action="@Url.Action("DuplicateCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id })">Duplicate category</button></div>
+                            <div class="aw-order"><button type="button" data-structure-action="@Url.Action("MoveCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id, direction = "up" })" aria-label="Move @category.Name up" class="qab-icon-action" title="Move up"><partial name="_ActionIcon" model='@("up")' /></button><button type="button" data-structure-action="@Url.Action("MoveCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id, direction = "down" })" aria-label="Move @category.Name down" class="qab-icon-action" title="Move down"><partial name="_ActionIcon" model='@("down")' /></button><button type="button" data-structure-action="@Url.Action("DuplicateCategory", "Structure", new { applicationId = Model.ApplicationId, categoryId = category.Id })" class="qab-icon-action" aria-label="Duplicate category" title="Duplicate @category.Name"><partial name="_ActionIcon" model='@("copy")' /></button></div>
                         </div>
-                        @foreach (var element in category.Elements.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
+                        @foreach (var element in FollowUpStructure.Ordered(category.Elements))
                         {
-                            <article class="aw-element" id="element-@element.Id">
+                            <article data-branch-depth="@FollowUpStructure.Depth(element, category.Elements)" class="aw-element" id="element-@element.Id" data-question-id="@element.Question?.Id">
+                                <h3 class="aw-question-title" data-item-title>@element.Label</h3>
                                 <partial name="_ElementEditor" model="element" />
+                                @if (FollowUpStructure.Parent(element, category.Elements) is { } parent)
+                                {
+                                    <p class="aw-follow-up-note">Shows when: <strong>@parent.Label</strong> / <strong>@parent.Question!.Options.Single(o => o.Id == element.ParentOptionId).Label</strong> is selected. Parent visibility also applies.</p>
+                                }
                                 <input type="hidden" name="Elements[@elementIndex].Id" value="@element.Id" />
                                 <input type="hidden" name="Elements[@elementIndex].SortOrder" value="@element.SortOrder" />
                                 <label class="aw-field">@(element.Question is null ? "Content heading" : "Question")<input name="Elements[@elementIndex].Label" value="@element.Label" maxlength="500" /></label>
                                 <label class="aw-field">Help text<textarea name="Elements[@elementIndex].HelpText" rows="2" maxlength="2000">@element.HelpText</textarea></label>
-                                <label class="aw-field">Show when<select name="Elements[@elementIndex].VisibilityConditionId"><option value="">Always show</option>@foreach (var condition in conditions) { <option value="@condition.Id" selected="@(condition.Id == element.VisibilityConditionId)">Condition @condition.Id (@condition.Junction)</option> }</select></label>
-                                <div class="aw-order"><button type="button" data-structure-action="@Url.Action("MoveElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id, direction = "up" })" aria-label="Move @element.Label up">↑</button><button type="button" data-structure-action="@Url.Action("MoveElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id, direction = "down" })" aria-label="Move @element.Label down">↓</button><button type="button" data-structure-action="@Url.Action("DuplicateElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id })">Duplicate element</button></div>
+                                <label class="aw-field">@(element.ParentOptionId is null ? "Show when" : "Additional show when")<select name="Elements[@elementIndex].VisibilityConditionId"><option value="">Always show</option>@foreach (var condition in conditions) { <option value="@condition.Id" selected="@(condition.Id == element.VisibilityConditionId)">Condition @condition.Id (@condition.Junction)</option> }</select></label>
+                                <div class="aw-order"><button type="button" data-structure-action="@Url.Action("MoveElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id, direction = "up" })" aria-label="Move @element.Label up" class="qab-icon-action" title="Move up"><partial name="_ActionIcon" model='@("up")' /></button><button type="button" data-structure-action="@Url.Action("MoveElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id, direction = "down" })" aria-label="Move @element.Label down" class="qab-icon-action" title="Move down"><partial name="_ActionIcon" model='@("down")' /></button><button type="button" data-structure-action="@Url.Action("DuplicateElement", "Structure", new { applicationId = Model.ApplicationId, elementId = element.Id })" class="qab-icon-action" aria-label="Duplicate element" title="Duplicate @element.Label"><partial name="_ActionIcon" model='@("copy")' /></button></div>
                                 @if (element.Question is { } question)
                                 {
                                     <input type="hidden" name="Questions[@questionIndex].Id" value="@question.Id" />
-                                    <div class="aw-grid">
+                                    <details class="aw-disclosure aw-wide" id="answer-settings-@question.Id"><summary>Answer settings &amp; validation</summary><partial name="_ClosePanel" model='@("answer settings")' /><div class="aw-grid">
                                         <label class="aw-field">Answer type<select name="Questions[@questionIndex].AnswerType">@foreach (var type in Enum.GetValues<AnswerType>()) { <option value="@type" selected="@(type == question.AnswerType)">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(type.ToString())</option> }</select></label>
-                                        <label class="aw-field">Scoring mode<select name="Questions[@questionIndex].ScoringMode">@foreach (var mode in Enum.GetValues<ScoringMode>()) { <option value="@mode" selected="@(mode == question.ScoringMode)">@mode</option> }</select></label>
+                                        <label class="aw-field">Scoring mode<select name="Questions[@questionIndex].ScoringMode">@foreach (var mode in Enum.GetValues<ScoringMode>()) { <option value="@mode" selected="@(mode == question.ScoringMode)">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(mode.ToString())</option> }</select></label>
                                         <label class="aw-field aw-check"><input name="Questions[@questionIndex].IsRequired" type="checkbox" value="true" checked="@question.IsRequired" /> Required</label><input type="hidden" name="Questions[@questionIndex].IsRequired" value="false" />
+                                        <label class="aw-field aw-wide">Required-answer message (optional)<input name="Questions[@questionIndex].RequiredMessage" value="@question.RequiredMessage" maxlength="500" placeholder="A response is required." aria-describedby="required-message-help-@question.Id" /><small id="required-message-help-@question.Id" class="aw-muted">Shown when a required question is left unanswered. Leave blank to use “A response is required.”</small></label>
                                         <label class="aw-field">Maximum length<input name="Questions[@questionIndex].MaxLength" type="number" min="1" value="@question.MaxLength" /></label>
                                         <label class="aw-field">Minimum value<input name="Questions[@questionIndex].MinValue" type="number" step="any" value="@question.MinValue?.ToString(CultureInfo.InvariantCulture)" /></label>
                                         <label class="aw-field">Maximum value<input name="Questions[@questionIndex].MaxValue" type="number" step="any" value="@question.MaxValue?.ToString(CultureInfo.InvariantCulture)" /></label>
                                         <label class="aw-field">Minimum selections<input name="Questions[@questionIndex].MinSelections" type="number" min="0" value="@question.MinSelections" /></label>
                                         <label class="aw-field">Maximum selections<input name="Questions[@questionIndex].MaxSelections" type="number" min="1" value="@question.MaxSelections" /></label>
-                                    </div>
+                                    </div></details>
                                     @if (question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes)
                                     {
-                                        <fieldset class="aw-subpanel"><legend>Answer options</legend>
+                                        <fieldset class="aw-subpanel" id="options-@question.Id"><legend>Answer options</legend>
                                             @foreach (var option in question.Options.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
                                             {
                                                 <input type="hidden" name="Options[@optionIndex].Id" value="@option.Id" /><input type="hidden" name="Options[@optionIndex].SortOrder" value="@option.SortOrder" />
-                                                <div class="aw-grid"><label class="aw-field">Option label<input name="Options[@optionIndex].Label" value="@option.Label" /></label><label class="aw-field">Stored value<input name="Options[@optionIndex].Value" value="@option.Value" /></label></div>
+                                                <div class="aw-grid aw-option-row" id="option-@option.Id"><label class="aw-field">Option label<input name="Options[@optionIndex].Label" value="@option.Label" /></label><label class="aw-field">Stored value<input name="Options[@optionIndex].Value" value="@option.Value" /></label></div>
+                                                <div class="aw-follow-up-tools"><a href="#add-follow-up" data-follow-up-option="@option.Id" data-follow-up-return="element-@element.Id" aria-label="Add follow-up question for @option.Label">Add follow-up</a>
+                                                @foreach (var child in category.Elements.Where(e => e.ParentOptionId == option.Id).OrderBy(e => e.SortOrder)) { <a href="#element-@child.Id">@child.Label</a> }
+                                                </div>
                                                 optionIndex++;
                                             }
+                                        @if (!question.Options.Any(o => string.Equals(o.Value, "other", StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            <button type="button" class="aw-secondary" data-structure-action="@Url.Action("AddOtherOption", "Structure", new { applicationId = Model.ApplicationId, questionId = question.Id })">Add Other option</button>
+                                        }
                                         </fieldset>
                                     }
-                                    <fieldset class="aw-subpanel"><legend>Scoring rules</legend>
+                                    <details class="aw-disclosure" id="rules-@question.Id"><summary>Scoring rules (@question.Rules.Count)</summary><partial name="_ClosePanel" model='@("scoring rules")' /><fieldset class="aw-subpanel"><legend class="aw-visually-hidden">Scoring rules</legend>
                                         @foreach (var rule in question.Rules.OrderBy(x => x.SortOrder).ThenBy(x => x.Id))
                                         {
                                             <input type="hidden" name="Rules[@ruleIndex].Id" value="@rule.Id" />
-                                            <div class="aw-grid aw-rule"><label class="aw-field">Order<input name="Rules[@ruleIndex].SortOrder" type="number" min="0" value="@rule.SortOrder" /></label><label class="aw-field">Family<select name="Rules[@ruleIndex].Family">@foreach (var family in Enum.GetValues<RuleFamily>()) { <option value="@family" selected="@(family == rule.Family)">@family</option> }</select></label><label class="aw-field">Points<input name="Rules[@ruleIndex].Points" type="number" min="0" value="@rule.Points" /></label>
-                                            <label class="aw-field">Membership<select name="Rules[@ruleIndex].MembershipOperator"><option value="">Not used</option>@foreach (var op in Enum.GetValues<MembershipOperator>()) { <option value="@op" selected="@(op == rule.MembershipOperator)">@op</option> }</select></label><label class="aw-field">Minimum<input name="Rules[@ruleIndex].MinValue" type="number" step="any" value="@rule.MinValue?.ToString(CultureInfo.InvariantCulture)" /></label><label class="aw-field">Maximum<input name="Rules[@ruleIndex].MaxValue" type="number" step="any" value="@rule.MaxValue?.ToString(CultureInfo.InvariantCulture)" /></label>
+                                            <div class="aw-grid aw-rule" id="rule-@rule.Id"><label class="aw-field">Order<input name="Rules[@ruleIndex].SortOrder" type="number" min="0" value="@rule.SortOrder" /></label><label class="aw-field">Family<select name="Rules[@ruleIndex].Family">@foreach (var family in Enum.GetValues<RuleFamily>()) { <option value="@family" selected="@(family == rule.Family)">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(family.ToString())</option> }</select></label><label class="aw-field">Points<input name="Rules[@ruleIndex].Points" type="number" min="0" value="@rule.Points" /></label>
+                                            <label class="aw-field">Membership<select name="Rules[@ruleIndex].MembershipOperator"><option value="">Not used</option>@foreach (var op in Enum.GetValues<MembershipOperator>()) { <option value="@op" selected="@(op == rule.MembershipOperator)">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(op.ToString())</option> }</select></label><label class="aw-field">Minimum<input name="Rules[@ruleIndex].MinValue" type="number" step="any" value="@rule.MinValue?.ToString(CultureInfo.InvariantCulture)" /></label><label class="aw-field">Maximum<input name="Rules[@ruleIndex].MaxValue" type="number" step="any" value="@rule.MaxValue?.ToString(CultureInfo.InvariantCulture)" /></label>
                                             <label class="aw-field aw-check"><input name="Rules[@ruleIndex].MinInclusive" type="checkbox" value="true" checked="@rule.MinInclusive" /> Include minimum</label><input type="hidden" name="Rules[@ruleIndex].MinInclusive" value="false" />
                                             <label class="aw-field aw-check"><input name="Rules[@ruleIndex].MaxInclusive" type="checkbox" value="true" checked="@rule.MaxInclusive" /> Include maximum</label><input type="hidden" name="Rules[@ruleIndex].MaxInclusive" value="false" />
                                             @foreach (var option in question.Options.OrderBy(x => x.SortOrder).ThenBy(x => x.Id)) { <label class="aw-field aw-check"><input name="Rules[@ruleIndex].OptionIds" type="checkbox" value="@option.Id" checked="@(rule.Options.Any(x => x.QuestionOptionId == option.Id))" /> @option.Label</label> }
                                             </div>
                                             ruleIndex++;
                                         }
-                                    </fieldset>
+                                    </fieldset></details>
+                                    <div class="aw-item-actions"><a href="#question-assets">Add options or scoring rules</a></div>
                                     questionIndex++;
                                 }
                             </article>
@@ -100,18 +132,18 @@
                     categoryIndex++;
                 }
             </section>
-            <section class="aw-panel" id="visibility" aria-labelledby="visibility-heading"><header><div><p class="aw-kicker">Branching</p><h2 id="visibility-heading">Visibility rules</h2></div></header><partial name="_VisibilityEditor" model="Model" /></section>
-            <section class="aw-panel" id="scoring" aria-labelledby="scoring-heading"><header><div><p class="aw-kicker">Scoring</p><h2 id="scoring-heading">Scoring guide</h2></div></header><partial name="_ScoringEditor" model="Model" /></section>
-            <section class="aw-panel" id="readiness" aria-labelledby="readiness-heading" data-readiness-url="@Url.Action("Readiness", "Drafts", new { applicationId = Model.ApplicationId })"><header><div><p class="aw-kicker">Before publishing</p><h2 id="readiness-heading">Readiness</h2></div></header><div data-readiness-content><partial name="_Readiness" model="Model" /></div><p data-readiness-status aria-live="polite"></p></section>
-            <section class="aw-panel" aria-labelledby="add-category-heading">
-                <header><div><p class="aw-kicker">Structure</p><h2 id="add-category-heading">Add a category</h2></div></header>
+            <section class="aw-panel" id="visibility" data-workspace-pane="visibility" aria-labelledby="visibility-heading"><header><div><h2 id="visibility-heading">Visibility rules</h2></div></header><partial name="_VisibilityEditor" model="Model" /></section>
+            <section class="aw-panel" id="scoring" data-workspace-pane="scoring" aria-labelledby="scoring-heading"><header><div><h2 id="scoring-heading">Scoring guide</h2></div></header><partial name="_ScoringEditor" model="Model" /></section>
+            <section class="aw-panel" id="readiness" data-workspace-pane="readiness" aria-labelledby="readiness-heading" data-readiness-url="@Url.Action("Readiness", "Drafts", new { applicationId = Model.ApplicationId })"><header><div><h2 id="readiness-heading">Readiness</h2></div></header><div data-readiness-content><partial name="_Readiness" model="Model" /></div><p data-readiness-status aria-live="polite"></p></section>
+            <section class="aw-panel" id="add-category" data-workspace-pane="add-category" aria-labelledby="add-category-heading">
+                <header><div><h2 id="add-category-heading">Add a category</h2></div><partial name="_ClosePanel" model='@("category form")' /></header>
                 <label class="aw-field">Category name<input name="categoryName" maxlength="200" /></label>
                 <button class="aw-secondary" type="submit" formaction="@Url.Action("AddCategory", "Structure", new { applicationId = Model.ApplicationId })">Add category</button>
             </section>
-            <section class="aw-panel" aria-labelledby="add-element-heading">
-                <header><div><p class="aw-kicker">Structure</p><h2 id="add-element-heading">Add a question or content block</h2></div></header>
+            <section class="aw-panel" id="add-element" data-workspace-pane="add-element" aria-labelledby="add-element-heading">
+                <header><div><h2 id="add-element-heading">Add a question or content block</h2></div><partial name="_ClosePanel" model='@("question or content form")' /></header>
                 <div class="aw-grid">
-                    <label class="aw-field">Category<select name="categoryId">@foreach (var category in categories) { <option value="@category.Id">@category.Name</option> }</select></label>
+                    <label class="aw-field">Category<select name="categoryId" data-context-selection>@foreach (var category in categories) { <option value="@category.Id">@category.Name</option> }</select></label>
                     <label class="aw-field">Label<input name="elementLabel" maxlength="500" /></label>
                     <label class="aw-field">Type<select name="elementType"><option value="Content">Content block</option>@foreach (var type in Enum.GetValues<AnswerType>()) { <option value="@type">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(type.ToString()) question</option> }</select></label>
                     <label class="aw-field">Help text<textarea name="elementHelpText" maxlength="2000" rows="2"></textarea></label>
@@ -121,20 +153,20 @@
             </section>
             @if (questions.Length > 0)
             {
-                <section class="aw-panel" aria-labelledby="question-assets-heading">
-                    <header><div><p class="aw-kicker">Question setup</p><h2 id="question-assets-heading">Options and scoring rules</h2></div></header>
-                    <label class="aw-field">Question<select name="questionId" id="structure-question">@foreach (var question in questions) { <option value="@question.Id">@question.Id — @question.AnswerType</option> }</select></label>
+                <section class="aw-panel" id="question-assets" data-workspace-pane="question-assets" aria-labelledby="question-assets-heading">
+                    <header><div><h2 id="question-assets-heading">Options and scoring rules</h2></div><partial name="_ClosePanel" model='@("options and scoring rules")' /></header>
+                    <label class="aw-field">Question<select name="questionId" id="structure-question" data-context-selection>@foreach (var question in questions) { <option value="@question.Id">@categories.SelectMany(c => c.Elements).Single(e => e.Question?.Id == question.Id).Label</option> }</select></label>
                     <fieldset class="aw-subpanel"><legend>Add an answer option</legend>
                         <div class="aw-grid"><label class="aw-field">Option label<input name="optionLabel" maxlength="500" /></label><label class="aw-field">Stored value<input name="optionValue" maxlength="500" /></label></div>
                         <button class="aw-secondary" type="submit" formaction="@Url.Action("AddOption", "Structure", new { applicationId = Model.ApplicationId })">Add option</button>
                     </fieldset>
                     <fieldset class="aw-subpanel"><legend>Add a scoring rule</legend>
                         <div class="aw-grid">
-                            <label class="aw-field">Rule family<select name="family">@foreach (var family in Enum.GetValues<RuleFamily>()) { <option value="@family">@family</option> }</select></label>
+                            <label class="aw-field">Rule family<select name="family">@foreach (var family in Enum.GetValues<RuleFamily>()) { <option value="@family">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(family.ToString())</option> }</select></label>
                             <label class="aw-field">Points<input name="points" type="number" min="0" value="0" /></label>
                             <label class="aw-field">Minimum<input name="minValue" type="number" step="any" /></label>
                             <label class="aw-field">Maximum<input name="maxValue" type="number" step="any" /></label>
-                            <label class="aw-field">Membership<select name="membershipOperator"><option value="">Not used</option>@foreach (var op in Enum.GetValues<MembershipOperator>()) { <option value="@op">@op</option> }</select></label>
+                            <label class="aw-field">Membership<select name="membershipOperator"><option value="">Not used</option>@foreach (var op in Enum.GetValues<MembershipOperator>()) { <option value="@op">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(op.ToString())</option> }</select></label>
                         </div>
                         @foreach (var question in questions.Where(q => q.Options.Count > 0))
                         {
@@ -144,12 +176,28 @@
                     </fieldset>
                 </section>
             }
-            <button class="aw-primary" type="submit">Save draft</button>
-        </main>
-    </div>
+            <button class="aw-secondary aw-save-button" type="submit">Save draft</button>
 </form>
-<section class="aw-panel" aria-labelledby="new-condition-heading">
-    <header><div><p class="aw-kicker">Branching</p><h2 id="new-condition-heading">Add a visibility condition</h2></div></header>
+<section class="aw-panel" id="add-follow-up" data-workspace-pane="add-follow-up" aria-labelledby="follow-up-heading">
+    <header><h2 id="follow-up-heading">Add a follow-up question</h2><a class="aw-back" href="#content" data-follow-up-back>Back to question</a></header>
+    <p>Choose an option that reveals this question. It stays in the same category and follows its parent question. Required validation and scoring apply only while it is visible.</p>
+    <form id="add-follow-up-form" method="post" asp-controller="Structure" asp-action="AddFollowUp" data-follow-up-form>
+        <input type="hidden" name="applicationId" value="@Model.ApplicationId" /><input type="hidden" name="expectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
+        <div class="aw-grid">
+            <label class="aw-field aw-wide">Show after this option<select name="parentOptionId" data-context-selection>
+                @foreach (var parent in categories.SelectMany(c => FollowUpStructure.Ordered(c.Elements)).Where(e => e.Question?.AnswerType is AnswerType.RadioGroup or AnswerType.Checkboxes or AnswerType.Dropdown))
+                { @foreach (var option in parent.Question!.Options.OrderBy(o => o.SortOrder)) { <option value="@option.Id">@parent.Label / @option.Label</option> } }
+            </select></label>
+            <label class="aw-field aw-wide">Follow-up question<input name="followUpLabel" maxlength="500" required /></label>
+            <label class="aw-field">Answer type<select name="followUpType">@foreach (var type in Enum.GetValues<AnswerType>()) { <option value="@type">@QuestionAppBuilder.Editor.ViewModels.QuestionFormViewModel.SplitPascalCase(type.ToString())</option> }</select></label>
+            <label class="aw-field aw-check"><input type="checkbox" name="followUpRequired" value="true" checked /> Required when visible</label><input type="hidden" name="followUpRequired" value="false" />
+            <label class="aw-field aw-wide">Help text (optional)<textarea name="followUpHelpText" maxlength="2000" rows="2"></textarea></label>
+        </div>
+        <button type="submit" class="aw-secondary">Add follow-up question</button><p role="status" data-follow-up-status></p>
+    </form>
+</section>
+<section class="aw-panel" data-workspace-pane="visibility" aria-labelledby="new-condition-heading">
+    <header><div><h2 id="new-condition-heading">Add a visibility condition</h2></div><partial name="_ClosePanel" model='@("visibility condition form")' /></header>
     <form id="add-condition-form" method="post" asp-controller="Visibility" asp-action="AddElementCondition" data-action-url="@Url.Action("AddElementCondition", "Visibility")">
         @Html.AntiForgeryToken()<input type="hidden" name="applicationId" value="@Model.ApplicationId" /><input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
         <div class="aw-grid">
@@ -170,12 +218,17 @@
         <button type="submit" class="aw-secondary">Add condition to selected question</button>
     </form>
 </section>
-<section class="aw-panel aw-preview" id="preview" aria-labelledby="preview-heading">
-    <header><div><p class="aw-kicker">Test without submitting</p><h2 id="preview-heading">Preview and scoring trace</h2></div><button type="button" class="aw-secondary" data-preview-button data-preview-url="@Url.Action("Evaluate", "Preview", new { applicationId = Model.ApplicationId })">Evaluate preview</button></header>
+<section class="aw-panel aw-preview" id="preview" data-workspace-pane="preview" aria-labelledby="preview-heading">
+    <header><div><h2 id="preview-heading">Preview and scoring trace</h2></div><button type="button" class="aw-secondary" data-preview-button data-preview-url="@Url.Action("Evaluate", "Preview", new { applicationId = Model.ApplicationId })">Evaluate preview</button></header>
     <div data-preview-result aria-live="polite">Evaluate the draft to begin a questionnaire preview.</div>
 </section>
-<form id="publish-draft" method="post" asp-controller="Drafts" asp-action="Publish" asp-route-applicationId="@Model.ApplicationId">
+<form data-workspace-pane="readiness" id="publish-draft" method="post" asp-controller="Drafts" asp-action="Publish" asp-route-applicationId="@Model.ApplicationId">
     @Html.AntiForgeryToken()<input type="hidden" name="ApplicationId" value="@Model.ApplicationId" /><input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
     <div data-publication-warnings>@foreach (var warning in Model.Warnings) { <label class="aw-field aw-check"><input type="checkbox" name="AcknowledgedWarningCodes" value="@warning.Code" /> Acknowledge @warning.Code: @warning.Message</label> }</div>
     <button type="submit" class="aw-primary" disabled="@(Model.Errors.Count > 0)">Publish version @Model.Graph.Version.VersionNumber</button>
 </form>
+
+        </main>
+    </div>
+    <partial name="_WorkspaceHelp" model="Model" />
+</div>

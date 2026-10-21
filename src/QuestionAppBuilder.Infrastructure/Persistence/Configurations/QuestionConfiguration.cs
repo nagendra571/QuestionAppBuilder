@@ -11,6 +11,7 @@ public class QuestionConfiguration : IEntityTypeConfiguration<Question>
     {
         builder.ToTable("Questions");
         builder.HasKey(q => q.Id);
+        builder.Property(q => q.RequiredMessage).HasMaxLength(QuestionAppBuilder.Domain.ValidationLimits.RequiredMessageMaxLength);
         builder.Property(q => q.AnswerType)
             .HasConversion<string>()
             .HasMaxLength(32)

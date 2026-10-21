@@ -7,5 +7,6 @@ public enum AnswerType
     Dropdown,
     RadioGroup,
     Checkboxes,
-    Number
+    Number,
+    UploadDocument
 }

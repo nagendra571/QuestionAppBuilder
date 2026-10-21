@@ -57,6 +57,47 @@ public sealed class StructureController : EditorControllerBase
     }
 
     [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddFollowUp(int applicationId, int parentOptionId, string followUpLabel, AnswerType followUpType,
+        bool followUpRequired, string? followUpHelpText, byte[] expectedRevision, CancellationToken ct)
+    {
+        if (!ModelState.IsValid || expectedRevision is null || expectedRevision.Length == 0)
+            return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, "Check the follow-up fields and reload if the draft revision is missing.");
+        try
+        {
+            var snapshot = await _drafts.GetAsync(applicationId, ct);
+            if (!snapshot.Definition.Categories.SelectMany(c => c.Elements).Any(e => e.Question?.Options.Any(o => o.Id == parentOptionId) == true)) return NotFound();
+            var child = await _design.AddFollowUpAsync(parentOptionId, followUpLabel, followUpType, followUpRequired, followUpHelpText, ct, expectedRevision);
+            if (Request.Headers["X-Requested-With"] == "QuestionAppBuilder") return Json(new { saved = true, elementId = child.Id });
+            return Redirect(Url.Action("Index", "Drafts", new { applicationId }) + "#element-" + child.Id);
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (DraftConflictException) { return StructureFailure(applicationId, StatusCodes.Status409Conflict, "The draft changed. Reload before adding a follow-up."); }
+        catch (ArgumentException) { return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, "Enter a question label for the follow-up."); }
+        catch (DefinitionValidationException exception) { return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, exception.Message); }
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddOtherOption(int applicationId, int questionId, byte[] expectedRevision, CancellationToken ct)
+    {
+        if (!ModelState.IsValid || expectedRevision is null || expectedRevision.Length == 0)
+            return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, "Reload the draft before adding Other.");
+        try
+        {
+            var graph = (await _drafts.GetAsync(applicationId, ct)).Definition;
+            var question = graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question).FirstOrDefault(q => q?.Id == questionId);
+            if (question is null) return NotFound();
+            if (question.AnswerType is not (AnswerType.RadioGroup or AnswerType.Checkboxes or AnswerType.Dropdown))
+                throw new DefinitionValidationException("Other options require a choice question.");
+            if (!question.Options.Any(o => string.Equals(o.Value, "other", StringComparison.OrdinalIgnoreCase)))
+                await _design.AddOptionAsync(questionId, "Other", "other", ct, expectedRevision);
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (DraftConflictException) { return StructureFailure(applicationId, StatusCodes.Status409Conflict, "The draft changed. Reload before adding Other."); }
+        catch (DefinitionValidationException exception) { return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, exception.Message); }
+        return Complete(applicationId);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> AddRule(int applicationId, int questionId, RuleFamily family, int points,
         int[]? optionIds, decimal? minValue, decimal? maxValue, MembershipOperator? membershipOperator,
         byte[] expectedRevision, CancellationToken ct)
@@ -116,9 +157,12 @@ public sealed class StructureController : EditorControllerBase
         var category = snapshot.Definition.Categories.SingleOrDefault(x => x.Elements.Any(e => e.Id == elementId));
         if (category is null) return NotFound();
         var elements = category.Elements.OrderBy(x => x.SortOrder).ThenBy(x => x.Id).ToList();
-        var index = elements.FindIndex(x => x.Id == elementId);
-        var target = index + (direction == "up" ? -1 : 1);
-        if (target < 0 || target >= elements.Count) return Complete(applicationId);
+        var selected = elements.Single(e => e.Id == elementId);
+        var siblings = elements.Where(e => e.ParentOptionId == selected.ParentOptionId).ToList();
+        var index = siblings.IndexOf(selected);
+        var siblingTarget = index + (direction == "up" ? -1 : 1);
+        if (siblingTarget < 0 || siblingTarget >= siblings.Count) return Complete(applicationId);
+        var target = elements.IndexOf(siblings[siblingTarget]);
         try { await _design.MoveElementAsync(elementId, target, ct, expectedRevision); }
         catch (NotFoundException) { return NotFound(); }
         catch (DraftConflictException) { return StructureFailure(applicationId, StatusCodes.Status409Conflict, "The draft changed. Reload the workspace before making this change."); }

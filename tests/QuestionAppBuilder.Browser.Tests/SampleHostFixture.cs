@@ -170,6 +170,36 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<string?> ReadSavedAnswerAsync(Guid responseId, int questionId)
+    {
+        await using var db = new QuestionAppBuilderDbContext(new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options);
+        return await db.ResponseAnswers.Where(a => a.ResponseDraftId == responseId && a.QuestionId == questionId).Select(a => a.TextValue).SingleOrDefaultAsync();
+    }
+
+    public async Task<int> SeedDocumentApplicationAsync()
+    {
+        var appId = await SeedDraftPreviewApplicationAsync();
+        await using var db = new QuestionAppBuilderDbContext(new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options);
+        var element = await db.Elements.Include(e => e.Question).SingleAsync(e => e.Label == "Requested amount" && e.Question != null);
+        element.Label = "Supporting document";
+        element.Question!.AnswerType = AnswerType.UploadDocument;
+        element.Question.RequiredMessage = "Please upload your supporting document.";
+        await db.SaveChangesAsync();
+        return appId;
+    }
+
+    public async Task<int> SeedFollowUpApplicationAsync(AnswerType answerType)
+    {
+        var appId = await SeedDraftPreviewApplicationAsync();
+        await using var db = new QuestionAppBuilderDbContext(new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options);
+        var element = await db.Elements.Include(e => e.Question).SingleAsync(e => e.Label == "Requested amount" && e.Question != null);
+        element.Label = "Organization type";
+        element.Question!.AnswerType = answerType;
+        element.Question.Options.Add(new QuestionOption { Label = "Nonprofit", Value = "nonprofit", SortOrder = 1 });
+        await db.SaveChangesAsync();
+        return appId;
+    }
+
     public async Task<int> SeedDraftPreviewApplicationAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;

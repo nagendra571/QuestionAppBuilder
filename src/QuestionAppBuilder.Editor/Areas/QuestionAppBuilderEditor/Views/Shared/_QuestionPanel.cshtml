@@ -6,6 +6,7 @@
     var editable = Model.Detail.IsEditable;
     var applicationId = Model.Detail.Application.Id;
     var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
+    var graphElements = (Model.Detail.DraftGraph ?? Model.Detail.PublishedGraph)?.Categories.SelectMany(c => c.Elements).ToArray() ?? Array.Empty<Element>();
     var options = question.Options.OrderBy(option => option.SortOrder).ThenBy(option => option.Id).ToArray();
     var acceptsOptions = question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes;
     var rules = question.Rules.OrderBy(rule => rule.Id).ToArray();
@@ -40,22 +41,37 @@
             <div class="cv-opt">
                 <span class="cv-radio" aria-hidden="true"></span>
                 <span>@option.Label</span>
+                @if (editable)
+                {
+                    <a class="cv-link cv-follow-up-action" aria-label="Add follow-up for @option.Label" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-route-followUpOption="@option.Id" asp-fragment="add-follow-up">Add follow-up</a>
+                }
                 <span class="cv-val">(@option.Value)</span>
                 @if (editable)
                 {
-                    <form method="post" asp-controller="Options" asp-action="Remove" asp-route-id="@option.Id" class="cv-opt-remove">
-                        <input type="hidden" name="applicationId" value="@applicationId" />
-                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                        <button type="submit" class="cv-link">Remove</button>
-                    </form>
+                    <div class="cv-row-actions" role="group" aria-label="Actions for @option.Label">
+                        <a class="qab-icon-action cv-opt-edit" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="option-@option.Id" aria-label="Edit option: @option.Label" title="Edit option: @option.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
+                        <form method="post" asp-controller="Options" asp-action="Remove" asp-route-id="@option.Id" class="cv-opt-remove" data-confirm="@(graphElements.Any(e => e.ParentOptionId == option.Id) ? $"Remove {option.Label} and all of its follow-up questions?" : null)">
+                            <input type="hidden" name="applicationId" value="@applicationId" />
+                            <input type="hidden" name="expectedRevision" value="@revisionValue" />
+                            <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove option: @option.Label" title="Remove option: @option.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
+                        </form>
+                    </div>
                 }
             </div>
         }
         @if (editable && acceptsOptions)
         {
-            <details class="cv-add-option">
+            @if (!options.Any(o => string.Equals(o.Value, "other", StringComparison.OrdinalIgnoreCase)))
+            {
+                <form method="post" asp-controller="Options" asp-action="AddOther" asp-route-id="@question.Id">
+                    <input type="hidden" name="applicationId" value="@applicationId" /><input type="hidden" name="expectedRevision" value="@revisionValue" />
+                    <button type="submit" class="cv-link">Add Other option</button>
+                </form>
+            }
+            <details class="cv-add-option" id="add-option-@question.Id">
                 <summary class="cv-link">Add option</summary>
                 <form method="post" asp-controller="Options" asp-action="Add" asp-route-id="@question.Id">
+                <partial name="_ClosePanel" model='@("option form")' />
                     <input type="hidden" name="applicationId" value="@applicationId" />
                     <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <div class="cv-field">
@@ -82,9 +98,10 @@
         }
         @if (editable)
         {
-            <details class="cv-add-rule">
+            <details class="cv-add-rule" id="add-rule-@question.Id">
                 <summary class="cv-link">Add scoring rule</summary>
                 <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id">
+                <partial name="_ClosePanel" model='@("scoring rule form")' />
                     <input type="hidden" name="applicationId" value="@applicationId" />
                     <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <div class="cv-field">

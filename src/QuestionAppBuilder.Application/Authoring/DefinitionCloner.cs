@@ -40,7 +40,7 @@ public static class DefinitionCloner
                 map.Elements[sourceElement.Id] = element;
                 category.Elements.Add(element);
                 if (sourceElement.Question is not { } sourceQuestion) continue;
-                var question = new Question { AnswerType = sourceQuestion.AnswerType, IsRequired = sourceQuestion.IsRequired,
+                var question = new Question { AnswerType = sourceQuestion.AnswerType, IsRequired = sourceQuestion.IsRequired, RequiredMessage = sourceQuestion.RequiredMessage,
                     ScoringMode = sourceQuestion.ScoringMode, MaxLength = sourceQuestion.MaxLength, MinValue = sourceQuestion.MinValue,
                     MaxValue = sourceQuestion.MaxValue, MinSelections = sourceQuestion.MinSelections, MaxSelections = sourceQuestion.MaxSelections };
                 map.Questions[sourceQuestion.Id] = question;
@@ -81,6 +81,9 @@ public static class DefinitionCloner
         {
             if (sourceCategory.VisibilityConditionId is int categoryConditionId)
                 map.Categories[sourceCategory.Id].VisibilityCondition = map.Conditions[categoryConditionId];
+            foreach (var sourceElement in sourceCategory.Elements)
+                if (sourceElement.ParentOptionId is int parentOptionId)
+                    map.Elements[sourceElement.Id].ParentOption = map.Options[parentOptionId];
             foreach (var sourceElement in sourceCategory.Elements)
                 if (sourceElement.VisibilityConditionId is int elementConditionId)
                     map.Elements[sourceElement.Id].VisibilityCondition = map.Conditions[elementConditionId];

@@ -225,6 +225,7 @@ public sealed class PlatformAcceptanceTests
         detailUrl.Should().NotBeNullOrWhiteSpace();
         var detail = await designer.GotoAsync(new Uri(host.BaseAddress, detailUrl!).ToString());
         detail!.Status.Should().Be(200, $"designer detail URL was {designer.Url}; body: {await designer.Locator("body").InnerTextAsync()}");
+        await designer.Locator("#respondent-availability > summary").ClickAsync();
         await designer.Locator("#accept-new-responses").UncheckAsync();
         await designer.Locator("#accept-submissions").UncheckAsync();
         var update = designer.WaitForResponseAsync(response => response.Request.Method == "POST"
@@ -251,7 +252,7 @@ public sealed class PlatformAcceptanceTests
     {
         await page.GotoAsync(new Uri(baseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync(username);
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
     }
 
@@ -284,6 +285,7 @@ public sealed class PlatformAcceptanceTests
         await designer.WaitForURLAsync("**/Builder/Applications/Detail/*");
         var appId = int.Parse(new Uri(designer.Url).Segments[^1]);
         await designer.GetByRole(AriaRole.Link, new() { Name = "Open authoring workspace" }).ClickAsync();
+        await designer.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         await designer.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
         await designer.Locator("[name='Version.DisplayName']").FillAsync("Package questionnaire");
         await designer.Locator("[name='Version.SubmitLabel']").FillAsync("Submit package response");
@@ -293,6 +295,7 @@ public sealed class PlatformAcceptanceTests
         await designer.Locator("[name='Version.ConfirmationText']").FillAsync("Package receipt confirmed");
 
         var categories = new[] { "Applicant", "Narrative", "Method", "Readiness", "Resources" };
+        await designer.Locator(".aw-outline-action[href='#add-category']").ClickAsync();
         foreach (var categoryName in categories)
         {
             await designer.Locator("[name='categoryName']").FillAsync(categoryName);
@@ -311,6 +314,7 @@ public sealed class PlatformAcceptanceTests
 
         async Task<string> AddQuestionAsync(string categoryName, string label, string type)
         {
+            await designer.Locator(".aw-outline-action[href='#add-element']").ClickAsync();
             var previousQuestionCount = await designer.Locator("#structure-question option").CountAsync();
             await designer.Locator("[name='categoryId']").SelectOptionAsync(categoryIds[categoryName]);
             await designer.Locator("[name='elementLabel']").FillAsync(label);
@@ -327,6 +331,7 @@ public sealed class PlatformAcceptanceTests
         }
         async Task AddOptionAsync(string questionId, string label, string value)
         {
+            await designer.Locator(".aw-outline-action[href='#question-assets']").ClickAsync();
             await designer.Locator("#structure-question").SelectOptionAsync(questionId);
             await designer.Locator("[name='optionLabel']").FillAsync(label);
             await designer.Locator("[name='optionValue']").FillAsync(value);
@@ -360,6 +365,7 @@ public sealed class PlatformAcceptanceTests
         await designer.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule" }).ClickAsync();
         (await rule).Status.Should().Be((int)System.Net.HttpStatusCode.Redirect);
         await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync();
+        await designer.GetByRole(AriaRole.Link, new() { Name = "Review & publish", Exact = true }).ClickAsync();
         var acks = designer.Locator("#publish-draft input[name='AcknowledgedWarningCodes']");
         for (var index = 0; index < await acks.CountAsync(); index++) await acks.Nth(index).CheckAsync();
         var publishOne = designer.WaitForResponseAsync(response => response.Request.Method == "POST" && response.Url.EndsWith("/Publish", StringComparison.Ordinal));
@@ -428,14 +434,16 @@ public sealed class PlatformAcceptanceTests
         await designer.GetByRole(AriaRole.Button, new() { Name = "Start editing" }).ClickAsync();
         // StartDraft creates the editable copy and intentionally redirects back to application detail.
         await designer.GetByRole(AriaRole.Link, new() { Name = "Open authoring workspace" }).ClickAsync();
+        await designer.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
         await designer.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
         await designer.Locator("[name='Version.DisplayName']").FillAsync("Package questionnaire v2");
         await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync();
         var readinessStatus = designer.Locator("#readiness [data-readiness-status]");
-        await readinessStatus.Filter(new() { HasText = "Readiness checked against the saved revision" }).WaitForAsync();
+        await readinessStatus.Filter(new() { HasText = "Readiness checked against the saved revision" }).WaitForAsync(new() { State = WaitForSelectorState.Attached });
         await designer.EvaluateAsync("() => document.querySelectorAll('#publish-draft input[name=\"AcknowledgedWarningCodes\"]').forEach(input => { input.checked = true; })");
         (await designer.Locator("[name='Version.DisplayName']").EvaluateAsync<bool>("input => document.activeElement === input"))
             .Should().BeTrue("the final Publish click must safely blur the field whose autosave just completed");
+        await designer.GetByRole(AriaRole.Link, new() { Name = "Review & publish", Exact = true }).ClickAsync();
         var v2PublishButton = designer.GetByRole(AriaRole.Button, new() { Name = "Publish version 2" });
         var publishFormState = await designer.Locator("#publish-draft").EvaluateAsync<string>("form => JSON.stringify({ valid: form.checkValidity(), invalid: [...form.querySelectorAll(':invalid')].map(x => ({ name: x.name, message: x.validationMessage })), buttons: [...form.querySelectorAll('button')].map(x => ({ text: x.textContent, disabled: x.disabled })), acknowledgments: [...form.querySelectorAll('input[name=\\\"AcknowledgedWarningCodes\\\"]')].map(x => ({ value: x.value, checked: x.checked })) })");
         (await v2PublishButton.IsEnabledAsync()).Should().BeTrue($"readiness={await readinessStatus.InnerTextAsync()}; publishForm={publishFormState}; pageErrors={string.Join(" | ", designerPageErrors)}");

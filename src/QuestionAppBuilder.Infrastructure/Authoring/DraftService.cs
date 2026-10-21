@@ -175,6 +175,9 @@ public sealed class DraftService : IDraftService
                 if (submittedElement.Question is not { } postedQuestion) continue;
                 var question = questions[postedQuestion.Id];
                 question.AnswerType = postedQuestion.AnswerType; question.IsRequired = postedQuestion.IsRequired; question.ScoringMode = postedQuestion.ScoringMode;
+                if (postedQuestion.RequiredMessage?.Length > QuestionAppBuilder.Domain.ValidationLimits.RequiredMessageMaxLength)
+                    throw new DefinitionValidationException("Required-answer messages must be 500 characters or fewer.");
+                question.RequiredMessage = string.IsNullOrWhiteSpace(postedQuestion.RequiredMessage) ? null : postedQuestion.RequiredMessage.Trim();
                 question.MaxLength = postedQuestion.MaxLength; question.MinValue = postedQuestion.MinValue; question.MaxValue = postedQuestion.MaxValue;
                 question.MinSelections = postedQuestion.MinSelections; question.MaxSelections = postedQuestion.MaxSelections;
                 foreach (var submittedOption in postedQuestion.Options)
@@ -191,6 +194,11 @@ public sealed class DraftService : IDraftService
                     rule.Options = submittedRule.Options.Select(o => new ScoringRuleOption { QuestionOptionId = o.QuestionOptionId, QuestionOption = options[o.QuestionOptionId] }).ToList();
                 }
             }
+        }
+        foreach (var category in target.Categories)
+        {
+            var ordered = QuestionAppBuilder.Domain.Graphs.FollowUpStructure.Ordered(category.Elements);
+            for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i + 1;
         }
         foreach (var submittedCondition in posted.VisibilityConditions)
         {

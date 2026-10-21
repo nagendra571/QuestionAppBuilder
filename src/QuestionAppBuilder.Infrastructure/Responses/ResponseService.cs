@@ -129,10 +129,16 @@ public sealed class ResponseService : IResponseService
         if (response.Status != ResponseStatus.InProgress) throw new ResponseConflictException();
         if (!response.RevisionNonce.ToByteArray().AsSpan().SequenceEqual(request.ExpectedRevision)) throw new ResponseConflictException();
         var graph = await LoadGraphAsync(db, response.ApplicationVersionId, ct);
-        ValidateStoredValues(graph, request.Answers);
+        // Upload answers are server-owned. Normal forms/API saves cannot forge or erase them.
+        var uploadIds = graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question?.AnswerType == AnswerType.UploadDocument)
+            .Select(e => e.Question!.Id).ToHashSet();
+        var merged = request.Answers.Where(a => !uploadIds.Contains(a.Key)).ToDictionary(a => a.Key, a => a.Value);
+        foreach (var stored in response.Answers.Where(a => uploadIds.Contains(a.QuestionId)))
+            merged[stored.QuestionId] = new AnswerValue(stored.TextValue, null, null);
+        ValidateStoredValues(graph, merged);
 
         response.Answers.Clear();
-        foreach (var (questionId, value) in request.Answers)
+        foreach (var (questionId, value) in merged)
         {
             if (!HasValue(value)) continue;
             var answer = new ResponseAnswer
@@ -234,6 +240,7 @@ public sealed class ResponseService : IResponseService
             {
                 AnswerType.Textbox or AnswerType.Textarea => answer.Number is not null || selected.Count != 0
                     || answer.Text?.Length > ValidationLimits.AnswerTextMaxLength || answer.Text is not null && question.MaxLength is int maxText && answer.Text.Length > maxText,
+                AnswerType.UploadDocument => answer.Number is not null || selected.Count != 0 || answer.Text?.Length > 255,
                 AnswerType.Number => answer.Text is not null || selected.Count != 0 || answer.Number is decimal number
                     && (number < MaximumDecimal18Scale4 * -1 || number > MaximumDecimal18Scale4 || decimal.Round(number, 4) != number
                         || question.MinValue is decimal min && number < min || question.MaxValue is decimal max && number > max),

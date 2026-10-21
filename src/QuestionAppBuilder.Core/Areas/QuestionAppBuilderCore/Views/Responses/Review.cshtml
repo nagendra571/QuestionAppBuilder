@@ -21,7 +21,8 @@
                     shownValue = string.Join(", ", question.Options.Where(option => answer?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label));
                 }
                 if (string.IsNullOrWhiteSpace(shownValue)) shownValue = "Not answered";
-                <dl><dt id="question-@question.Id">@question.Label</dt><dd>@shownValue</dd></dl>
+                @if (element.FollowUpContext is not null) { <p class="qab-follow-up-context">Follow-up: @element.FollowUpContext</p> }
+                <dl><dt id="question-@question.Id">@question.Label</dt><dd>@if (question.AnswerType == QuestionAppBuilder.Domain.Enums.AnswerType.UploadDocument && answer?.Text is not null) { <a href="@(ViewData["DocumentUrl"])?questionId=@question.Id">@shownValue</a> } else { @shownValue }</dd></dl>
             }
             <a class="qab-button qab-button-secondary" href="@($"{ViewData["EditCategoryUrlPrefix"]}{category.Index}")">Edit @category.Name</a>
         </section>

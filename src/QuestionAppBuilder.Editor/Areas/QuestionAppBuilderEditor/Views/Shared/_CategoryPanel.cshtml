@@ -7,6 +7,9 @@
     var applicationId = Model.Detail.Application.Id;
     var revisionValue = Model.Detail.DraftGraph is null ? string.Empty : Convert.ToBase64String(Model.Detail.DraftGraph.Version.RevisionNonce.ToByteArray());
     var elements = category.Elements.OrderBy(element => element.SortOrder).ThenBy(element => element.Id).ToArray();
+    var categoryNumber = (int?)ViewData["CategoryNumber"] ?? 1;
+    var questionCount = elements.Count(element => element.Question is not null);
+    var contentCount = elements.Count(element => element.Kind == ElementKind.Content);
 }
 
 <style>
@@ -25,17 +28,19 @@
     }
 </style>
 
-<section class="cv-card">
+<section class="cv-card cv-category" id="manage-category-@category.Id" data-category-panel>
     <header class="cv-chead">
         <div class="cv-chead-title">
-            <h2>@category.Name</h2>
+            <h2>@category.Name</h2><span class="cv-item-count">@questionCount @(questionCount == 1 ? "question" : "questions") @if (contentCount > 0) { <text>&middot; @contentCount @(contentCount == 1 ? "content block" : "content blocks")</text> }</span>
         </div>
         @if (editable)
         {
             <div class="cv-cact">
-                <details class="cv-rename">
+                <a class="qab-icon-action" aria-label="Edit category: @category.Name" title="Edit category: @category.Name" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="category-@category.Id"><partial name="_ActionIcon" model='@("edit")' /></a>
+                <details class="cv-rename" id="rename-category-@category.Id">
                     <summary class="cv-btn-ghost">Rename</summary>
                     <form method="post" asp-controller="Categories" asp-action="Update" asp-route-id="@category.Id" class="cv-rename-form">
+                <partial name="_ClosePanel" model='@("category rename form")' />
                         <input type="hidden" name="applicationId" value="@applicationId" />
                         <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">
@@ -45,25 +50,27 @@
                         <button type="submit" class="cv-btn">Save</button>
                     </form>
                 </details>
-                <form method="post" asp-controller="Categories" asp-action="Remove" asp-route-id="@category.Id">
+                <form method="post" asp-controller="Categories" asp-action="Remove" asp-route-id="@category.Id" data-confirm="@(category.Elements.Any(e => e.ParentOptionId is not null) ? "Remove this category, including its questions and nested follow-ups?" : null)">
                     <input type="hidden" name="applicationId" value="@applicationId" />
                     <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                    <button type="submit" class="cv-btn-ghost cv-danger">Remove</button>
+                    <button type="submit" class="qab-icon-action qab-icon-danger cv-danger" aria-label="Remove category: @category.Name" title="Remove category: @category.Name"><partial name="_ActionIcon" model='@("remove")' /></button>
                 </form>
             </div>
         }
     </header>
     <div class="cv-cbody cv-elements">
-        @foreach (var element in elements)
+        @for (var elementIndex = 0; elementIndex < elements.Length; elementIndex++)
         {
-            <partial name="_ElementRow" model="(Detail: Model.Detail, Element: element)" />
+            var elementViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) { ["ElementNumber"] = $"{categoryNumber}.{elementIndex + 1}" };
+            <partial name="_ElementRow" model="(Detail: Model.Detail, Element: elements[elementIndex])" view-data="elementViewData" />
         }
         @if (editable)
         {
             <div class="cv-add">
-                <details class="cv-add-form">
+                <details class="cv-add-form" id="add-question-@category.Id">
                     <summary class="cv-btn-ghost">Add question</summary>
                     <form method="post" asp-controller="Elements" asp-action="AddQuestion" asp-route-id="@category.Id">
+                <partial name="_ClosePanel" model='@("question form")' />
                         <input type="hidden" name="applicationId" value="@applicationId" />
                         <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">
@@ -91,9 +98,10 @@
                         <button type="submit" class="cv-btn">Add question</button>
                     </form>
                 </details>
-                <details class="cv-add-form">
+                <details class="cv-add-form" id="add-content-@category.Id">
                     <summary class="cv-btn-ghost">Add content</summary>
                     <form method="post" asp-controller="Elements" asp-action="AddContent" asp-route-id="@category.Id">
+                <partial name="_ClosePanel" model='@("content form")' />
                         <input type="hidden" name="applicationId" value="@applicationId" />
                         <input type="hidden" name="expectedRevision" value="@revisionValue" />
                         <div class="cv-field">

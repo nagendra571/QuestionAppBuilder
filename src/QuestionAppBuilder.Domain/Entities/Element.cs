@@ -14,4 +14,6 @@ public class Element
     public int? VisibilityConditionId { get; set; }
     public VisibilityCondition? VisibilityCondition { get; set; }
     public Question? Question { get; set; }
+    public int? ParentOptionId { get; set; }
+    public QuestionOption? ParentOption { get; set; }
 }

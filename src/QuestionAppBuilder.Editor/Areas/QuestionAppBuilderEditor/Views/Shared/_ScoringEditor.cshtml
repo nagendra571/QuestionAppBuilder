@@ -1,7 +1,7 @@
 @model DraftWorkspaceViewModel
 @if (!Model.Graph.Categories.SelectMany(c => c.Elements).Any(e => e.Question?.Rules.Count > 0))
 {
-    <p>No scoring rules are defined. Add a rule to a question from the application detail page.</p>
+    <p>No scoring rules are defined. Add a question, then use Add options or scoring in the outline to create its rules.</p>
 }
 else
 {

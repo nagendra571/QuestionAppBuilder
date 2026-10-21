@@ -64,6 +64,23 @@ public class OptionsController : EditorControllerBase
         return RedirectToDetail(applicationId);
     }
 
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddOther(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)
+    {
+        var question = await FindDraftQuestionAsync(id, applicationId, ct);
+        if (question is null) return NotFound();
+        try
+        {
+            if (question.AnswerType is not (AnswerType.RadioGroup or AnswerType.Checkboxes or AnswerType.Dropdown))
+                throw new DefinitionValidationException("Other options require a choice question.");
+            if (!question.Options.Any(o => string.Equals(o.Value, "other", StringComparison.OrdinalIgnoreCase)))
+                await _designService.AddOptionAsync(id, "Other", "other", ct, expectedRevision);
+        }
+        catch (NotFoundException) { return NotFound(); }
+        catch (DefinitionValidationException exception) { SetEditorError(exception.Message); }
+        return RedirectToDetail(applicationId);
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Remove(int id, int applicationId, byte[]? expectedRevision, CancellationToken ct)

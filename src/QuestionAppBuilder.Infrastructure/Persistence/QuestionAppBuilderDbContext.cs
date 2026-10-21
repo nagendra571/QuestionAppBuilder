@@ -29,6 +29,7 @@ public class QuestionAppBuilderDbContext : DbContext
     public DbSet<VisibilityPredicateOption> VisibilityPredicateOptions => Set<VisibilityPredicateOption>();
     public DbSet<ApplicationAuditEvent> ApplicationAuditEvents => Set<ApplicationAuditEvent>();
     public DbSet<ResponseDraft> ResponseDrafts => Set<ResponseDraft>();
+    public DbSet<ResponseDocument> ResponseDocuments => Set<ResponseDocument>();
     public DbSet<ResponseAnswer> ResponseAnswers => Set<ResponseAnswer>();
     public DbSet<ResponseSelectedOption> ResponseSelectedOptions => Set<ResponseSelectedOption>();
     public DbSet<SubmissionQuestionState> SubmissionQuestionStates => Set<SubmissionQuestionState>();

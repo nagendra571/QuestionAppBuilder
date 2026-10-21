@@ -2,6 +2,7 @@ namespace QuestionAppBuilder.Domain;
 
 public static class ValidationLimits
 {
+    public const int RequiredMessageMaxLength = 500;
     public const int NameMaxLength = 200;
     public const int LabelMaxLength = 500;
     public const int HelpTextMaxLength = 2000;

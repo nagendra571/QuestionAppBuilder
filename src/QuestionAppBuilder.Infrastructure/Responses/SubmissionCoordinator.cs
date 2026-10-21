@@ -89,6 +89,12 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             foreach (var category in evaluated.Score.Categories)
                 submission.CategoryScores.Add(new SubmissionCategoryScore { CategoryId = category.CategoryId, Score = category.Score });
             db.Submissions.Add(submission);
+            // Retain the submitted attachments, and discard files from branches that no longer apply.
+            var hiddenDocumentIds = allQuestions.Where(q => q.AnswerType == AnswerType.UploadDocument
+                && !evaluated.VisibleQuestionIds.Contains(q.Id)).Select(q => q.Id).ToArray();
+            if (hiddenDocumentIds.Length != 0)
+                await db.ResponseDocuments.Where(d => d.ResponseDraftId == response.Id && hiddenDocumentIds.Contains(d.QuestionId))
+                    .ExecuteDeleteAsync(cancellationToken);
             response.Answers.Clear();
             response.Status = ResponseStatus.Submitted;
             response.RevisionNonce = Guid.NewGuid();

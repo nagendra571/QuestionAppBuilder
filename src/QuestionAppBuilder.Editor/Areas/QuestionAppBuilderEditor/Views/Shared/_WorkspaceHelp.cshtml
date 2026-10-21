@@ -1,0 +1,22 @@
+@model DraftWorkspaceViewModel
+@using System.Text.Json
+@{
+    var elements = Model.Graph.Categories.SelectMany(category => category.Elements).Where(element => element.Question is not null).ToArray();
+    var conditions = new List<object>();
+    var conditionIndex = 0;
+    var predicateIndex = 0;
+    foreach (var condition in Model.Graph.VisibilityConditions.OrderBy(condition => condition.Id))
+    {
+        var prefixes = condition.Predicates.Select(_ => $"Conditions[{conditionIndex}].Predicates[{predicateIndex++}]").ToArray();
+        conditions.Add(new { id = condition.Id, index = conditionIndex++, prefixes });
+    }
+    var data = new
+    {
+        conditions,
+        questions = elements.ToDictionary(element => element.Question!.Id, element => element.Label),
+        options = elements.SelectMany(element => element.Question!.Options).ToDictionary(option => option.Id, option => option.Label)
+    };
+}
+<script type="application/json" id="aw-help-data">@Html.Raw(JsonSerializer.Serialize(data))</script>
+<template id="aw-help-button-template"><button type="button" class="qab-icon-action aw-help-toggle"><partial name="_ActionIcon" model='@("info")' /></button></template>
+<template id="aw-help-close-template"><button type="button" class="qab-icon-action aw-help-dismiss"><partial name="_ActionIcon" model='@("close")' /></button></template>

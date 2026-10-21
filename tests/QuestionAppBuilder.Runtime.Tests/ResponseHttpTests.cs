@@ -8,6 +8,30 @@ namespace QuestionAppBuilder.Runtime.Tests;
 
 public sealed class ResponseHttpTests
 {
+    [Theory]
+    [InlineData("Please enter your organization name.", "Please enter your organization name.")]
+    [InlineData(null, "A response is required.")]
+    [InlineData("   ", "A response is required.")]
+    public async Task Custom_required_message_is_used_on_navigation_direct_jump_and_submission(string? configured, string expected)
+    {
+        var runtime = new TestHostFixture.FakeRuntime();
+        runtime.Graph.Categories.First().Elements.First(e => e.Question is not null).Question!.RequiredMessage = configured;
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await StartAsync(host);
+        var path = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}";
+        var csrf = await CsrfAsync(host.Client, path);
+        var blocked = await csrf.PostAsync(host.Client, path + "/Navigate",
+            new Dictionary<string, string> { ["currentCategoryIndex"] = "0", ["targetCategoryIndex"] = "1" });
+        (await blocked.Content.ReadAsStringAsync()).Should().Contain(expected);
+        var jump = await GetAsync(host.Client, path + "?category=4");
+        (await jump.Content.ReadAsStringAsync()).Should().Contain(expected);
+        csrf = await CsrfAsync(host.Client, path + "/Review");
+        var submit = await csrf.PostAsync(host.Client, path + "/Submit",
+            new Dictionary<string, string> { ["RequestId"] = Guid.NewGuid().ToString("D") });
+        (await submit.Content.ReadAsStringAsync()).Should().Contain(expected);
+        host.Runtime.SubmissionCount.Should().Be(0);
+    }
+
     [Fact]
     public async Task Five_category_journey_resumes_after_restart_and_submits()
     {

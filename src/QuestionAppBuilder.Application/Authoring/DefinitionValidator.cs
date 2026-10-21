@@ -46,6 +46,9 @@ public sealed class DefinitionValidator
                     errors.Add(new PublicationIssue("invalid-help-text", element.Id, "Help text exceeds the supported length."));
                 if (element.Question is not { } question) continue;
 
+                if (question.RequiredMessage?.Length > ValidationLimits.RequiredMessageMaxLength)
+                    errors.Add(new PublicationIssue("invalid-required-message", element.Id, "Required-answer messages must be 500 characters or fewer."));
+
                 var textType = question.AnswerType is AnswerType.Textbox or AnswerType.Textarea;
                 var numberType = question.AnswerType == AnswerType.Number;
                 var choiceType = question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes;

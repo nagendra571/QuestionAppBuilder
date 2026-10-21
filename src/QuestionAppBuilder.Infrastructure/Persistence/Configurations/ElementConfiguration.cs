@@ -11,6 +11,7 @@ public class ElementConfiguration : IEntityTypeConfiguration<Element>
     {
         builder.ToTable("Elements");
         builder.HasKey(e => e.Id);
+        builder.HasOne(e => e.ParentOption).WithMany().HasForeignKey(e => e.ParentOptionId).OnDelete(DeleteBehavior.ClientNoAction);
         builder.Property(e => e.Kind)
             .HasConversion<string>()
             .HasMaxLength(32)

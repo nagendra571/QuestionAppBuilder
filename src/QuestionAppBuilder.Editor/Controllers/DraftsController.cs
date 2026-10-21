@@ -102,7 +102,7 @@ public sealed class DraftsController : EditorControllerBase
             Categories = graph.Categories.Select(c => new DraftCategoryInput { Id = c.Id, Name = c.Name, SortOrder = c.SortOrder, VisibilityConditionId = c.VisibilityConditionId }).ToList(),
             Elements = graph.Categories.SelectMany(c => c.Elements).Select(e => new DraftElementInput { Id = e.Id, Label = e.Label, HelpText = e.HelpText, SortOrder = e.SortOrder, VisibilityConditionId = e.VisibilityConditionId }).ToList(),
             Questions = graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).Select(q => new DraftQuestionInput { Id = q.Id,
-                AnswerType = q.AnswerType, IsRequired = q.IsRequired, ScoringMode = q.ScoringMode, MaxLength = q.MaxLength, MinValue = q.MinValue,
+                AnswerType = q.AnswerType, IsRequired = q.IsRequired, RequiredMessage = q.RequiredMessage, ScoringMode = q.ScoringMode, MaxLength = q.MaxLength, MinValue = q.MinValue,
                 MaxValue = q.MaxValue, MinSelections = q.MinSelections, MaxSelections = q.MaxSelections }).ToList(),
             Options = graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).SelectMany(e => e.Question!.Options)
                 .Select(o => new DraftOptionInput { Id = o.Id, Label = o.Label, Value = o.Value, SortOrder = o.SortOrder }).ToList(),
@@ -128,7 +128,7 @@ public sealed class DraftsController : EditorControllerBase
         var conditions = graph.VisibilityConditions.ToDictionary(c => c.Id);
         foreach (var item in input.Categories) { var target = categories[item.Id]; target.Name = item.Name; target.SortOrder = item.SortOrder; target.VisibilityConditionId = item.VisibilityConditionId; }
         foreach (var item in input.Elements) { var target = elements[item.Id]; target.Label = item.Label; target.HelpText = item.HelpText; target.SortOrder = item.SortOrder; target.VisibilityConditionId = item.VisibilityConditionId; }
-        foreach (var item in input.Questions) { var target = questions[item.Id]; target.AnswerType = item.AnswerType; target.IsRequired = item.IsRequired; target.ScoringMode = item.ScoringMode;
+        foreach (var item in input.Questions) { var target = questions[item.Id]; target.AnswerType = item.AnswerType; target.IsRequired = item.IsRequired; target.RequiredMessage = string.IsNullOrWhiteSpace(item.RequiredMessage) ? null : item.RequiredMessage.Trim(); target.ScoringMode = item.ScoringMode;
             target.MaxLength = item.MaxLength; target.MinValue = item.MinValue; target.MaxValue = item.MaxValue; target.MinSelections = item.MinSelections; target.MaxSelections = item.MaxSelections; }
         foreach (var item in input.Options) { var target = options[item.Id]; target.Label = item.Label; target.Value = item.Value; target.SortOrder = item.SortOrder; }
         foreach (var item in input.Rules) { var target = rules[item.Id]; target.Family = item.Family; target.Points = item.Points; target.SortOrder = item.SortOrder;

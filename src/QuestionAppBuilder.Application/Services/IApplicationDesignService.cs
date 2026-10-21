@@ -23,6 +23,9 @@ public interface IApplicationDesignService
     Task MoveCategoryAsync(int categoryId, int targetIndex, CancellationToken ct = default, byte[]? expectedRevision = null);
     Task<Element> AddContentElementAsync(int categoryId, string label, string? helpText = null, CancellationToken ct = default, byte[]? expectedRevision = null);
     Task<Question> AddQuestionAsync(int categoryId, string label, AnswerType answerType, bool isRequired = true, string? helpText = null, CancellationToken ct = default, byte[]? expectedRevision = null);
+    Task<Element> AddFollowUpAsync(int optionId, string label, AnswerType answerType, bool isRequired = true, string? helpText = null,
+        CancellationToken ct = default, byte[]? expectedRevision = null)
+        => throw new NotSupportedException("This design service does not support follow-up questions.");
     Task<QuestionOption> AddOptionAsync(int questionId, string label, string value, CancellationToken ct = default, byte[]? expectedRevision = null);
     Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default, byte[]? expectedRevision = null);
     Task<Element> DuplicateElementAsync(int elementId, CancellationToken ct = default, byte[]? expectedRevision = null);

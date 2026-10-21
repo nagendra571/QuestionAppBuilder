@@ -15,6 +15,30 @@
     @if (!string.IsNullOrWhiteSpace(Model.HelpText)) { <p class="qab-help" id="@helpId">@Model.HelpText</p> }
     @switch (Model.AnswerType)
     {
+        case AnswerType.UploadDocument:
+            var isPreview = ViewData["DocumentUrl"] is null;
+            <div class="qab-document">
+                @if (!string.IsNullOrWhiteSpace(Model.Value?.Text))
+                {
+                    <div class="qab-document-current">
+                        @if (isPreview) { <span>@Model.Value.Text</span> }
+                        else
+                        {
+                            <a href="@(ViewData["DocumentUrl"])?questionId=@Model.Id">@Model.Value.Text</a>
+                            <button type="button" class="qab-document-remove" data-remove-document="@Model.Id" aria-label="Remove @Model.Value.Text">Remove document</button>
+                        }
+                    </div>
+                }
+                <label for="field-@Model.Id">@(Model.Value?.Text is null ? "Choose document" : "Replace document")</label>
+                <input class="qab-input" id="field-@Model.Id" type="file" accept=".pdf,.docx,.txt" data-upload-document="@Model.Id" disabled="@isPreview" aria-describedby="document-help-@Model.Id @describedBy" />
+                <p class="qab-help" id="document-help-@Model.Id">One PDF, Word (.docx), or plain-text (.txt) document, up to 10 MB. @(isPreview ? "Uploads are available when filling a published questionnaire." : "Your document saves as soon as you select it.")</p>
+                @if (isPreview)
+                {
+                    <label class="qab-choice"><input type="checkbox" name="Answers[@Model.Id].Text" value="Preview document.pdf" checked="@(!string.IsNullOrWhiteSpace(Model.Value?.Text))" /> Simulate an uploaded document</label>
+                }
+                <noscript><p>Enable JavaScript to upload documents.</p></noscript>
+            </div>
+            break;
         case AnswerType.Textbox:
             <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
             <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" type="text" value="@textValue" maxlength="@Model.MaxLength" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
@@ -35,10 +59,10 @@
             </select>
             break;
         case AnswerType.RadioGroup:
-            @foreach (var option in Model.Options) { <label class="qab-choice"><input type="radio" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" required="@(Model.Required ? "required" : null)" /> @option.Label</label> }
+            @foreach (var option in Model.Options) { <label class="qab-choice"><input id="field-@Model.Id-option-@option.Id" type="radio" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" required="@(Model.Required ? "required" : null)" /> @option.Label</label> }
             break;
         case AnswerType.Checkboxes:
-            @foreach (var option in Model.Options) { <label class="qab-choice"><input type="checkbox" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" /> @option.Label</label> }
+            @foreach (var option in Model.Options) { <label class="qab-choice"><input id="field-@Model.Id-option-@option.Id" type="checkbox" name="Answers[@Model.Id].SelectedOptionIds" value="@option.Id" checked="@(selectedValues?.Contains(option.Id) == true)" /> @option.Label</label> }
             break;
     }
     @if (error is not null) { <p class="qab-field-error" id="@errorId">@error</p> }

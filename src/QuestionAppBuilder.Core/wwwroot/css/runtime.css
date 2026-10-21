@@ -94,3 +94,14 @@ textarea.qab-input { min-height: 88px; resize: vertical; }
  .qab-action-bar { margin:12px 0 0; padding:12px 0; }
  .qab-category { gap:10px; }
 }
+
+.qab-follow-up { margin-inline-start: calc(var(--branch-depth) * 1rem); padding-inline-start: 1rem; border-inline-start: 1px solid #c7ced4; }
+.qab-follow-up-context { color: #565c65; font-size: .875rem; overflow-wrap: anywhere; margin-block: 1rem .25rem; }
+@media (max-width: 600px) { .qab-follow-up { margin-inline-start: calc(var(--branch-depth) * .25rem); padding-inline-start: .5rem; } }
+
+.qab-document { display: grid; gap: .5rem; min-width: 0; }
+.qab-document-current { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; padding: .75rem; background: #f4f5f6; border-radius: .4rem; }
+.qab-document-current a { overflow-wrap: anywhere; }
+.qab-runtime .qab-document-remove { color: #243344; font: inherit; font-size: .875rem; background: transparent; border: 1px solid #cbd0d5; border-radius: .3rem; padding: .35rem .6rem; cursor: pointer; }
+.qab-document input[type=file] { max-width: 100%; }
+.qab-document input::file-selector-button { font: inherit; margin-right: .75rem; padding: .45rem .65rem; border: 1px solid #cbd0d5; border-radius: .3rem; background: #f4f5f6; cursor: pointer; }

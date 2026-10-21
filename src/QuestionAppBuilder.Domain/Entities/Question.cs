@@ -8,6 +8,10 @@ public class Question
     public int ElementId { get; set; }
     public AnswerType AnswerType { get; set; }
     public bool IsRequired { get; set; }
+    public string? RequiredMessage { get; set; }
+
+    public string GetRequiredMessage() => string.IsNullOrWhiteSpace(RequiredMessage)
+        ? "A response is required." : RequiredMessage.Trim();
     public ScoringMode ScoringMode { get; set; } = ScoringMode.Additive;
     public int? MaxLength { get; set; }
     public decimal? MinValue { get; set; }

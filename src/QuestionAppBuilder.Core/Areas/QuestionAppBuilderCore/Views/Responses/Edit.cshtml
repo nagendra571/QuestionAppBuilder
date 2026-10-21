@@ -1,11 +1,12 @@
 @model ResponsePageModel
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
 <script src="~/_content/QuestionAppBuilder.Core/js/runtime.js" defer></script>
-<main class="qab-runtime" data-response-id="@Model.Response.Id" data-save-url="@ViewData["SaveUrl"]" data-save-delay="600">
+<main class="qab-runtime" data-response-id="@Model.Response.Id" data-edit-url="@ViewData["CanonicalEditUrl"]" data-save-url="@ViewData["SaveUrl"]" data-save-delay="600">
     <header class="qab-header">
         <p class="qab-eyebrow">@(Model.Questionnaire.Preview ? "Preview" : "Questionnaire")</p>
         <h1>@Model.Questionnaire.Title</h1>
         <p class="qab-save-status" role="status" aria-live="polite">@(Model.SaveStatus ?? "Your answers save as you go.")</p>
+        <p class="qab-visually-hidden" aria-live="polite" data-branch-status></p>
     </header>
     @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
     <form method="post" action="@ViewData["NavigateUrl"]" class="qab-form" data-runtime-form>

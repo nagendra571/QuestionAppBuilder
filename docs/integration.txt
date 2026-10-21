@@ -17,3 +17,11 @@ For host-sign-in applications, map the authenticated host's validated issuer and
 ## Package verification
 
 `scripts/Test-Packages.ps1 -FeedPath <empty-absolute-directory> -Version <unique-prerelease>` creates six packages, restores a host that has only PackageReferences to them from an isolated feed/cache, and checks compiled Editor/Reports views and Core/Editor/Reports assets under custom prefixes. It then runs the real-browser package consumer test. It does not publish packages. `scripts/Test-Release.ps1` adds SQL Server and full solution acceptance.
+
+## Document answers
+
+`AnswerType.UploadDocument` accepts one PDF, Word `.docx` (without VBA), or UTF-8 `.txt` file per question, up to 10 MiB. Required validation, Presence scoring, visibility rules, and option-linked follow-ups work as for other answers. Designer preview simulates a file without storing bytes.
+
+Apply the UploadDocuments EF migration before serving this type. The default `IResponseDocumentService` stores file bytes separately in SQL Server's ResponseDocuments table; normal answer queries load only filenames. Include these tables in database backup/retention policies. Runtime requires JavaScript for upload/remove and uses antiforgery-protected multipart requests. Allow multipart bodies of at least 11 MiB in any reverse proxy or host request-size configuration. Ordinary answer saves cannot set or clear document answers.
+
+Downloads enforce response ownership/email-grant scope, or the configured Reports policy for an applicable submitted answer. Files download as attachments with no-store and nosniff headers. Files from hidden branches are retained while editing and deleted atomically on submission. A submitted response cannot replace or delete its submitted files. CSV exports contain filenames. Extension/content format checks are not malware scanning; a host that requires scanning should provide its own `IResponseDocumentService` implementation. Never expose document bytes through public static-file paths.

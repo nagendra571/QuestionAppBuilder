@@ -53,10 +53,13 @@
     </span>
     @if (editable)
     {
-        <form method="post" asp-controller="Rules" asp-action="Remove" asp-route-id="@rule.Id" class="cv-remove">
-            <input type="hidden" name="applicationId" value="@applicationId" />
-            <input type="hidden" name="expectedRevision" value="@revisionValue" />
-            <button type="submit" class="cv-link">Remove</button>
-        </form>
+        <div class="cv-row-actions" role="group" aria-label="Actions for @familyLabel">
+            <a class="qab-icon-action" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="rule-@rule.Id" aria-label="Edit scoring rule: @familyLabel" title="Edit scoring rule: @familyLabel"><partial name="_ActionIcon" model='@("edit")' /></a>
+            <form method="post" asp-controller="Rules" asp-action="Remove" asp-route-id="@rule.Id" class="cv-remove">
+                <input type="hidden" name="applicationId" value="@applicationId" />
+                <input type="hidden" name="expectedRevision" value="@revisionValue" />
+                <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove scoring rule: @familyLabel" title="Remove scoring rule: @familyLabel"><partial name="_ActionIcon" model='@("remove")' /></button>
+            </form>
+        </div>
     }
 </div>

@@ -16,7 +16,7 @@ public sealed class ResponsiveSurfaceTests
         var page = await context.NewPageAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("designer");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
         var screenshotDirectory = Environment.GetEnvironmentVariable("QAB_UI_SCREENSHOTS");
@@ -24,6 +24,7 @@ public sealed class ResponsiveSurfaceTests
         {
             await page.SetViewportSizeAsync(width, 900);
             await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}").ToString());
+            await page.GetByRole(AriaRole.Link, new() { Name = "Scoring guide", Exact = true }).ClickAsync();
             var scoringTable = page.Locator("#scoring .aw-table");
             await scoringTable.WaitForAsync();
             (await page.Locator("#scoring table tbody tr").CountAsync()).Should().BeGreaterThan(0);
@@ -38,6 +39,7 @@ public sealed class ResponsiveSurfaceTests
                 regionWidths[1].Should().BeGreaterThan(regionWidths[0], "the table should remain usable in its own horizontal scroll region");
                 await scoringRegion.FocusAsync();
                 for (var step = 0; step < 12; step++) await page.Keyboard.PressAsync("ArrowRight");
+                await page.WaitForFunctionAsync("document.querySelector('#scoring .aw-table-scroll').scrollLeft > 0");
                 (await scoringRegion.EvaluateAsync<double>("e => e.scrollLeft")).Should().BeGreaterThan(0);
             }
             if (!string.IsNullOrWhiteSpace(screenshotDirectory) && width is 375 or 768)
@@ -89,14 +91,14 @@ public sealed class ResponsiveSurfaceTests
         var page = await context.NewPageAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("designer");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await CheckAsync(page, new Uri(host.BaseAddress, "/ConfigureApp/Applications").ToString(), "applications");
         await CheckAsync(page, new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}").ToString(), "editor");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign out" }).ClickAsync();
         await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
         await page.GetByLabel("Username").FillAsync("analyst");
-        await page.GetByLabel("Password").FillAsync("DevPassword!1");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await CheckAsync(page, new Uri(host.BaseAddress, "/Reports/").ToString(), "reports");
 

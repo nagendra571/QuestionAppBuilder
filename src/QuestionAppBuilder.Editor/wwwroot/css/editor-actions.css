@@ -1,0 +1,18 @@
+.cv-row-actions { display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; margin-left:auto; }
+.cv-row-actions form { display:flex; margin:0; padding:0; }
+.qab-panel-tools { display:flex; justify-content:flex-end; min-width:0; margin:0 0 4px; }
+.aw-disclosure > .qab-panel-tools { grid-column:1/-1; }
+.cv-availability form > .qab-panel-tools { flex-basis:100%; width:100%; }
+.qab-icon-action { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; flex:0 0 auto; width:32px; height:32px; padding:6px; border:1px solid transparent; border-radius:4px; background:transparent; color:#526470; text-decoration:none; cursor:pointer; vertical-align:middle; }
+.qab-icon-action svg { display:block; flex-shrink:0; }
+.qab-icon-action:hover { color:#172b45; border-color:#d5dfe5; background:#edf2f7; }
+.qab-icon-action:focus-visible { outline:3px solid #1463ff; outline-offset:2px; background:#edf2f7; color:#172b45; }
+.qab-icon-action.qab-icon-danger:is(:hover,:focus-visible) { color:#b50909; background:#fff1f0; border-color:#edc7c4; }
+.cv-row-actions .cv-opt-edit { margin-left:0; }
+.cv-row-actions .cv-el-remove { padding-top:0; }
+.aw-order .qab-icon-action { padding:6px; background:transparent; border-color:transparent; color:#526470; }
+.aw-order .qab-icon-action:hover { color:#172b45; border-color:#d5dfe5; background:#edf2f7; }
+@media(max-width:800px) {
+ .qab-icon-action { width:44px; height:44px; padding:12px; }
+ .cv-row-actions { gap:4px; }
+}

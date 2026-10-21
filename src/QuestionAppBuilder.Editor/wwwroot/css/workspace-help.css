@@ -1,0 +1,23 @@
+.aw-help-label-row { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; min-height:28px; }
+.aw-help-label-row > label { min-width:0; margin:0; }
+.aw-help-toggle { width:28px; height:28px; padding:4px; }
+.aw-help-toggle[aria-expanded="true"] { background:#edf2f7; color:#172b45; }
+.aw-field-hint { margin:2px 0 0; color:#526470; font-size:12px; font-weight:400; line-height:1.5; overflow-wrap:anywhere; }
+.aw-field-help { min-width:0; padding:12px; margin-top:6px; background:#f6f8fa; border:1px solid #d5dfe5; border-radius:4px; color:#172b45; font-size:13px; font-weight:400; line-height:1.55; overflow-wrap:anywhere; }
+.aw-field-help > header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.aw-field-help h4 { margin:0; font-size:14px; font-weight:700; }
+.aw-field-help p { margin:6px 0; }
+.aw-help-body { max-height:min(24rem,60vh); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right:6px; }
+.aw-help-body:focus-visible { outline:2px solid #1463ff; outline-offset:2px; }
+.aw-help-choices { margin:10px 0 0; }
+.aw-help-choices dt { margin-top:12px; font-weight:700; }
+.aw-help-choices dd { margin:3px 0 0; }
+.aw-help-example { color:#526470; font-size:12px; }
+.aw-help-selected { margin-left:6px; color:#526470; font-size:11px; font-weight:400; }
+.aw-element > .aw-order { align-self:start; margin-top:32px; }
+@media(max-width:800px) {
+ .aw-help-label-row { min-height:44px; }
+ .aw-element > .aw-order { margin-top:8px; }
+ .aw-help-toggle,.aw-help-dismiss { width:44px; height:44px; padding:12px; }
+ .aw-field-help { padding:10px; }
+}

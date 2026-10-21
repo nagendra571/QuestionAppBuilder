@@ -12,6 +12,62 @@ public class DefinitionEvaluatorTests
     private readonly IDefinitionEvaluator _evaluator = new DefinitionEvaluator();
 
     [Fact]
+    public void Invalid_follow_up_ownership_is_reported_without_revealing_or_recursing_forever()
+    {
+        var parent = Question(1, AnswerType.RadioGroup, options: [10]);
+        var child = Question(2, AnswerType.RadioGroup, options: [20]);
+        parent.ParentOptionId = 20;
+        child.ParentOptionId = 10;
+        var cyclic = _evaluator.Evaluate(Graph(Category(1, parent, child)),
+            Answers((1, new AnswerValue(null, null, [10])), (2, new AnswerValue(null, null, [20]))), true);
+        cyclic.DefinitionIssues.Select(i => i.Code).Should().Contain("invalid-follow-up");
+        cyclic.VisibleQuestionIds.Should().BeEmpty();
+        parent.ParentOptionId = null;
+        var crossCategory = _evaluator.Evaluate(Graph(Category(1, parent), Category(2, child)), new Dictionary<int, AnswerValue>(), false);
+        crossCategory.DefinitionIssues.Select(i => i.Code).Should().Contain("invalid-follow-up");
+    }
+
+    [Fact]
+    public void Follow_up_branches_require_selected_visible_ancestors_and_ignore_stale_answers()
+    {
+        var parent = Question(1, AnswerType.Checkboxes, options: [10, 11]);
+        var child = Question(2, AnswerType.RadioGroup, required: true, options: [20]);
+        child.ParentOptionId = 10;
+        var nested = Question(3, AnswerType.Textbox, required: true);
+        nested.ParentOptionId = 20;
+        child.VisibilityConditionId = 1;
+        child.Question!.Rules.Add(new ScoringRule { Id = 10, Family = RuleFamily.Presence, Points = 7 });
+        var graph = Graph(Category(1, parent, child, nested));
+        graph.VisibilityConditions = [Condition(1, Predicate(1, ConditionOperator.HasAnyOption, 11))];
+        var answers = Answers((1, new AnswerValue(null, null, [11])), (2, new AnswerValue(null, null, [20])));
+        var hidden = _evaluator.Evaluate(graph, answers, true);
+        hidden.VisibleQuestionIds.Should().BeEquivalentTo([1]);
+        hidden.AnswerIssues.Should().BeEmpty();
+        hidden.Score.Total.Should().Be(0);
+        answers = Answers((1, new AnswerValue(null, null, [10, 11])), (2, new AnswerValue(null, null, [20])));
+        var shown = _evaluator.Evaluate(graph, answers, true);
+        shown.VisibleQuestionIds.Should().BeEquivalentTo([1, 2, 3]);
+        shown.Score.Total.Should().Be(7);
+        shown.AnswerIssues.Should().ContainSingle().Which.QuestionId.Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData("Please enter your organization name.", "Please enter your organization name.")]
+    [InlineData(null, "A response is required.")]
+    [InlineData("   ", "A response is required.")]
+    public void Missing_required_answer_uses_question_message_or_default(string? configured, string expected)
+    {
+        var element = Question(1, AnswerType.Textbox, required: true);
+        element.Question!.RequiredMessage = configured;
+        var graph = Graph(Category(1, element));
+        var result = _evaluator.Evaluate(graph, new Dictionary<int, AnswerValue>(), true);
+        result.AnswerIssues.Should().ContainSingle().Which.Message.Should().Be(expected);
+        _evaluator.Evaluate(graph, new Dictionary<int, AnswerValue>(), false).AnswerIssues.Should().BeEmpty();
+        element.Question!.IsRequired = false;
+        _evaluator.Evaluate(graph, new Dictionary<int, AnswerValue>(), true).AnswerIssues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Hidden_source_values_do_not_reveal_dependents()
     {
         var graph = Graph(
