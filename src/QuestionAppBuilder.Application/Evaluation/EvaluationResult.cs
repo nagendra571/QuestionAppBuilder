@@ -7,4 +7,7 @@ public sealed record EvaluationResult(
     IReadOnlySet<int> VisibleQuestionIds,
     IReadOnlyList<DefinitionIssue> DefinitionIssues,
     IReadOnlyList<DefinitionIssue> AnswerIssues,
-    SubmissionScore Score);
+    SubmissionScore Score)
+{
+    public QuestionAppBuilder.Application.Composition.CompositionResult? Composition { get; init; }
+}

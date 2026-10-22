@@ -1,4 +1,5 @@
 @model DraftWorkspaceViewModel
+@using QuestionAppBuilder.Domain.Enums
 @if (!Model.Graph.Categories.SelectMany(c => c.Elements).Any(e => e.Question?.Rules.Count > 0))
 {
     <p>No scoring rules are defined. Add a question, then use Add options or scoring in the outline to create its rules.</p>
@@ -8,12 +9,15 @@ else
     <p>Rules are evaluated in their explicit order. Additive mode sums matches; first-match mode stops after the first matching rule. Range bounds can be inclusive or exclusive.</p>
     <div class="aw-table-scroll" role="region" aria-labelledby="scoring-heading scoring-table-heading" tabindex="0">
     <span class="aw-visually-hidden" id="scoring-table-heading">Scoring rules table</span>
-    <table class="aw-table"><thead><tr><th>Question</th><th>Rule</th><th>Order</th><th>Mode</th><th>Points</th><th>Bounds</th></tr></thead><tbody>
+    <table class="aw-table"><thead><tr><th>Question</th><th>Rule</th><th>Order</th><th>Mode</th><th>Award</th><th>Bounds</th></tr></thead><tbody>
     @foreach (var element in Model.Graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null))
     {
         foreach (var rule in element.Question!.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
         {
-            <tr><td>@element.Label</td><td>@rule.Family</td><td>@rule.SortOrder</td><td>@element.Question.ScoringMode</td><td>@rule.Points</td><td>@(rule.MinInclusive ? "[" : "(")@(rule.MinValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "−∞"), @(rule.MaxValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "∞")@(rule.MaxInclusive ? "]" : ")")</td></tr>
+            var awardLabel = rule.AwardMethod == AwardMethod.PointsPerUnit
+                ? $"{rule.PointsPerUnit} per unit{(rule.MaximumPoints is int cap ? $" (max {cap})" : string.Empty)}"
+                : $"{rule.Points} fixed";
+            <tr><td>@element.Label</td><td>@rule.Family</td><td>@rule.SortOrder</td><td>@element.Question.ScoringMode</td><td>@awardLabel</td><td>@(rule.MinInclusive ? "[" : "(")@(rule.MinValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "−∞"), @(rule.MaxValue?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "∞")@(rule.MaxInclusive ? "]" : ")")</td></tr>
         }
     }
     </tbody></table>

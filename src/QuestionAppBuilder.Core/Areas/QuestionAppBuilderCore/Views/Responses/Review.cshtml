@@ -8,6 +8,7 @@
         <p class="qab-error-summary" role="status">Submissions are currently closed. Your saved response remains available, and you can submit when submissions reopen.</p>
     }
     @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
+    @if (!Model.Questionnaire.HideReviewSummary && !string.IsNullOrWhiteSpace(Model.Questionnaire.ReviewSummary)) { <p class="qab-review-summary">@Model.Questionnaire.ReviewSummary</p> }
     @foreach (var category in Model.Questionnaire.Categories)
     {
         <section class="qab-review-category"><h2>@category.Name</h2>
@@ -20,10 +21,12 @@
                 {
                     shownValue = string.Join(", ", question.Options.Where(option => answer?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label));
                 }
+                if (question.AnswerType == QuestionAppBuilder.Domain.Enums.AnswerType.Date) shownValue = question.DateDisplayValue;
                 if (string.IsNullOrWhiteSpace(shownValue)) shownValue = "Not answered";
                 @if (element.FollowUpContext is not null) { <p class="qab-follow-up-context">Follow-up: @element.FollowUpContext</p> }
                 <dl><dt id="question-@question.Id">@question.Label</dt><dd>@if (question.AnswerType == QuestionAppBuilder.Domain.Enums.AnswerType.UploadDocument && answer?.Text is not null) { <a href="@(ViewData["DocumentUrl"])?questionId=@question.Id">@shownValue</a> } else { @shownValue }</dd></dl>
             }
+            @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_CalculatedValues.cshtml", category.CalculatedValues)
             <a class="qab-button qab-button-secondary" href="@($"{ViewData["EditCategoryUrlPrefix"]}{category.Index}")">Edit @category.Name</a>
         </section>
     }

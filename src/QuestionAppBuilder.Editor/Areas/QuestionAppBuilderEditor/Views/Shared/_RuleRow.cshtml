@@ -49,7 +49,16 @@
         {
             <text> &middot; @boundsLabel</text>
         }
-        <text> &rarr; </text><b>+@rule.Points points</b>
+        <text> &rarr; </text>
+        @if (rule.AwardMethod == AwardMethod.PointsPerUnit)
+        {
+            <b>+@rule.PointsPerUnit points per unit</b>
+            @if (rule.MaximumPoints is int cap) { <text> (maximum @cap)</text> }
+        }
+        else
+        {
+            <b>+@rule.Points points</b>
+        }
     </span>
     @if (editable)
     {

@@ -2,6 +2,7 @@
 <main class="qab-runtime qab-review qab-runtime-preview">
     <p class="qab-eyebrow">Preview review</p>
     <h2>Review your answers</h2>
+    @if (!Model.Questionnaire.HideReviewSummary && !string.IsNullOrWhiteSpace(Model.Questionnaire.ReviewSummary)) { <p class="qab-review-summary">@Model.Questionnaire.ReviewSummary</p> }
     @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0)
     {
         <section class="qab-error-summary" role="alert"><h3>@(Model.SummaryMessage ?? "Complete the highlighted answers before submitting.")</h3>
@@ -20,6 +21,7 @@
                 {
                     shown = string.Join(", ", question.Options.Where(option => value?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label));
                 }
+                if (question.AnswerType == AnswerType.Date) shown = question.DateDisplayValue;
                 if (string.IsNullOrWhiteSpace(shown)) shown = "Not answered";
                 <dl><dt>@question.Label</dt><dd>@shown</dd></dl>
             }

@@ -1,15 +1,22 @@
+using System.Globalization;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Graphs;
+using QuestionAppBuilder.Domain;
 
 namespace QuestionAppBuilder.Application.Evaluation;
 
 public sealed class DefinitionEvaluator : IDefinitionEvaluator
 {
     private readonly IScoringEngine _scoring;
+    private readonly TimeProvider _timeProvider;
 
-    public DefinitionEvaluator(IScoringEngine? scoring = null) => _scoring = scoring ?? new ScoringEngine();
+    public DefinitionEvaluator(IScoringEngine? scoring = null, TimeProvider? timeProvider = null)
+    {
+        _scoring = scoring ?? new ScoringEngine();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public EvaluationResult Evaluate(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers, bool requireComplete)
     {
@@ -62,7 +69,21 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         }
 
         var score = _scoring.Score(graph, answers, visibleQuestions);
-        return new EvaluationResult(visibleCategories, visibleQuestions, definitionIssues, answerIssues, score);
+        var composition = QuestionAppBuilder.Application.Composition.CompositionEngine.Evaluate(graph, answers, visibleQuestions, visibleCategories);
+        var evaluatedAtUtc = _timeProvider.GetUtcNow();
+        var dynamicText = QuestionAppBuilder.Application.Composition.DynamicTextEngine.Evaluate(
+            graph, answers, visibleQuestions, visibleCategories, composition, evaluatedAtUtc);
+        composition = composition with
+        {
+            DynamicText = dynamicText,
+            DefinitionErrors = composition.DefinitionErrors.Concat(dynamicText.DefinitionErrors).Distinct().ToArray()
+        };
+        foreach (var issue in composition.AnswerErrors)
+            answerIssues.Add(new DefinitionIssue("combined-validation", FindElementId(orderedCategories, issue.QuestionId), issue.Message, issue.QuestionId));
+        return new EvaluationResult(visibleCategories, visibleQuestions,
+            definitionIssues.Concat(composition.DefinitionErrors.Where(m => !dynamicText.DefinitionErrors.Contains(m))
+                .Select(m => new DefinitionIssue("invalid-composition", null, m)))
+                .Concat(dynamicText.DefinitionErrors.Select(m => new DefinitionIssue("invalid-dynamic-text", null, m))).ToArray(), answerIssues, score) { Composition = composition };
     }
 
     private static IReadOnlyList<DefinitionIssue> ValidateDefinition(
@@ -106,9 +127,17 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
                 issues.Add(new DefinitionIssue("invalid-scoring-mode", element.Id, "The scoring mode is not supported."));
             foreach (var rule in question.Rules)
             {
-                if (rule.Points is < 0 or > 1_000_000)
-                    issues.Add(new DefinitionIssue("invalid-points", element.Id, "Rule points must be between 0 and 1,000,000."));
-                else maximumScore += rule.Points;
+                if (!Enum.IsDefined(rule.AwardMethod))
+                    issues.Add(new DefinitionIssue("invalid-award-method", element.Id, "The scoring award method is not supported."));
+                else if (rule.AwardMethod == AwardMethod.Fixed)
+                {
+                    if (rule.Points is < 0 or > ScoringAward.MaximumRuleAward)
+                        issues.Add(new DefinitionIssue("invalid-points", element.Id, "Rule points must be between 0 and 1,000,000."));
+                    else maximumScore += rule.Points;
+                }
+                else if (ScoringAward.TryGetMaximumAward(question, rule, out var maximumAward)) maximumScore += maximumAward;
+                else issues.Add(new DefinitionIssue("invalid-points-per-unit", element.Id,
+                    "Points per unit requires a nonnegative whole-number numeric question and a safe rate, answer maximum, or award cap."));
                 if (!Enum.IsDefined(rule.Family))
                     issues.Add(new DefinitionIssue("invalid-rule-family", element.Id, "The scoring rule family is not supported."));
                 if (rule.Family == RuleFamily.Selection && (!Enum.IsDefined(rule.MembershipOperator ?? (MembershipOperator)(-1)) || rule.Options.Count == 0))
@@ -209,8 +238,10 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
                 && (answer.Text is null || answer.Text.Length <= 4000 && (question.MaxLength is null || answer.Text.Length <= question.MaxLength)),
             AnswerType.UploadDocument => answer.Number is null && answer.SelectedOptionIds is null
                 && (answer.Text is null || answer.Text.Length <= 255),
+            AnswerType.Date => answer.Number is null && answer.SelectedOptionIds is null
+                && (string.IsNullOrWhiteSpace(answer.Text) || DateOnly.TryParseExact(answer.Text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)),
             AnswerType.Number => answer.Text is null && answer.SelectedOptionIds is null
-                && (answer.Number is null || (question.MinValue is null || answer.Number >= question.MinValue) && (question.MaxValue is null || answer.Number <= question.MaxValue)),
+                && (answer.Number is null || (!question.WholeNumbersOnly || decimal.Truncate(answer.Number.Value) == answer.Number) && (question.MinValue is null || answer.Number >= question.MinValue) && (question.MaxValue is null || answer.Number <= question.MaxValue)),
             AnswerType.Dropdown or AnswerType.RadioGroup => answer.Text is null && answer.Number is null
                 && ValidOptions(question, answer.SelectedOptionIds, 1),
             AnswerType.Checkboxes => answer.Text is null && answer.Number is null

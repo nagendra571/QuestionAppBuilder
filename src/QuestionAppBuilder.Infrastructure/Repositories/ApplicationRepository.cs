@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
@@ -36,10 +37,9 @@ public sealed class ApplicationRepository : IApplicationRepository
 
     public async Task<ApplicationVersionGraph?> GetDraftGraphAsync(int applicationId, CancellationToken ct = default)
     {
-        var version = await GraphsWithChildren()
+        var version = await LoadGraphAsync(GraphsWithChildren()
             .Where(v => v.ApplicationId == applicationId && v.Status == VersionStatus.Draft)
-            .OrderByDescending(v => v.VersionNumber)
-            .FirstOrDefaultAsync(ct);
+            .OrderByDescending(v => v.VersionNumber), ct);
 
         return version is null
             ? null
@@ -59,7 +59,7 @@ public sealed class ApplicationRepository : IApplicationRepository
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
         };
 
-        var version = await matching.FirstOrDefaultAsync(ct);
+        var version = await LoadGraphAsync(matching, ct);
 
         return version is null
             ? null
@@ -68,9 +68,9 @@ public sealed class ApplicationRepository : IApplicationRepository
 
     public async Task<ApplicationVersionGraph> GetVersionGraphAsync(int applicationVersionId, CancellationToken ct = default)
     {
-        var version = await GraphsWithChildren()
+        var version = await LoadGraphAsync(GraphsWithChildren()
             .AsNoTracking()
-            .FirstOrDefaultAsync(v => v.Id == applicationVersionId, ct);
+            .Where(v => v.Id == applicationVersionId), ct);
 
         if (version is null)
         {
@@ -102,5 +102,15 @@ public sealed class ApplicationRepository : IApplicationRepository
             .Include(v => v.VisibilityConditions)
                 .ThenInclude(condition => condition.Predicates)
                     .ThenInclude(predicate => predicate.Options);
+
+    private async Task<ApplicationVersion?> LoadGraphAsync(IQueryable<ApplicationVersion> query, CancellationToken ct)
+    {
+        await using var transaction = _context.Database.IsRelational() && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
+            : null;
+        var version = await query.AsSplitQuery().FirstOrDefaultAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return version;
+    }
 
 }

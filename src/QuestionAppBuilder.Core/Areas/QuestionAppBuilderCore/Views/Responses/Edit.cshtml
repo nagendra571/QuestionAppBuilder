@@ -8,7 +8,7 @@
         <p class="qab-save-status" role="status" aria-live="polite">@(Model.SaveStatus ?? "Your answers save as you go.")</p>
         <p class="qab-visually-hidden" aria-live="polite" data-branch-status></p>
     </header>
-    @if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
+    <p class="qab-visually-hidden" aria-live="polite" aria-atomic="true" data-live-validation-status></p>
     <form method="post" action="@ViewData["NavigateUrl"]" class="qab-form" data-runtime-form>
         @Html.AntiForgeryToken()
         <input type="hidden" name="ExpectedRevision" value="@Model.ExpectedRevision" />

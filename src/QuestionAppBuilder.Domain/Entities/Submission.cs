@@ -2,6 +2,7 @@ namespace QuestionAppBuilder.Domain.Entities;
 
 public class Submission
 {
+    public string? CompositionSnapshotJson { get; set; }
     public int Id { get; set; }
     public int ApplicationId { get; set; }
     public int ApplicationVersionId { get; set; }

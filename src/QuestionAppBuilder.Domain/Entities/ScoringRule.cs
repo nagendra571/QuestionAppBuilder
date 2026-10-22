@@ -8,6 +8,9 @@ public class ScoringRule
     public int QuestionId { get; set; }
     public RuleFamily Family { get; set; }
     public int Points { get; set; }
+    public AwardMethod AwardMethod { get; set; } = AwardMethod.Fixed;
+    public int PointsPerUnit { get; set; }
+    public int? MaximumPoints { get; set; }
     public int SortOrder { get; set; }
     public Guid LogicalKey { get; set; } = Guid.NewGuid();
     public bool MinInclusive { get; set; } = true;

@@ -165,6 +165,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         var removedElements = editable.Target.Elements.Select(e => e.Id).ToHashSet();
         var removedQuestions = editable.Target.Elements.Where(e => e.Question is not null).Select(e => e.Question!.Id).ToHashSet();
         var removedOptions = editable.Target.Elements.Where(e => e.Question is not null).SelectMany(e => e.Question!.Options).Select(o => o.Id).ToHashSet();
+        var removedQuestionKeys = editable.Target.Elements.Where(e => e.Question is not null).Select(e => e.LogicalKey).ToHashSet();
+        QuestionAppBuilder.Application.Composition.CompositionCloner.RemoveCategory(editable.Graph, editable.Target.LogicalKey, removedQuestionKeys);
         PruneVisibilityConditions(editable.Graph, removedQuestions, removedOptions, removedElements, new HashSet<int> { editable.Target.Id });
         editable.Graph.Version.Categories.Remove(editable.Target);
         await _repository.SaveChangesAsync(ct);
@@ -183,6 +185,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             LogicalKey = Guid.NewGuid(),
         };
         duplicate.Elements.AddRange(CloneBranch(FollowUpStructure.Ordered(source.Elements), editable.Graph));
+        QuestionAppBuilder.Application.Composition.CompositionCloner.CopyCategory(editable.Graph, source, duplicate);
         var categories = editable.Graph.Version.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).ToList();
         var index = categories.IndexOf(source);
         categories.Insert(index + 1, duplicate);
@@ -299,7 +302,13 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         return child;
     }
 
-    public async Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default, byte[]? expectedRevision = null)
+    public Task<ScoringRule> AddRuleAsync(int questionId, RuleFamily family, int points, MembershipOperator? membershipOperator = null, IReadOnlyCollection<int>? optionIds = null, decimal? minValue = null, decimal? maxValue = null, CancellationToken ct = default, byte[]? expectedRevision = null)
+        => AddRuleWithAwardMethodAsync(questionId, family, points, membershipOperator, optionIds, minValue, maxValue,
+            AwardMethod.Fixed, 0, null, ct, expectedRevision);
+
+    public async Task<ScoringRule> AddRuleWithAwardMethodAsync(int questionId, RuleFamily family, int points,
+        MembershipOperator? membershipOperator, IReadOnlyCollection<int>? optionIds, decimal? minValue, decimal? maxValue,
+        AwardMethod awardMethod, int pointsPerUnit, int? maximumPoints, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Question, questionId, g => FindQuestion(g, questionId), ct, expectedRevision);
 
@@ -312,11 +321,20 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             QuestionId = editable.Target.Id,
             Family = family,
             Points = points,
+            AwardMethod = awardMethod,
+            PointsPerUnit = pointsPerUnit,
+            MaximumPoints = maximumPoints,
             SortOrder = NextSortOrder(editable.Target.Rules.Select(existing => existing.SortOrder)),
             MembershipOperator = membershipOperator,
             MinValue = minValue,
             MaxValue = maxValue
         };
+
+        if (!Enum.IsDefined(awardMethod))
+            throw new DefinitionValidationException("Select a supported award method.");
+        if (awardMethod == AwardMethod.PointsPerUnit
+            && !ScoringAward.TryGetMaximumAward(editable.Target, rule, out _))
+            throw new DefinitionValidationException("Points per unit requires a nonnegative whole-number numeric question and a safe rate, answer maximum, or award cap.");
 
         switch (family)
         {
@@ -352,7 +370,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
 
                 break;
             case RuleFamily.NumericRange:
-                if (minValue is null && maxValue is null)
+                if (minValue is null && maxValue is null && awardMethod == AwardMethod.Fixed)
                 {
                     throw new DefinitionValidationException("A NumericRange rule needs a minimum and/or a maximum value.");
                 }
@@ -378,6 +396,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         var ordered = FollowUpStructure.Ordered(category.Elements).ToList();
         var branch = FollowUpStructure.Branch(editable.Target, category.Elements);
         var copies = CloneBranch(branch, editable.Graph);
+        QuestionAppBuilder.Application.Composition.CompositionCloner.CopyElements(editable.Graph, branch, copies);
         var duplicate = copies[0];
         if (editable.Target.ParentOptionId is int parentId) duplicate.ParentOption = FindOption(editable.Graph, parentId);
         var index = ordered.IndexOf(branch.Last());
@@ -801,6 +820,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     private static void RemoveBranch(ApplicationVersionGraph graph, Category category, IReadOnlyCollection<Element> removed)
     {
         var questions = removed.Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
+        QuestionAppBuilder.Application.Composition.CompositionCloner.RemoveElements(graph,
+            removed.Select(e => e.LogicalKey).ToHashSet());
         PruneVisibilityConditions(graph, questions.Select(q => q.Id).ToHashSet(), questions.SelectMany(q => q.Options).Select(o => o.Id).ToHashSet(),
             removed.Select(e => e.Id).ToHashSet(), new HashSet<int>());
         foreach (var element in removed) { element.ParentOption = null; element.ParentOptionId = null; category.Elements.Remove(element); }
@@ -811,7 +832,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         var clone = new Element { Kind = source.Kind, Label = source.Label + " copy", HelpText = source.HelpText, SortOrder = sortOrder, LogicalKey = Guid.NewGuid() };
         if (source.Question is not { } question) return clone;
-        var newQuestion = new Question { AnswerType = question.AnswerType, IsRequired = question.IsRequired, RequiredMessage = question.RequiredMessage, ScoringMode = question.ScoringMode,
+        var newQuestion = new Question { AnswerType = question.AnswerType, IsRequired = question.IsRequired, RequiredMessage = question.RequiredMessage, WholeNumbersOnly = question.WholeNumbersOnly, ScoringMode = question.ScoringMode,
             MaxLength = question.MaxLength, MinValue = question.MinValue, MaxValue = question.MaxValue, MinSelections = question.MinSelections, MaxSelections = question.MaxSelections };
         var optionMap = new Dictionary<int, QuestionOption>();
         foreach (var option in question.Options.OrderBy(o => o.SortOrder).ThenBy(o => o.Id))
@@ -822,7 +843,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         }
         foreach (var rule in question.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
         {
-            var ruleClone = new ScoringRule { Family = rule.Family, Points = rule.Points, SortOrder = rule.SortOrder,
+                    var ruleClone = new ScoringRule { Family = rule.Family, Points = rule.Points, AwardMethod = rule.AwardMethod,
+                        PointsPerUnit = rule.PointsPerUnit, MaximumPoints = rule.MaximumPoints, SortOrder = rule.SortOrder,
                 MinInclusive = rule.MinInclusive, MaxInclusive = rule.MaxInclusive, MembershipOperator = rule.MembershipOperator,
                 MinValue = rule.MinValue, MaxValue = rule.MaxValue, LogicalKey = Guid.NewGuid() };
             foreach (var optionLink in rule.Options)

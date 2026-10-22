@@ -49,6 +49,54 @@
         </tbody>
     </table>
 
+    @if (Model.CompositionSnapshotJson is not null)
+    {
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<QuestionAppBuilder.Application.Composition.CompositionResult>(Model.CompositionSnapshotJson);
+        if (snapshot?.Values.Count > 0)
+        {
+            <h2>Calculated results</h2><dl class="qab-report-metadata">
+            @foreach (var value in snapshot.Values) { <dt>@value.Name</dt><dd>@(value.Value?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) ?? "Unavailable")@(value.Percentage && value.Value is not null ? "%" : "")</dd> }
+            </dl>
+        }
+        if (snapshot?.Awards.Count > 0)
+        {
+            <h2>Combined scoring rules</h2><p>These awards contribute to category and total scores in addition to individual question scores.</p>
+            <table class="qab-report-table"><caption>Stored awards from combined rules.</caption><thead><tr><th scope="col">Rule</th><th scope="col">Points</th></tr></thead><tbody>
+            @foreach (var award in snapshot.Awards) { <tr><th scope="row">@award.Name</th><td>@award.Points</td></tr> }
+            </tbody></table>
+        }
+        if (snapshot?.DynamicText is { } dynamicText)
+        {
+            <h2>Dynamic text snapshot</h2>
+            <p>Reference date: @dynamicText.ReferenceDate (timezone: @dynamicText.TimeZoneId; evaluated @dynamicText.EvaluatedAtUtc.ToString("O"))</p>
+            @if (dynamicText.Values.Count > 0)
+            {
+                <dl class="qab-report-metadata">
+                @foreach (var variable in dynamicText.Values)
+                {
+                    var value = variable.Value;
+                    var display = value.State != QuestionAppBuilder.Domain.Composition.DynamicValueState.Present
+                        ? value.State.ToString()
+                        : value.Kind switch
+                        {
+                            QuestionAppBuilder.Domain.Composition.DynamicValueKind.Text => value.Text ?? string.Empty,
+                            QuestionAppBuilder.Domain.Composition.DynamicValueKind.Number => value.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                            QuestionAppBuilder.Domain.Composition.DynamicValueKind.Date => value.Date?.ToString("yyyy-MM-dd") ?? string.Empty,
+                            QuestionAppBuilder.Domain.Composition.DynamicValueKind.TextList => string.Join("; ", value.Items ?? Array.Empty<string>()),
+                            _ => string.Empty
+                        };
+                    <dt>@variable.Name</dt><dd>@display (@value.State)</dd>
+                }
+                </dl>
+            }
+            @foreach (var resolved in dynamicText.Texts.Where(text => !text.IsHidden && text.OwnerKey == Guid.Empty
+                && text.Slot is QuestionAppBuilder.Domain.Composition.DynamicTextSlot.ReviewSummary or QuestionAppBuilder.Domain.Composition.DynamicTextSlot.ConfirmationText))
+            {
+                <p><strong>@resolved.Slot:</strong> @resolved.Text</p>
+            }
+        }
+    }
+
     <h2>Stored scoring trace</h2>
     @if (Model.RuleTraces.Count == 0)
     {

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
@@ -125,6 +126,122 @@ public class ScoringEngineTests
 
         _engine.Score(graph, Answers((1, new AnswerValue(null, 7m, null))))
             .Questions.Single(q => q.QuestionId == 1).Points.Should().Be(3);
+    }
+
+    [Fact]
+    public void Points_per_unit_calculates_integer_answers_and_applies_the_cap()
+    {
+        var rule = new ScoringRule
+        {
+            Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 3, MaximumPoints = 18, MinValue = 0, MaxValue = 100
+        };
+        var element = QuestionElement(1, AnswerType.Number, rule);
+        element.Question!.WholeNumbersOnly = true;
+        element.Question.MinValue = 0;
+        element.Question.MaxValue = 100;
+        var graph = BuildGraph(CategoryWith(1, element));
+
+        var belowCap = _engine.Score(graph, Answers((1, new AnswerValue(null, 5m, null))));
+        var atCap = _engine.Score(graph, Answers((1, new AnswerValue(null, 9m, null))));
+
+        belowCap.Questions.Single().Points.Should().Be(15);
+        belowCap.Questions.Single().Rules.Single().Points.Should().Be(15);
+        atCap.Questions.Single().Points.Should().Be(18);
+        atCap.EngineVersion.Should().Be("2.1");
+    }
+
+    [Fact]
+    public void Points_per_unit_does_not_score_blank_invalid_or_hidden_answers()
+    {
+        var rule = new ScoringRule
+        {
+            Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 2, MaximumPoints = 50, MinValue = 0, MaxValue = 100
+        };
+        var element = QuestionElement(1, AnswerType.Number, rule);
+        element.Question!.WholeNumbersOnly = true;
+        element.Question.MinValue = 0;
+        element.Question.MaxValue = 100;
+        var graph = BuildGraph(CategoryWith(1, element));
+
+        _engine.Score(graph, Answers((1, new AnswerValue(null, null, null)))).Questions.Single().Points.Should().Be(0);
+        _engine.Score(graph, Answers((1, new AnswerValue(null, -1m, null)))).Questions.Single().Points.Should().Be(0);
+        _engine.Score(graph, Answers((1, new AnswerValue(null, 1.5m, null)))).Questions.Single().Points.Should().Be(0);
+        _engine.Score(graph, Answers((1, new AnswerValue("unexpected text", 10m, null)))).Questions.Single().Points.Should().Be(0);
+        _engine.Score(graph, Answers((1, new AnswerValue(null, 10m, [999])))).Questions.Single().Points.Should().Be(0);
+        var hidden = _engine.Score(graph, Answers((1, new AnswerValue(null, 10m, null))), new HashSet<int>());
+        hidden.Questions.Single().IsApplicable.Should().BeFalse();
+        hidden.Questions.Single().Points.Should().Be(0);
+        hidden.Questions.Single().Rules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Points_per_unit_respects_additive_and_first_match_modes()
+    {
+        var first = new ScoringRule
+        {
+            Id = 1, SortOrder = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 2, MaximumPoints = 100, MinValue = 0, MaxValue = 10
+        };
+        var second = new ScoringRule
+        {
+            Id = 2, SortOrder = 2, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 3, MaximumPoints = 100, MinValue = 0, MaxValue = 20
+        };
+        var additiveElement = QuestionElement(1, AnswerType.Number, first, second);
+        additiveElement.Question!.WholeNumbersOnly = true;
+        additiveElement.Question.MinValue = 0;
+        additiveElement.Question.MaxValue = 20;
+        var additive = _engine.Score(BuildGraph(CategoryWith(1, additiveElement)), Answers((1, new AnswerValue(null, 5m, null))));
+        additive.Questions.Single().Points.Should().Be(25);
+        additive.Questions.Single().Rules.Select(r => r.Contributes).Should().Equal(true, true);
+
+        var firstMatchElement = QuestionElementWithOptions(1, AnswerType.Number, [], ScoringMode.FirstMatch, first, second);
+        firstMatchElement.Question!.WholeNumbersOnly = true;
+        firstMatchElement.Question.MinValue = 0;
+        firstMatchElement.Question.MaxValue = 20;
+        var firstMatch = _engine.Score(BuildGraph(CategoryWith(1, firstMatchElement)), Answers((1, new AnswerValue(null, 5m, null))));
+        firstMatch.Questions.Single().Points.Should().Be(10);
+        firstMatch.Questions.Single().Rules.Select(r => r.Contributes).Should().Equal(true, false);
+        firstMatch.Questions.Single().Rules.Select(r => r.Points).Should().Equal(10, 0);
+    }
+
+    [Fact]
+    public void Capped_large_answers_are_multiplication_safe()
+    {
+        var rule = new ScoringRule
+        {
+            Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 1_000_000, MaximumPoints = 500, MinValue = 0
+        };
+        var element = QuestionElement(1, AnswerType.Number, rule);
+        element.Question!.WholeNumbersOnly = true;
+        element.Question.MinValue = 0;
+        element.Question.MaxValue = decimal.MaxValue;
+        var score = _engine.Score(BuildGraph(CategoryWith(1, element)), Answers((1, new AnswerValue(null, decimal.MaxValue, null))));
+
+        score.Total.Should().Be(500);
+        score.Questions.Single().Rules.Single().Points.Should().Be(500);
+    }
+
+    [Fact]
+    public void Zero_rate_with_a_cap_has_a_zero_maximum_and_scores_zero()
+    {
+        var rule = new ScoringRule
+        {
+            Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 0, MaximumPoints = 500, MinValue = 0
+        };
+        var element = QuestionElement(1, AnswerType.Number, rule);
+        element.Question!.WholeNumbersOnly = true;
+        element.Question.MinValue = 0;
+        var graph = BuildGraph(CategoryWith(1, element));
+        var result = new DefinitionEvaluator().Evaluate(graph, Answers((1, new AnswerValue(null, 10m, null))), true);
+
+        result.DefinitionIssues.Should().BeEmpty();
+        result.Score.Total.Should().Be(0);
+        result.Score.EngineVersion.Should().Be("2.1");
     }
 
     [Fact]

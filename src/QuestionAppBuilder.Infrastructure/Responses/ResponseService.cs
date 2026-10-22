@@ -240,9 +240,13 @@ public sealed class ResponseService : IResponseService
             {
                 AnswerType.Textbox or AnswerType.Textarea => answer.Number is not null || selected.Count != 0
                     || answer.Text?.Length > ValidationLimits.AnswerTextMaxLength || answer.Text is not null && question.MaxLength is int maxText && answer.Text.Length > maxText,
+                AnswerType.Date => answer.Number is not null || selected.Count != 0
+                    || !string.IsNullOrWhiteSpace(answer.Text) && (answer.Text.Length != 10
+                        || !DateOnly.TryParseExact(answer.Text, "yyyy-MM-dd",
+                            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)),
                 AnswerType.UploadDocument => answer.Number is not null || selected.Count != 0 || answer.Text?.Length > 255,
                 AnswerType.Number => answer.Text is not null || selected.Count != 0 || answer.Number is decimal number
-                    && (number < MaximumDecimal18Scale4 * -1 || number > MaximumDecimal18Scale4 || decimal.Round(number, 4) != number
+                    && (question.WholeNumbersOnly && decimal.Truncate(number) != number || number < MaximumDecimal18Scale4 * -1 || number > MaximumDecimal18Scale4 || decimal.Round(number, 4) != number
                         || question.MinValue is decimal min && number < min || question.MaxValue is decimal max && number > max),
                 AnswerType.Dropdown or AnswerType.RadioGroup => answer.Text is not null || answer.Number is not null || selected.Count > 1
                     || selected.Distinct().Count() != selected.Count || selected.Any(id => !allowed.Contains(id)),

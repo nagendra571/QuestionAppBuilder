@@ -209,6 +209,9 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.Property<int>("ApplicationId")
                         .HasColumnType("int");
 
+                    b.Property<string>("CompositionJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ConfirmationText")
                         .IsRequired()
                         .HasMaxLength(4000)
@@ -416,6 +419,9 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)")
                         .HasDefaultValue("Additive");
+
+                    b.Property<bool>("WholeNumbersOnly")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -641,6 +647,13 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AwardMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Fixed");
+
                     b.Property<string>("Family")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -660,6 +673,9 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<int?>("MaximumPoints")
+                        .HasColumnType("int");
+
                     b.Property<string>("MembershipOperator")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
@@ -675,6 +691,11 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Points")
                         .HasColumnType("int");
+
+                    b.Property<int>("PointsPerUnit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<int>("QuestionId")
                         .HasColumnType("int");
@@ -727,6 +748,9 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("ApplicationVersionId")
                         .HasColumnType("int");
+
+                    b.Property<string>("CompositionSnapshotJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("EngineVersion")
                         .IsRequired()

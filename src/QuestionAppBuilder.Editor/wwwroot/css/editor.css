@@ -29,6 +29,10 @@
 .aw-wide { grid-column:1/-1; }
 .aw-field { display:flex; flex-direction:column; gap:.35rem; margin:.25rem 0; color:var(--aw-ink); font-size:.8125rem; font-weight:600; }
 .aw-field input,.aw-field select,.aw-field textarea { width:100%; min-width:0; border:1px solid #8a9aa3; border-radius:.4rem; padding:.55rem .65rem; color:#172c38; background:#fff; font:inherit; font-weight:400; }
+.aw-award-details { display:grid; grid-column:1/-1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.25rem .85rem; margin:.25rem 0; padding:.5rem .65rem; border:1px solid #d5dae0; border-radius:.35rem; background:#f8f9fa; }
+.aw-award-details[hidden] { display:none; }
+[data-award-editor] [data-fixed-award][hidden], [data-award-editor] [data-per-unit-fields][hidden] { display:none !important; }
+.aw-award-details .aw-hint { grid-column:1/-1; margin:.1rem 0 .25rem; color:#565c65; font-size:.78rem; line-height:1.4; }
 .aw-field input:focus-visible,.aw-field select:focus-visible,.aw-field textarea:focus-visible,.aw-order button:focus-visible,.aw-primary:focus-visible,.aw-secondary:focus-visible { outline:3px solid var(--aw-focus); outline-offset:2px; }
 .aw-check { flex-direction:row; align-items:center; gap:.55rem; }
 .aw-check input { width:auto; }

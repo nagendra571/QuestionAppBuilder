@@ -13,6 +13,7 @@ public class Question
     public string GetRequiredMessage() => string.IsNullOrWhiteSpace(RequiredMessage)
         ? "A response is required." : RequiredMessage.Trim();
     public ScoringMode ScoringMode { get; set; } = ScoringMode.Additive;
+    public bool WholeNumbersOnly { get; set; }
     public int? MaxLength { get; set; }
     public decimal? MinValue { get; set; }
     public decimal? MaxValue { get; set; }

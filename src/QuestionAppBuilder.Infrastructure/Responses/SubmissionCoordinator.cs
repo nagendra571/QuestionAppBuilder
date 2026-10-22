@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using QuestionAppBuilder.Application.Composition;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Exceptions;
@@ -66,7 +68,8 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             if (evaluated.DefinitionIssues.Count != 0) throw new DefinitionValidationException(string.Join(" ", evaluated.DefinitionIssues.Select(i => i.Message)));
             if (evaluated.AnswerIssues.Count != 0) throw new AnswerValidationException(string.Join(" ", evaluated.AnswerIssues.Select(i => i.Message)), evaluated.AnswerIssues.Where(i => i.QuestionId.HasValue).Select(i => i.QuestionId!.Value).Distinct().ToArray());
 
-            var now = DateTime.UtcNow;
+            var compositionSnapshotJson = System.Text.Json.JsonSerializer.Serialize(evaluated.Composition);
+            var now = evaluated.Composition?.DynamicText?.EvaluatedAtUtc.UtcDateTime ?? DateTime.UtcNow;
             var submission = new Submission { ApplicationId = response.ApplicationId, ApplicationVersionId = version.Id, UserId = identity.OwnerKey,
                 ResponseId = response.Id, RequestId = request.RequestId, SubmittedUtc = now, TotalScore = evaluated.Score.Total, EngineVersion = evaluated.Score.EngineVersion };
             var allQuestions = version.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
@@ -88,6 +91,7 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             }
             foreach (var category in evaluated.Score.Categories)
                 submission.CategoryScores.Add(new SubmissionCategoryScore { CategoryId = category.CategoryId, Score = category.Score });
+            submission.CompositionSnapshotJson = compositionSnapshotJson;
             db.Submissions.Add(submission);
             // Retain the submitted attachments, and discard files from branches that no longer apply.
             var hiddenDocumentIds = allQuestions.Where(q => q.AnswerType == AnswerType.UploadDocument
@@ -121,13 +125,29 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
         return Receipt(submission, version);
     }
 
-    private static SubmissionReceipt Receipt(Submission s, ApplicationVersion v) => v.ResultVisibility switch
+    private static SubmissionReceipt Receipt(Submission s, ApplicationVersion v)
     {
-        ResultVisibility.ConfirmationOnly => new(s.Id, s.ResponseId!.Value, s.SubmittedUtc, v.ConfirmationText, null, null),
-        ResultVisibility.CategoryBreakdown => new(s.Id, s.ResponseId!.Value, s.SubmittedUtc, v.ConfirmationText, s.TotalScore,
-            s.CategoryScores.Select(c => new CategoryScore(c.CategoryId, c.Score)).ToArray()),
-        _ => new(s.Id, s.ResponseId!.Value, s.SubmittedUtc, v.ConfirmationText, s.TotalScore, null)
-    };
+        CompositionResult? snapshot = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(s.CompositionSnapshotJson))
+                snapshot = System.Text.Json.JsonSerializer.Deserialize<CompositionResult>(s.CompositionSnapshotJson);
+        }
+        catch (System.Text.Json.JsonException) { }
+        var confirmationText = snapshot?.DynamicText?.Texts
+            .LastOrDefault(text => text.Slot == DynamicTextSlot.ConfirmationText && text.OwnerKey == Guid.Empty);
+        var confirmation = confirmationText is null ? v.ConfirmationText : confirmationText.IsHidden ? string.Empty : confirmationText.Text;
+        var summaryText = snapshot?.DynamicText?.Texts
+            .LastOrDefault(text => text.Slot == DynamicTextSlot.ReviewSummary && text.OwnerKey == Guid.Empty);
+        var receipt = v.ResultVisibility switch
+        {
+            ResultVisibility.ConfirmationOnly => new SubmissionReceipt(s.Id, s.ResponseId!.Value, s.SubmittedUtc, confirmation, null, null),
+            ResultVisibility.CategoryBreakdown => new SubmissionReceipt(s.Id, s.ResponseId!.Value, s.SubmittedUtc, confirmation, s.TotalScore,
+                s.CategoryScores.Select(c => new CategoryScore(c.CategoryId, c.Score)).ToArray()),
+            _ => new SubmissionReceipt(s.Id, s.ResponseId!.Value, s.SubmittedUtc, confirmation, s.TotalScore, null)
+        };
+        return receipt with { ReviewSummary = summaryText is { IsHidden: false } ? summaryText.Text : null };
+    }
 
     private static async Task<bool> CanAccessAsync(QuestionAppBuilderDbContext db, RespondentIdentity identity,
         Guid responseId, string ownerKey, CancellationToken cancellationToken)

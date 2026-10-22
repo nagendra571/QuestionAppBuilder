@@ -9,6 +9,8 @@ public sealed record ResponsePageModel(ResponseSnapshot Response, QuestionnaireR
     IReadOnlyDictionary<int, AnswerFormInput>? InputValues = null, string? RejectedExpectedRevision = null)
 {
     public string ExpectedRevision => RejectedExpectedRevision ?? Convert.ToBase64String(Response.Revision);
+    public IReadOnlyList<string> LiveValidationMessages { get; init; } = [];
+    public bool IsLiveValidationSummary { get; init; }
 }
 
 public sealed class ResponseFormInput

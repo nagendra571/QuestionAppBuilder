@@ -100,6 +100,9 @@ public class DefinitionSchemaTests
         question.ScoringMode.Should().Be(ScoringMode.Additive);
         question.Rules.Single().MinInclusive.Should().BeTrue();
         question.Rules.Single().MaxInclusive.Should().BeTrue();
+        question.Rules.Single().AwardMethod.Should().Be(AwardMethod.Fixed);
+        question.Rules.Single().PointsPerUnit.Should().Be(0);
+        question.Rules.Single().MaximumPoints.Should().BeNull();
         loaded.Categories.Single().LogicalKey.Should().NotBeEmpty();
     }
 }

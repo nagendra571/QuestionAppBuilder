@@ -1,0 +1,13 @@
+@model RenderElement
+@if (Model.Question is null)
+{
+    <div class="qab-content-panel"><p>@Model.Label</p>@if (!string.IsNullOrWhiteSpace(Model.HelpText)) { <p class="qab-help">@Model.HelpText</p> }</div>
+}
+else if (Model.FollowUpDepth > 0)
+{
+    <div class="qab-follow-up" style="--branch-depth: @Math.Min(Model.FollowUpDepth, 3)" role="group" aria-label="Follow-up: @Model.FollowUpContext">
+        <p class="qab-follow-up-context">Follow-up: @Model.FollowUpContext</p>
+        @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Question.cshtml", Model.Question)
+    </div>
+}
+else { @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Question.cshtml", Model.Question) }

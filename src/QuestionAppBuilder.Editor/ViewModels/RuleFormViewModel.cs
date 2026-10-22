@@ -8,6 +8,9 @@ public sealed class RuleFormViewModel
     public RuleFamily Family { get; set; }
 
     public int Points { get; set; }
+    public AwardMethod AwardMethod { get; set; } = AwardMethod.Fixed;
+    public int PointsPerUnit { get; set; }
+    public int? MaximumPoints { get; set; }
 
     public MembershipOperator? MembershipOperator { get; set; }
 

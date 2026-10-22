@@ -8,5 +8,6 @@ public enum AnswerType
     RadioGroup,
     Checkboxes,
     Number,
-    UploadDocument
+    UploadDocument,
+    Date
 }

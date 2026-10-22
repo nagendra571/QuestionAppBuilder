@@ -105,3 +105,24 @@ textarea.qab-input { min-height: 88px; resize: vertical; }
 .qab-runtime .qab-document-remove { color: #243344; font: inherit; font-size: .875rem; background: transparent; border: 1px solid #cbd0d5; border-radius: .3rem; padding: .35rem .6rem; cursor: pointer; }
 .qab-document input[type=file] { max-width: 100%; }
 .qab-document input::file-selector-button { font: inherit; margin-right: .75rem; padding: .45rem .65rem; border: 1px solid #cbd0d5; border-radius: .3rem; background: #f4f5f6; cursor: pointer; }
+.qab-question-group { margin:1.25rem 0; min-width:0; }
+.qab-group-table { border-collapse:collapse; width:100%; table-layout:fixed; font-size:.9rem; }
+.qab-group-table caption { font-size:1.1rem; font-weight:600; text-align:left; padding:.75rem 0; }
+.qab-group-table th,.qab-group-table td { border:1px solid #d7dce1; padding:.75rem; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
+.qab-group-table th { background:#eef1f4; }
+.qab-group-table .qab-question { margin:0; padding:.5rem; border:0; min-width:0; }
+.qab-group-table .qab-input { min-width:0; width:100%; }
+.qab-group-table td:last-child { width:32%; }
+.qab-calculations { display:flex; flex-wrap:wrap; gap:1rem 2rem; padding:1rem 0; border-top:1px solid #d7dce1; font-variant-numeric:tabular-nums; }
+.qab-calculations dt { font-size:.875rem; color:#53647a; }
+.qab-calculations dd { margin:.25rem 0; font-size:1.1rem; font-weight:600; }
+.qab-question-group:not(.is-table) .qab-group-table td::before { content:attr(data-column); display:block; font-weight:600; font-size:.8rem; color:#53647a; margin-bottom:.25rem; }
+.qab-question-group:not(.is-table) .qab-group-table,.qab-question-group:not(.is-table) .qab-group-table tbody,.qab-question-group:not(.is-table) .qab-group-table tr,.qab-question-group:not(.is-table) .qab-group-table td { display:block; width:auto; }
+@media(max-width:700px) {
+ .qab-group-table thead { display:none; }
+ .qab-group-table,.qab-group-table tbody,.qab-group-table tr,.qab-group-table td { display:block; width:auto; }
+ .qab-group-table tr { margin-bottom:1rem; border:1px solid #d7dce1; }
+ .qab-group-table td { border:0; padding:.5rem .75rem; }
+ .qab-group-table td::before { content:attr(data-column); display:block; font-weight:600; font-size:.8rem; color:#53647a; margin-bottom:.25rem; }
+ .qab-group-table td:last-child { width:auto; }
+}

@@ -1,7 +1,10 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Reporting;
+using QuestionAppBuilder.Application.Composition;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Infrastructure.Persistence;
 using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
@@ -90,6 +93,7 @@ public sealed class ReportExport : IReportExport
             else
             {
                 await WriteAnswerBatchAsync(db, writer, batch, questions, cancellationToken);
+                await WriteCompositionBatchAsync(db, writer, batch, cancellationToken);
             }
 
             var last = batch[^1];
@@ -122,6 +126,21 @@ public sealed class ReportExport : IReportExport
                 .ToListAsync(cancellationToken);
         var selectedMap = selected.GroupBy(option => option.AnswerId)
             .ToDictionary(group => group.Key, group => group.Select(option => option.QuestionOptionId).ToArray());
+        var snapshots = await db.Submissions.AsNoTracking().Where(s => ids.Contains(s.Id) && s.CompositionSnapshotJson != null)
+            .Select(s => new { s.Id, s.CompositionSnapshotJson }).ToListAsync(cancellationToken);
+        var frozenLabels = snapshots.ToDictionary(snapshot => snapshot.Id, snapshot =>
+        {
+            try
+            {
+                var composition = JsonSerializer.Deserialize<CompositionResult>(snapshot.CompositionSnapshotJson!);
+                return composition?.DynamicText?.Texts
+                    .Where(text => text.Slot == DynamicTextSlot.ElementLabel && text.OwnerKey != Guid.Empty)
+                    .GroupBy(text => text.OwnerKey).ToDictionary(group => group.Key,
+                        group => group.Last() is { IsHidden: true } ? string.Empty : group.Last().Text)
+                    ?? new Dictionary<Guid, string>();
+            }
+            catch (JsonException) { return new Dictionary<Guid, string>(); }
+        });
 
         foreach (var submission in batch)
         foreach (var question in questions)
@@ -145,11 +164,55 @@ public sealed class ReportExport : IReportExport
                 submission.VersionId.ToString(CultureInfo.InvariantCulture),
                 $"v{submission.VersionNumber} {submission.DisplayName}", FormatUtc(submission.SubmittedUtc),
                 submission.OwnerReference ?? string.Empty,
-                (state?.QuestionLogicalKey ?? question.LogicalKey).ToString("D"), question.Label, applicability,
+                (state?.QuestionLogicalKey ?? question.LogicalKey).ToString("D"),
+                frozenLabels.GetValueOrDefault(submission.Id)?.GetValueOrDefault(state?.QuestionLogicalKey ?? question.LogicalKey) ?? question.Label,
+                applicability,
                 answerStatus, answerText,
                 (state?.PointsEarned ?? (showAnswer ? answer?.PointsEarned ?? 0 : 0)).ToString(CultureInfo.InvariantCulture)
             }, cancellationToken);
         }
+    }
+
+    private static async Task WriteCompositionBatchAsync(QuestionAppBuilderDbContext db, StreamWriter writer,
+        IReadOnlyList<ExportSubmission> batch, CancellationToken ct)
+    {
+        var ids = batch.Select(s => s.Id).ToArray();
+        var snapshots = await db.Submissions.AsNoTracking().Where(s => ids.Contains(s.Id) && s.CompositionSnapshotJson != null)
+            .Select(s => new { s.Id, s.CompositionSnapshotJson }).ToListAsync(ct);
+        foreach (var stored in snapshots)
+        {
+            var snapshot = System.Text.Json.JsonSerializer.Deserialize<QuestionAppBuilder.Application.Composition.CompositionResult>(stored.CompositionSnapshotJson!);
+            if (snapshot is null) continue;
+            var submission = batch.Single(s => s.Id == stored.Id);
+            var prefix = new[] { submission.Id.ToString(CultureInfo.InvariantCulture), submission.ApplicationId.ToString(CultureInfo.InvariantCulture), submission.ApplicationName,
+                submission.VersionId.ToString(CultureInfo.InvariantCulture), $"v{submission.VersionNumber} {submission.DisplayName}", FormatUtc(submission.SubmittedUtc), submission.OwnerReference ?? string.Empty };
+            foreach (var value in snapshot.Values)
+                await WriteRowAsync(writer, prefix.Concat(new[] { value.Id.ToString("D"), value.Name, "applicable", "calculated", value.Value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty, "0" }), ct);
+            foreach (var award in snapshot.Awards)
+                await WriteRowAsync(writer, prefix.Concat(new[] { award.Id.ToString("D"), award.Name, "applicable", "scored", string.Empty, award.Points.ToString(CultureInfo.InvariantCulture) }), ct);
+            if (snapshot.DynamicText is { } dynamicText)
+            {
+                foreach (var variable in dynamicText.Values)
+                    await WriteRowAsync(writer, prefix.Concat(new[] { variable.Id.ToString("D"), variable.Name,
+                        variable.Value.State.ToString().ToLowerInvariant(), "dynamic", FormatDynamicValue(variable.Value), "0" }), ct);
+                foreach (var resolved in dynamicText.Texts.Where(text => !text.IsHidden))
+                    await WriteRowAsync(writer, prefix.Concat(new[] { resolved.OwnerKey.ToString("D"), resolved.Slot.ToString(),
+                        "applicable", "text", resolved.Text, "0" }), ct);
+            }
+        }
+    }
+
+    private static string FormatDynamicValue(DynamicValue value)
+    {
+        if (value.State != DynamicValueState.Present) return string.Empty;
+        return value.Kind switch
+        {
+            DynamicValueKind.Text => value.Text ?? string.Empty,
+            DynamicValueKind.Number => value.Number?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            DynamicValueKind.Date => value.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
+            DynamicValueKind.TextList => string.Join("; ", value.Items ?? Array.Empty<string>()),
+            _ => string.Empty
+        };
     }
 
     private static IQueryable<Submission> ApplySubmissionFilter(IQueryable<Submission> query, ReportFilter filter)

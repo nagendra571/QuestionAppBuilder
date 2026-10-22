@@ -100,13 +100,13 @@
         {
             <details class="cv-add-rule" id="add-rule-@question.Id">
                 <summary class="cv-link">Add scoring rule</summary>
-                <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id">
+                <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id" data-award-editor data-has-numeric-answer="@(question.AnswerType == AnswerType.Number ? "true" : "false")">
                 <partial name="_ClosePanel" model='@("scoring rule form")' />
                     <input type="hidden" name="applicationId" value="@applicationId" />
                     <input type="hidden" name="expectedRevision" value="@revisionValue" />
                     <div class="cv-field">
                         <label for="rule-family-@question.Id">Rule family</label>
-                        <select id="rule-family-@question.Id" name="Family">
+                        <select id="rule-family-@question.Id" name="Family" data-rule-family>
                             @foreach (var family in ruleForm.Families)
                             {
                                 <option value="@family">@QuestionFormViewModel.SplitPascalCase(family.ToString())</option>
@@ -115,8 +115,27 @@
                     </div>
                     <div class="cv-field">
                         <label for="rule-points-@question.Id">Points</label>
-                        <input id="rule-points-@question.Id" name="Points" type="number" step="1" value="1" />
+                        <input id="rule-points-@question.Id" name="Points" type="number" min="0" max="1000000" step="1" value="1" data-fixed-award />
                     </div>
+                    @if (question.AnswerType == AnswerType.Number)
+                    {
+                        <div class="cv-field">
+                            <label for="rule-award-method-@question.Id">Award method</label>
+                            <select id="rule-award-method-@question.Id" name="AwardMethod" data-award-method>
+                                <option value="Fixed">Fixed points</option>
+                                <option value="PointsPerUnit">Points per unit</option>
+                            </select>
+                        </div>
+                        <div class="cv-award-details" data-per-unit-fields hidden>
+                            <div class="cv-field"><label for="rule-points-per-unit-@question.Id">Points per unit</label>
+                                <input id="rule-points-per-unit-@question.Id" name="PointsPerUnit" type="number" min="0" max="1000000" step="1" value="2" data-points-per-unit />
+                            </div>
+                            <div class="cv-field"><label for="rule-maximum-points-@question.Id">Maximum points (optional)</label>
+                                <input id="rule-maximum-points-@question.Id" name="MaximumPoints" type="number" min="0" max="1000000" step="1" />
+                            </div>
+                            <p class="cv-note">Example: 12 × <span data-award-rate-preview>2</span> = <span data-award-product-preview>24</span> points before the cap. Use the Numeric range family with a whole-number question, a minimum of 0 or above, and an answer maximum or cap.</p>
+                        </div>
+                    }
                     <div class="cv-field">
                         <label for="rule-min-@question.Id">Min value</label>
                         <input id="rule-min-@question.Id" name="MinValue" type="number" step="any" />

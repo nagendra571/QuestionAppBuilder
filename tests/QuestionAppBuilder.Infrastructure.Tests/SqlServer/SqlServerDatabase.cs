@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using QuestionAppBuilder.Infrastructure.Persistence;
 
 namespace QuestionAppBuilder.Infrastructure.Tests.SqlServer;
@@ -34,11 +35,12 @@ public sealed class SqlServerDatabase : IAsyncDisposable
         return fixture;
     }
 
-    public QuestionAppBuilderDbContext CreateContext()
+    public QuestionAppBuilderDbContext CreateContext(IInterceptor? interceptor = null)
     {
         var builder = new SqlConnectionStringBuilder(_adminConnectionString) { InitialCatalog = _databaseName };
-        return new QuestionAppBuilderDbContext(new DbContextOptionsBuilder<QuestionAppBuilderDbContext>()
-            .UseSqlServer(builder.ConnectionString).Options);
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(builder.ConnectionString);
+        if (interceptor is not null) options.AddInterceptors(interceptor);
+        return new QuestionAppBuilderDbContext(options.Options);
     }
 
     public async ValueTask DisposeAsync()

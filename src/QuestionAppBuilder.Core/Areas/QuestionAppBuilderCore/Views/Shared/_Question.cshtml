@@ -49,7 +49,11 @@
             break;
         case AnswerType.Number:
             <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
-            <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Number" type="number" step="any" value="@numberValue" min="@Model.MinValue" max="@Model.MaxValue" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
+            <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Number" type="number" step="@(Model.WholeNumbersOnly ? "1" : "any")" value="@numberValue" min="@Model.MinValue" max="@Model.MaxValue" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
+            break;
+        case AnswerType.Date:
+            <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>
+            <input class="qab-input" id="field-@Model.Id" name="Answers[@Model.Id].Text" type="date" value="@textValue" required="@(Model.Required ? "required" : null)" aria-required="@Model.Required.ToString().ToLowerInvariant()" aria-describedby="@describedBy" />
             break;
         case AnswerType.Dropdown:
             <label class="qab-visually-hidden" for="field-@Model.Id">@Model.Label</label>

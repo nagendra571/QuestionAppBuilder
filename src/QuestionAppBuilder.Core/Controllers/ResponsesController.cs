@@ -112,7 +112,8 @@ public sealed class ResponsesController : Controller
                 var category = Math.Clamp(form.CurrentCategoryIndex, 0, Math.Max(0, categoryCount - 1));
                 var page = CreateResponsePage(saved, category);
                 var liveContentHtml = await RenderLiveContentAsync(page);
-                return Json(new { success = true, revision = Convert.ToBase64String(saved.Revision), updatedUtc = saved.UpdatedUtc, liveContentHtml });
+                return Json(new { success = true, revision = Convert.ToBase64String(saved.Revision), updatedUtc = saved.UpdatedUtc,
+                    liveContentHtml, liveValidationMessages = page.LiveValidationMessages });
             }
             return LocalRedirect(EditUrl(responseId, form.CurrentCategoryIndex));
         }
@@ -124,7 +125,7 @@ public sealed class ResponsesController : Controller
         }
         catch (AnswerValidationException exception)
         {
-            var errors = exception.QuestionIds.ToDictionary(id => id, _ => exception.Message);
+            var errors = exception.QuestionIds.Distinct().ToDictionary(id => id, _ => exception.Message);
             if (WantsJson()) return UnprocessableEntity(new { success = false, message = exception.Message });
             return SaveError(snapshot, form, answers, errors, StatusCodes.Status422UnprocessableEntity, exception.Message);
         }
@@ -143,7 +144,8 @@ public sealed class ResponsesController : Controller
         {
             await using var stream = document.OpenReadStream();
             var saved = await documents.UploadAsync(responseId, questionId, DecodeRevision(expectedRevision), document.FileName, stream, cancellationToken);
-            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(CreateResponsePage(saved, currentCategoryIndex)) });
+            var page = CreateResponsePage(saved, currentCategoryIndex);
+            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(page), liveValidationMessages = page.LiveValidationMessages });
         }
         catch (NotFoundException) { return NotFound(); }
         catch (ResponseConflictException) { return Conflict(new { message = "This response changed in another window. Reload before uploading." }); }
@@ -159,7 +161,8 @@ public sealed class ResponsesController : Controller
         try
         {
             var saved = await documents.RemoveAsync(responseId, questionId, DecodeRevision(expectedRevision), cancellationToken);
-            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(CreateResponsePage(saved, currentCategoryIndex)) });
+            var page = CreateResponsePage(saved, currentCategoryIndex);
+            return Json(new { revision = Convert.ToBase64String(saved.Revision), liveContentHtml = await RenderLiveContentAsync(page), liveValidationMessages = page.LiveValidationMessages });
         }
         catch (NotFoundException) { return NotFound(); }
         catch (ResponseConflictException) { return Conflict(new { message = "This response changed in another window. Reload before removing the document." }); }
@@ -195,7 +198,7 @@ public sealed class ResponsesController : Controller
         catch (ResponseConflictException)
         { return SaveError(snapshot, form, answers, new Dictionary<int, string>(), StatusCodes.Status409Conflict, "This response changed in another window. Your typed answers are still shown; reload before continuing."); }
         catch (AnswerValidationException exception)
-        { return SaveError(snapshot, form, answers, exception.QuestionIds.ToDictionary(id => id, _ => exception.Message), StatusCodes.Status422UnprocessableEntity, exception.Message); }
+        { return SaveError(snapshot, form, answers, exception.QuestionIds.Distinct().ToDictionary(id => id, _ => exception.Message), StatusCodes.Status422UnprocessableEntity, exception.Message); }
 
         if (StringComparer.Ordinal.Equals(form.Intent, "Review")) return LocalRedirect(ReviewUrl(responseId));
         var evaluation = _evaluator.Evaluate(saved.Definition, saved.Answers, requireComplete: false);
@@ -256,7 +259,7 @@ public sealed class ResponsesController : Controller
             var issues = _evaluator.Evaluate(snapshot.Definition, answers, requireComplete: true).AnswerIssues
                 .Where(issue => issue.QuestionId.HasValue).GroupBy(issue => issue.QuestionId!.Value)
                 .ToDictionary(group => group.Key, group => group.First().Message);
-            var errors = exception.QuestionIds.ToDictionary(id => id, id => issues.GetValueOrDefault(id, exception.Message));
+            var errors = exception.QuestionIds.Distinct().ToDictionary(id => id, id => issues.GetValueOrDefault(id, exception.Message));
             return SubmitError(snapshot with { Answers = answers }, answers, errors, "Complete the required fields before submitting.");
         }
         catch (DefinitionValidationException exception)
@@ -291,10 +294,27 @@ public sealed class ResponsesController : Controller
     {
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         var rendered = _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, preview: false);
+        var categoryQuestions = rendered.Categories.ElementAtOrDefault(Math.Clamp(categoryIndex, 0, Math.Max(0, rendered.Categories.Count - 1)))?
+            .Elements.Where(element => element.Question is not null).Select(element => element.Question!.Id).ToHashSet() ?? new HashSet<int>();
+        var fieldErrors = errors?.ToDictionary(pair => pair.Key, pair => pair.Value) ?? new Dictionary<int, string>();
+        var liveMessages = new List<string>();
+        foreach (var issue in evaluation.Composition?.LiveAnswerErrors.Where(issue => categoryQuestions.Contains(issue.QuestionId))
+            ?? Enumerable.Empty<QuestionAppBuilder.Application.Composition.CompositionLiveAnswerError>())
+        {
+            if (!fieldErrors.ContainsKey(issue.QuestionId))
+            {
+                fieldErrors[issue.QuestionId] = issue.Message;
+                liveMessages.Add(issue.Message);
+            }
+        }
+        var effectiveErrors = fieldErrors.Count == 0 ? null : fieldErrors;
+        var effectiveSummary = summary ?? (liveMessages.Count > 0 ? "Some answers need attention." : null);
+        var liveOnlySummary = summary is null && liveMessages.Count > 0 && (errors?.Count ?? 0) == 0;
         ViewData["CanonicalEditUrl"] = EditUrl(snapshot.Id, categoryIndex);
         ViewData["DocumentUrl"] = $"{BasePath}/Responses/{snapshot.Id}/Document";
         ViewData["SaveUrl"] = SaveUrl(snapshot.Id); ViewData["NavigateUrl"] = NavigateUrl(snapshot.Id); ViewData["ReviewUrl"] = ReviewUrl(snapshot.Id);
-        return new ResponsePageModel(snapshot, rendered, categoryIndex, _options.LayoutName, errors, summary, null, null, inputs);
+        return new ResponsePageModel(snapshot, rendered, categoryIndex, _options.LayoutName, effectiveErrors, effectiveSummary, null, null, inputs)
+        { LiveValidationMessages = liveMessages, IsLiveValidationSummary = liveOnlySummary };
     }
 
     private async Task<string> RenderLiveContentAsync(ResponsePageModel model)
@@ -359,6 +379,12 @@ public sealed class ResponsesController : Controller
                 case AnswerType.Textbox:
                 case AnswerType.Textarea:
                     value = new AnswerValue(input.Text, null, null);
+                    break;
+                case AnswerType.Date:
+                    if (string.IsNullOrWhiteSpace(input.Text)) value = new AnswerValue(null, null, null);
+                    else if (DateOnly.TryParseExact(input.Text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                        value = new AnswerValue(input.Text, null, null);
+                    else { errors[id] = "Enter a valid date."; continue; }
                     break;
                 case AnswerType.Number:
                     if (string.IsNullOrWhiteSpace(input.Number)) value = new AnswerValue(null, null, null);

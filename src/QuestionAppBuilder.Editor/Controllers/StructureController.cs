@@ -100,11 +100,17 @@ public sealed class StructureController : EditorControllerBase
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> AddRule(int applicationId, int questionId, RuleFamily family, int points,
         int[]? optionIds, decimal? minValue, decimal? maxValue, MembershipOperator? membershipOperator,
-        byte[] expectedRevision, CancellationToken ct)
+        byte[] expectedRevision, CancellationToken ct, AwardMethod awardMethod = AwardMethod.Fixed,
+        int pointsPerUnit = 0, int? maximumPoints = null)
     {
+        if (!ModelState.IsValid || expectedRevision is null || expectedRevision.Length == 0)
+            return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity,
+                "Check the scoring rule fields and reload if the draft revision is missing.");
+
         try
         {
-            await _design.AddRuleAsync(questionId, family, points, membershipOperator, optionIds, minValue, maxValue, ct, expectedRevision);
+            await _design.AddRuleWithAwardMethodAsync(questionId, family, points, membershipOperator, optionIds,
+                minValue, maxValue, awardMethod, pointsPerUnit, maximumPoints, ct, expectedRevision);
         }
         catch (NotFoundException) { return NotFound(); }
         catch (DraftConflictException) { SetEditorError("The draft changed. Reload the workspace before making this change."); }

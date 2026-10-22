@@ -59,4 +59,103 @@ public class DefinitionValidatorTests
         new DefinitionValidator(new DefinitionEvaluator()).Review(new ApplicationVersionGraph { Version = new ApplicationVersion(), Categories = [] }, new byte[] { 1 })
             .Errors.Select(x => x.Code).Should().Contain("empty-definition");
     }
+
+    [Fact]
+    public void Points_per_unit_rules_require_safe_whole_number_numeric_bounds()
+    {
+        var invalidConfigurations = new (string Name, Action<Question, ScoringRule> Mutate)[]
+        {
+            ("a nonnumeric question", (question, _) => question.AnswerType = AnswerType.Textbox),
+            ("a fractional question", (question, _) => question.WholeNumbersOnly = false),
+            ("a missing minimum", (question, _) => question.MinValue = null),
+            ("a negative minimum", (question, _) => question.MinValue = -1),
+            ("a negative rate", (_, rule) => rule.PointsPerUnit = -1),
+            ("a nonnumeric rule family", (_, rule) => rule.Family = RuleFamily.Presence),
+            ("no answer maximum or cap", (question, rule) => { question.MaxValue = null; rule.MaximumPoints = null; }),
+            ("an unbounded unsafe award", (question, rule) => { question.MaxValue = 2_000_000; rule.PointsPerUnit = 1; rule.MaximumPoints = null; }),
+            ("a negative cap", (_, rule) => rule.MaximumPoints = -1)
+        };
+
+        foreach (var (name, mutate) in invalidConfigurations)
+        {
+            var question = new Question
+            {
+                Id = 1, ElementId = 1, AnswerType = AnswerType.Number, WholeNumbersOnly = true,
+                MinValue = 0, MaxValue = 10
+            };
+            var rule = new ScoringRule
+            {
+                Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+                PointsPerUnit = 2, MaximumPoints = 20, MinValue = 0, MaxValue = 10
+            };
+            question.Rules.Add(rule);
+            mutate(question, rule);
+            var graph = new ApplicationVersionGraph
+            {
+                Version = new ApplicationVersion { DisplayName = "Safe scoring" },
+                Categories = [new Category
+                {
+                    Id = 1, Name = "Numbers",
+                    Elements = [new Element { Id = 1, Kind = ElementKind.Question, Label = "Units", Question = question }]
+                }]
+            };
+
+            var review = new DefinitionValidator(new DefinitionEvaluator()).Review(graph, new byte[] { 1 });
+
+            review.Errors.Select(issue => issue.Code).Should().Contain("invalid-points-per-unit", name);
+        }
+    }
+
+    [Fact]
+    public void Aggregate_points_per_unit_bound_overflow_is_a_publish_error()
+    {
+        var question = new Question
+        {
+            Id = 1, ElementId = 1, AnswerType = AnswerType.Number, WholeNumbersOnly = true,
+            MinValue = 0, MaxValue = 1_000_000
+        };
+        question.Rules.AddRange(Enumerable.Range(1, 2148).Select(id => new ScoringRule
+        {
+            Id = id, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 1, MaximumPoints = 1_000_000, MinValue = 0
+        }));
+        var graph = new ApplicationVersionGraph
+        {
+            Version = new ApplicationVersion { DisplayName = "Overflow" },
+            Categories = [new Category
+            {
+                Id = 1, Name = "Numbers",
+                Elements = [new Element { Id = 1, Kind = ElementKind.Question, Label = "Units", Question = question }]
+            }]
+        };
+
+        var review = new DefinitionValidator(new DefinitionEvaluator()).Review(graph, new byte[] { 1 });
+
+        review.Errors.Select(issue => issue.Code).Should().Contain("total-points-overflow");
+    }
+
+    [Fact]
+    public void Per_unit_rule_may_leave_predicate_bounds_blank_when_question_or_cap_bounds_the_award()
+    {
+        var question = new Question
+        {
+            Id = 1, ElementId = 1, AnswerType = AnswerType.Number, WholeNumbersOnly = true,
+            MinValue = 0, MaxValue = 100,
+            Rules = [new ScoringRule
+            {
+                Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+                PointsPerUnit = 2, MaximumPoints = 200
+            }]
+        };
+        var graph = new ApplicationVersionGraph
+        {
+            Version = new ApplicationVersion { DisplayName = "Bounded units" },
+            Categories = [new Category { Id = 1, Name = "Numbers", Elements =
+                [new Element { Id = 1, Kind = ElementKind.Question, Label = "Units", Question = question }] }]
+        };
+
+        var review = new DefinitionValidator(new DefinitionEvaluator()).Review(graph, new byte[] { 1 });
+
+        review.Errors.Should().BeEmpty();
+    }
 }

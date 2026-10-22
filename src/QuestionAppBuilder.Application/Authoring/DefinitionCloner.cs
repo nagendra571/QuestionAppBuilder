@@ -25,6 +25,7 @@ public static class DefinitionCloner
             CreatedUtc = DateTime.UtcNow, NavigationMode = source.Version.NavigationMode,
             RespondentAccessMode = source.Version.RespondentAccessMode, ResultVisibility = source.Version.ResultVisibility,
             SubmitLabel = source.Version.SubmitLabel, ConfirmationText = source.Version.ConfirmationText,
+            CompositionJson = source.Version.CompositionJson,
             DisplayName = source.Version.DisplayName
         };
         var map = new DefinitionCloneMap();
@@ -41,7 +42,7 @@ public static class DefinitionCloner
                 category.Elements.Add(element);
                 if (sourceElement.Question is not { } sourceQuestion) continue;
                 var question = new Question { AnswerType = sourceQuestion.AnswerType, IsRequired = sourceQuestion.IsRequired, RequiredMessage = sourceQuestion.RequiredMessage,
-                    ScoringMode = sourceQuestion.ScoringMode, MaxLength = sourceQuestion.MaxLength, MinValue = sourceQuestion.MinValue,
+                    WholeNumbersOnly = sourceQuestion.WholeNumbersOnly, ScoringMode = sourceQuestion.ScoringMode, MaxLength = sourceQuestion.MaxLength, MinValue = sourceQuestion.MinValue,
                     MaxValue = sourceQuestion.MaxValue, MinSelections = sourceQuestion.MinSelections, MaxSelections = sourceQuestion.MaxSelections };
                 map.Questions[sourceQuestion.Id] = question;
                 element.Question = question;
@@ -55,6 +56,7 @@ public static class DefinitionCloner
                 foreach (var sourceRule in sourceQuestion.Rules)
                 {
                     var rule = new ScoringRule { Family = sourceRule.Family, Points = sourceRule.Points, SortOrder = sourceRule.SortOrder,
+                        AwardMethod = sourceRule.AwardMethod, PointsPerUnit = sourceRule.PointsPerUnit, MaximumPoints = sourceRule.MaximumPoints,
                         LogicalKey = sourceRule.LogicalKey, MinInclusive = sourceRule.MinInclusive, MaxInclusive = sourceRule.MaxInclusive,
                         MembershipOperator = sourceRule.MembershipOperator, MinValue = sourceRule.MinValue, MaxValue = sourceRule.MaxValue };
                     map.Rules[sourceRule.Id] = rule;

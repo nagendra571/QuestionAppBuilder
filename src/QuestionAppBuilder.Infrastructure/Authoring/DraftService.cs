@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using QuestionAppBuilder.Application.Authoring;
@@ -58,8 +59,18 @@ public sealed class DraftService : IDraftService
 
     public async Task<PublicationReview> ReviewAsync(int applicationId, CancellationToken ct = default)
     {
-        var snapshot = await GetAsync(applicationId, ct);
-        return _validator.Review(snapshot.Definition, snapshot.Revision);
+        var workspace = await GetWorkspaceAsync(applicationId, ct);
+        return workspace.Review;
+    }
+
+    public async Task<DraftWorkspaceSnapshot> GetWorkspaceAsync(int applicationId, CancellationToken ct = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var graph = await LoadDraft(db, applicationId, tracking: false, ct)
+            ?? throw new NotFoundException($"No draft version found for application {applicationId}.");
+        var snapshot = Snapshot(graph);
+        var review = _validator.Review(snapshot.Definition, snapshot.Revision);
+        return new DraftWorkspaceSnapshot(snapshot, review);
     }
 
     public async Task<int> PublishAsync(PublishRequest request, CancellationToken ct = default)
@@ -130,7 +141,11 @@ public sealed class DraftService : IDraftService
             .Include(v => v.VisibilityConditions).ThenInclude(c => c.Predicates).ThenInclude(p => p.Options)
             .Where(v => v.ApplicationId == applicationId && v.Status == VersionStatus.Draft);
         if (!tracking) query = query.AsNoTracking();
-        var version = await query.OrderByDescending(v => v.VersionNumber).FirstOrDefaultAsync(ct);
+        await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
+            : null;
+        var version = await query.AsSplitQuery().OrderByDescending(v => v.VersionNumber).FirstOrDefaultAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         return version is null ? null : new ApplicationVersionGraph
         {
             Version = version,
@@ -149,6 +164,7 @@ public sealed class DraftService : IDraftService
     private static void ApplyEditableFields(ApplicationVersionGraph target, ApplicationVersionGraph posted)
     {
         var sourceVersion = posted.Version;
+        target.Version.CompositionJson = sourceVersion.CompositionJson;
         target.Version.NavigationMode = sourceVersion.NavigationMode;
         target.Version.RespondentAccessMode = sourceVersion.RespondentAccessMode;
         target.Version.ResultVisibility = sourceVersion.ResultVisibility;
@@ -178,6 +194,7 @@ public sealed class DraftService : IDraftService
                 if (postedQuestion.RequiredMessage?.Length > QuestionAppBuilder.Domain.ValidationLimits.RequiredMessageMaxLength)
                     throw new DefinitionValidationException("Required-answer messages must be 500 characters or fewer.");
                 question.RequiredMessage = string.IsNullOrWhiteSpace(postedQuestion.RequiredMessage) ? null : postedQuestion.RequiredMessage.Trim();
+                question.WholeNumbersOnly = postedQuestion.WholeNumbersOnly;
                 question.MaxLength = postedQuestion.MaxLength; question.MinValue = postedQuestion.MinValue; question.MaxValue = postedQuestion.MaxValue;
                 question.MinSelections = postedQuestion.MinSelections; question.MaxSelections = postedQuestion.MaxSelections;
                 foreach (var submittedOption in postedQuestion.Options)
@@ -187,6 +204,8 @@ public sealed class DraftService : IDraftService
                 foreach (var submittedRule in postedQuestion.Rules)
                 {
                     var rule = rules[submittedRule.Id]; rule.Family = submittedRule.Family; rule.Points = submittedRule.Points;
+                    rule.AwardMethod = submittedRule.AwardMethod; rule.PointsPerUnit = submittedRule.PointsPerUnit;
+                    rule.MaximumPoints = submittedRule.MaximumPoints;
                     rule.SortOrder = submittedRule.SortOrder; rule.MinInclusive = submittedRule.MinInclusive; rule.MaxInclusive = submittedRule.MaxInclusive;
                     rule.MembershipOperator = submittedRule.MembershipOperator; rule.MinValue = submittedRule.MinValue; rule.MaxValue = submittedRule.MaxValue;
                     if (submittedRule.Options.Any(o => o.QuestionOptionId != 0 && !options.ContainsKey(o.QuestionOptionId)))

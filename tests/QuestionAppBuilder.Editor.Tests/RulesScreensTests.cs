@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,6 +140,42 @@ public class RulesScreensTests : IDisposable
             rule.Family.Should().Be(RuleFamily.NumericRange);
             rule.MinValue.Should().Be(10m);
             rule.MaxValue.Should().Be(25m);
+            return true;
+        });
+    }
+
+    [Fact]
+    public async Task Add_rule_rejects_an_overflowing_per_unit_rate_before_calling_the_design_service()
+    {
+        var (applicationId, _, questionId, _) = await CreateQuestionAsync(AnswerType.Number);
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{applicationId}");
+        var revisionMatch = Regex.Match(html, "name=\"expectedRevision\" value=\"([^\"]+)\"");
+        revisionMatch.Success.Should().BeTrue("the draft workspace form carries its current revision");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/ConfigureApp/Structure/AddRule?applicationId={applicationId}")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["applicationId"] = applicationId.ToString(CultureInfo.InvariantCulture),
+                ["questionId"] = questionId.ToString(CultureInfo.InvariantCulture),
+                ["family"] = nameof(RuleFamily.NumericRange),
+                ["points"] = "0",
+                ["awardMethod"] = "PointsPerUnit",
+                ["pointsPerUnit"] = "2147483648",
+                ["expectedRevision"] = WebUtility.HtmlDecode(revisionMatch.Groups[1].Value),
+                ["__RequestVerificationToken"] = token,
+            })
+        };
+        request.Headers.Add("X-Requested-With", "QuestionAppBuilder");
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await _factory.WithScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<QuestionAppBuilderDbContext>();
+            (await database.ScoringRules.CountAsync(rule => rule.QuestionId == questionId)).Should().Be(0);
             return true;
         });
     }

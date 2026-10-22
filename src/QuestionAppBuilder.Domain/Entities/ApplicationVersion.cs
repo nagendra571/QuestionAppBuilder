@@ -4,6 +4,7 @@ namespace QuestionAppBuilder.Domain.Entities;
 
 public class ApplicationVersion
 {
+    public string? CompositionJson { get; set; }
     public int Id { get; set; }
     public int ApplicationId { get; set; }
     public int VersionNumber { get; set; }

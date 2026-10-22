@@ -1,16 +1,30 @@
 @model RenderCategory
 <section class="qab-category" aria-labelledby="category-title">
     <h2 id="category-title">@Model.Name</h2>
+    @{ var renderedGroups = new HashSet<Guid>(); }
     @foreach (var element in Model.Elements)
     {
-        if (element.Question is null) { <div class="qab-content-panel">@element.Label</div> }
-        else if (element.FollowUpDepth > 0)
+        if (element.IsHidden) { continue; }
+        var group = Model.Groups.FirstOrDefault(g => g.Rows.Any(r => r.QuestionKey == element.LogicalKey));
+        if (group is null) { @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_RenderElement.cshtml", element) }
+        else if (renderedGroups.Add(group.Id))
         {
-            <div class="qab-follow-up" style="--branch-depth: @Math.Min(element.FollowUpDepth, 3)" role="group" aria-label="Follow-up: @element.FollowUpContext">
-                <p class="qab-follow-up-context">Follow-up: @element.FollowUpContext</p>
-                @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Question.cshtml", element.Question)
+            <div class="qab-question-group @(group.TableLayout ? "is-table" : "")">
+                <table class="qab-group-table" id="qab-group-@group.Id"><caption>@group.Name</caption>
+                    <thead class="@(group.TableLayout ? "" : "qab-visually-hidden")"><tr>@for (var i = 0; i < group.Columns.Count; i++) { <th id="qab-group-@group.Id-column-@i" scope="col">@group.Columns[i]</th> }<th id="qab-group-@group.Id-answer" scope="col">Answer</th></tr></thead>
+                    <tbody>
+                    @foreach (var row in group.Rows)
+                    {
+                        var member = Model.Elements.FirstOrDefault(e => e.LogicalKey == row.QuestionKey);
+                        if (member is null) { continue; }
+                        <tr>@for (var i = 0; i < group.Columns.Count; i++) { <td data-column="@group.Columns[i]" aria-label="@group.Columns[i]" headers="qab-group-@group.Id-column-@i">@row.Cells.ElementAtOrDefault(i)</td> }
+                            <td data-column="Answer" aria-label="Answer" headers="qab-group-@group.Id-answer">@await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_RenderElement.cshtml", member)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
             </div>
         }
-        else { @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_Question.cshtml", element.Question) }
     }
+    @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_CalculatedValues.cshtml", Model.CalculatedValues)
 </section>

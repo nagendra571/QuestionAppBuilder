@@ -32,6 +32,12 @@ public class ModelRoundTripTests
             .GetMaxLength().Should().Be(200);
         model.FindEntityType(typeof(QuestionOption))!.FindProperty(nameof(QuestionOption.Value))!
             .GetMaxLength().Should().Be(100);
+
+        var scoringRule = model.FindEntityType(typeof(ScoringRule))!;
+        scoringRule.FindProperty(nameof(ScoringRule.AwardMethod))!.GetDefaultValue().Should().Be(AwardMethod.Fixed);
+        scoringRule.FindProperty(nameof(ScoringRule.AwardMethod))!.GetMaxLength().Should().Be(32);
+        scoringRule.FindProperty(nameof(ScoringRule.PointsPerUnit))!.GetDefaultValue().Should().Be(0);
+        scoringRule.FindProperty(nameof(ScoringRule.MaximumPoints))!.IsNullable.Should().BeTrue();
     }
 
     [Fact]
@@ -92,6 +98,9 @@ public class ModelRoundTripTests
                         {
                             Family = RuleFamily.NumericRange,
                             Points = 2,
+                            AwardMethod = AwardMethod.PointsPerUnit,
+                            PointsPerUnit = 3,
+                            MaximumPoints = 90,
                             MinValue = 10.5m,
                             MaxValue = 25.25m
                         }
@@ -144,6 +153,10 @@ public class ModelRoundTripTests
             var numericRule = reloadedQuestion.Rules.Single(r => r.Family == RuleFamily.NumericRange);
             numericRule.MinValue.Should().Be(10.5m);
             numericRule.MaxValue.Should().Be(25.25m);
+            numericRule.AwardMethod.Should().Be(AwardMethod.PointsPerUnit);
+            numericRule.PointsPerUnit.Should().Be(3);
+            numericRule.MaximumPoints.Should().Be(90);
+            reloadedQuestion.Rules.Single(r => r.Family == RuleFamily.Presence).AwardMethod.Should().Be(AwardMethod.Fixed);
         }
     }
 }

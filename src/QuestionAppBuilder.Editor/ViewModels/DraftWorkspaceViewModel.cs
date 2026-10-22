@@ -36,6 +36,7 @@ public sealed class DraftQuestionInput
     public int Id { get; set; } public AnswerType AnswerType { get; set; } public bool IsRequired { get; set; } public ScoringMode ScoringMode { get; set; }
     [System.ComponentModel.DataAnnotations.StringLength(QuestionAppBuilder.Domain.ValidationLimits.RequiredMessageMaxLength)]
     public string? RequiredMessage { get; set; }
+    public bool WholeNumbersOnly { get; set; }
     public int? MaxLength { get; set; } public decimal? MinValue { get; set; } public decimal? MaxValue { get; set; }
     public int? MinSelections { get; set; } public int? MaxSelections { get; set; }
 }

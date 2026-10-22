@@ -45,13 +45,16 @@ public class RulesController : EditorControllerBase
             switch (form.Family)
             {
                 case RuleFamily.Selection:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, form.MembershipOperator, form.OptionIds, ct: ct, expectedRevision: expectedRevision);
+                    await _designService.AddRuleWithAwardMethodAsync(id, form.Family, form.Points, form.MembershipOperator, form.OptionIds,
+                        null, null, form.AwardMethod, form.PointsPerUnit, form.MaximumPoints, ct, expectedRevision);
                     break;
                 case RuleFamily.NumericRange:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, minValue: form.MinValue, maxValue: form.MaxValue, ct: ct, expectedRevision: expectedRevision);
+                    await _designService.AddRuleWithAwardMethodAsync(id, form.Family, form.Points, null, null,
+                        form.MinValue, form.MaxValue, form.AwardMethod, form.PointsPerUnit, form.MaximumPoints, ct, expectedRevision);
                     break;
                 default:
-                    await _designService.AddRuleAsync(id, form.Family, form.Points, ct: ct, expectedRevision: expectedRevision);
+                    await _designService.AddRuleWithAwardMethodAsync(id, form.Family, form.Points, null, null,
+                        null, null, form.AwardMethod, form.PointsPerUnit, form.MaximumPoints, ct, expectedRevision);
                     break;
             }
         }

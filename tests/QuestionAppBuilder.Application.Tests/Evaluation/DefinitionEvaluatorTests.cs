@@ -141,6 +141,29 @@ public class DefinitionEvaluatorTests
         result.DefinitionIssues.Select(issue => issue.Code).Should().Contain(new[] { "invalid-answer-type", "invalid-points" });
     }
 
+    public static TheoryData<decimal> InvalidWholeNumberValues => new() { -1m, 1.5m };
+
+    [Theory]
+    [MemberData(nameof(InvalidWholeNumberValues))]
+    public void Invalid_whole_number_per_unit_answers_are_reported_and_not_scored(decimal value)
+    {
+        var element = Question(1, AnswerType.Number);
+        var question = element.Question!;
+        question.WholeNumbersOnly = true;
+        question.MinValue = 0;
+        question.MaxValue = 100;
+        question.Rules.Add(new ScoringRule
+        {
+            Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+            PointsPerUnit = 2, MaximumPoints = 200, MinValue = 0, MaxValue = 100
+        });
+
+        var result = _evaluator.Evaluate(Graph(Category(1, element)), Answers((1, new AnswerValue(null, value, null))), true);
+
+        result.AnswerIssues.Select(issue => issue.Code).Should().Contain("invalid-answer");
+        result.Score.Total.Should().Be(0);
+    }
+
     [Fact]
     public void Static_only_category_remains_visible()
     {

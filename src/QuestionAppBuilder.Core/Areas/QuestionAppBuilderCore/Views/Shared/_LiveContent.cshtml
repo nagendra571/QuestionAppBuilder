@@ -1,6 +1,7 @@
 @model ResponsePageModel
 @{ ViewData["FieldErrors"] = Model.FieldErrors; ViewData["InputValues"] = Model.InputValues; }
 <input type="hidden" name="CurrentCategoryIndex" value="@Model.CurrentCategoryIndex" />
+@if (Model.SummaryMessage is not null || (Model.FieldErrors?.Count ?? 0) > 0) { @await Html.PartialAsync("_ErrorSummary", Model) }
 <div class="qab-response-layout">
 <nav class="qab-tabs" aria-label="Questionnaire categories">
     @foreach (var category in Model.Questionnaire.Categories)

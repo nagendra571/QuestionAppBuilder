@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using QuestionAppBuilder.Application.Composition;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Exceptions;
@@ -73,6 +75,44 @@ public class ApplicationDesignServiceTests
         Func<Task> act = () => ctx.Service.CreateApplicationAsync("Duplicate Me", ctx.ApplicationTypeId);
 
         await act.Should().ThrowAsync<DuplicateApplicationNameException>();
+    }
+
+    [Fact]
+    public async Task Duplicate_and_remove_element_copy_dynamic_templates_and_owned_variables()
+    {
+        using var ctx = new TestContext();
+        var app = await ctx.Service.CreateApplicationAsync("Dynamic element clone", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(app.Id, "General");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Organization", AnswerType.Textbox);
+        var graph = await ctx.Service.GetDraftGraphAsync(app.Id);
+        var sourceElement = graph.Categories.Single().Elements.Single(element => element.Question?.Id == question.Id);
+        var variable = new DynamicVariable
+        {
+            Name = "Organization value", CategoryKey = category.LogicalKey, Operation = DynamicOperation.Value,
+            Sources = [new() { Kind = DynamicSourceKind.Question, Key = sourceElement.LogicalKey }]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition
+        {
+            DynamicText = new DynamicTextDefinition
+            {
+                Variables = [variable],
+                Templates = [new() { Slot = DynamicTextSlot.ElementLabel, OwnerKey = sourceElement.LogicalKey,
+                    Parts = [new() { Kind = DynamicPartKind.Value, Source = new() { Kind = DynamicSourceKind.Variable, Key = variable.Id } }] }]
+            }
+        }.ToJson();
+        await ctx.Context.SaveChangesAsync();
+
+        var duplicate = await ctx.Service.DuplicateElementAsync(sourceElement.Id);
+        var afterDuplicate = await ctx.Service.GetDraftGraphAsync(app.Id);
+        var cloned = CompositionDefinition.Read(afterDuplicate.Version.CompositionJson).DynamicText;
+        var copiedVariable = cloned.Variables.Single(item => item.Id != variable.Id);
+        var copiedTemplate = cloned.Templates.Single(item => item.OwnerKey == duplicate.LogicalKey);
+        copiedVariable.Sources.Single().Key.Should().Be(duplicate.LogicalKey);
+        copiedTemplate.Parts.Single().Source!.Key.Should().Be(copiedVariable.Id);
+
+        await ctx.Service.RemoveElementAsync(duplicate.Id);
+        var afterRemoval = CompositionDefinition.Read((await ctx.Service.GetDraftGraphAsync(app.Id)).Version.CompositionJson).DynamicText;
+        afterRemoval.Templates.Should().ContainSingle().Which.OwnerKey.Should().Be(sourceElement.LogicalKey);
     }
 
     [Fact]

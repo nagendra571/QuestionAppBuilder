@@ -4,6 +4,10 @@
     <p class="qab-eyebrow">Response submitted</p>
     <h1>Thank you</h1>
     <p>@Model.Receipt.ConfirmationText</p>
+    @if (!string.IsNullOrWhiteSpace(Model.Receipt.ReviewSummary))
+    {
+        <p>@Model.Receipt.ReviewSummary</p>
+    }
     @if (Model.Receipt.Total is int total)
     {
         <section class="qab-score" aria-labelledby="score-heading"><h2 id="score-heading">Your score</h2>

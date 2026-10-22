@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Infrastructure.Persistence;
 namespace QuestionAppBuilder.Browser.Tests;
 
@@ -249,6 +250,105 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> SeedCompositionApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now, DisplayName = "Composition pilot",
+            NavigationMode = NavigationMode.Sequential, ResultVisibility = ResultVisibility.Total,
+            Categories =
+            {
+                new Category
+                {
+                    Name = "Budget", SortOrder = 1,
+                    Elements =
+                    {
+                        new Element { Kind = ElementKind.Question, Label = "Requested amount", SortOrder = 1,
+                            Question = new Question { AnswerType = AnswerType.Number, IsRequired = true } },
+                        new Element { Kind = ElementKind.Question, Label = "Matching amount", SortOrder = 2,
+                            Question = new Question { AnswerType = AnswerType.Number, IsRequired = true } }
+                    }
+                }
+            }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Composition browser " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Composition type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
+    public async Task<int> SeedDynamicTextApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var content = new Element { Kind = ElementKind.Content, Label = "Applicant details", SortOrder = 1 };
+        var first = new Element { Kind = ElementKind.Question, Label = "First name", SortOrder = 2, Question = new Question { AnswerType = AnswerType.Textbox, IsRequired = true } };
+        var middle = new Element { Kind = ElementKind.Question, Label = "Middle name", SortOrder = 3, Question = new Question { AnswerType = AnswerType.Textbox, IsRequired = false } };
+        var last = new Element { Kind = ElementKind.Question, Label = "Last name", SortOrder = 4, Question = new Question { AnswerType = AnswerType.Textbox, IsRequired = true } };
+        var birthDate = new Element { Kind = ElementKind.Question, Label = "Date of birth", SortOrder = 5, Question = new Question { AnswerType = AnswerType.Date, IsRequired = true } };
+        var category = new Category { Name = "Applicant", SortOrder = 1, Elements = { content, first, middle, last, birthDate } };
+        var formattedBirthDate = new DynamicVariable
+        {
+            Name = "Formatted birth date", Operation = DynamicOperation.FormatDate, DateFormat = "MMM d, yyyy",
+            Sources = { new DynamicSource { Kind = DynamicSourceKind.Question, Key = birthDate.LogicalKey } }
+        };
+        var age = new DynamicVariable
+        {
+            Name = "Age", Operation = DynamicOperation.Age,
+            Sources = { new DynamicSource { Kind = DynamicSourceKind.Question, Key = birthDate.LogicalKey }, new DynamicSource { Kind = DynamicSourceKind.Today } }
+        };
+        var composition = new CompositionDefinition();
+        composition.DynamicText.Variables.AddRange([formattedBirthDate, age]);
+        composition.DynamicText.Templates.AddRange([
+            new DynamicTemplate { Slot = DynamicTextSlot.ElementLabel, OwnerKey = birthDate.LogicalKey, Parts = { new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "Date of birth for " }, new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = first.LogicalKey }, Fallback = "you" } } },
+            new DynamicTemplate { Slot = DynamicTextSlot.ElementHelpText, OwnerKey = last.LogicalKey, Parts = { new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "Birth date (ISO): " }, new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = birthDate.LogicalKey }, Fallback = "not provided" } } },
+            new DynamicTemplate { Slot = DynamicTextSlot.ElementLabel, OwnerKey = content.LogicalKey, HideWhenUnavailable = true, Parts = { new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "Applicant details for " }, new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = first.LogicalKey } } } },
+            new DynamicTemplate { Slot = DynamicTextSlot.ReviewSummary, HideWhenUnavailable = false, Parts = {
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "Applicant: " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = first.LogicalKey } },
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = " " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = middle.LogicalKey } },
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = " " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = last.LogicalKey } },
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "; DOB: " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Variable, Key = formattedBirthDate.Id } },
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "; age: " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Variable, Key = age.Id } }
+            } },
+            new DynamicTemplate { Slot = DynamicTextSlot.ConfirmationText, Parts = {
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = "Thank you, " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = first.LogicalKey } },
+                new DynamicTextPart { Kind = DynamicPartKind.Literal, Text = " " },
+                new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = last.LogicalKey } }
+            } }
+        ]);
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now, DisplayName = "Dynamic text pilot",
+            ConfirmationText = "Thank you for your application.", CompositionJson = composition.ToJson(), Categories = { category }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Dynamic text browser " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Dynamic text type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
     public async Task<int> SeedResponsiveAuthoringApplicationAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
@@ -295,6 +395,94 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         {
             Name = "ApplicationTitle_" + new string('A', 100) + Guid.NewGuid().ToString("N"),
             ApplicationType = new ApplicationType { Name = "Responsive type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
+    public async Task<int> SeedPerformanceDraftApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var firstQuestion = new Question { AnswerType = AnswerType.Number, IsRequired = true };
+        var categories = new List<Category>();
+        var conditions = new List<VisibilityCondition>();
+        var questionsAdded = 0;
+        var optionCounter = 0;
+
+        for (var categoryIndex = 0; categoryIndex < 6; categoryIndex++)
+        {
+            var category = new Category { Name = $"Performance category {categoryIndex + 1}", SortOrder = categoryIndex + 1 };
+            var questionCount = categoryIndex < 4 ? 4 : 5;
+            for (var questionIndex = 0; questionIndex < questionCount; questionIndex++)
+            {
+                var isFirst = categoryIndex == 0 && questionIndex == 0;
+                var isChoice = questionIndex == 1;
+                var answerType = isChoice ? AnswerType.Checkboxes : questionIndex == 3 ? AnswerType.Textbox : AnswerType.Number;
+                var question = isFirst ? firstQuestion : new Question { AnswerType = answerType, IsRequired = questionIndex == 0 };
+                VisibilityCondition? visibilityCondition = null;
+                if (categoryIndex > 0 && questionIndex == 0)
+                {
+                    visibilityCondition = new VisibilityCondition
+                    {
+                        Predicates =
+                        {
+                            new VisibilityPredicate { SourceQuestion = firstQuestion, Operator = ConditionOperator.GreaterThanOrEqual, NumberValue = 0 }
+                        }
+                    };
+                    conditions.Add(visibilityCondition);
+                }
+                var element = new Element
+                {
+                    Kind = ElementKind.Question,
+                    Label = $"Question {questionsAdded + 1}",
+                    SortOrder = questionIndex + 1,
+                    Question = question,
+                    VisibilityCondition = visibilityCondition
+                };
+
+                if (isChoice)
+                {
+                    var option = new QuestionOption { Label = $"Option {++optionCounter}", Value = $"option-{optionCounter}", SortOrder = 1 };
+                    question.Options.Add(option);
+                    question.Rules.Add(new ScoringRule
+                    {
+                        Family = RuleFamily.Selection,
+                        MembershipOperator = MembershipOperator.AnyOf,
+                        Points = 1,
+                        SortOrder = 1,
+                        Options = { new ScoringRuleOption { QuestionOption = option } }
+                    });
+                }
+                else if (answerType == AnswerType.Number)
+                {
+                    question.Rules.Add(new ScoringRule
+                    {
+                        Family = RuleFamily.NumericRange, Points = 1, MinValue = 0, MaxValue = 100,
+                        MinInclusive = true, MaxInclusive = true, SortOrder = 1
+                    });
+                }
+
+                category.Elements.Add(element);
+                questionsAdded++;
+            }
+            categories.Add(category);
+        }
+
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now,
+            DisplayName = "Authoring performance sample", NavigationMode = NavigationMode.Sequential,
+            ResultVisibility = ResultVisibility.Total, Categories = categories, VisibilityConditions = conditions
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Authoring performance " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Performance type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
             CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
             Versions = { version }
         };

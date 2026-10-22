@@ -1,5 +1,7 @@
 # Integrating QuestionAppBuilder
 
+For an agent-facing guide to configuring applications from business requirements, see `docs/AGENT-APPLICATION-BUILDING-GUIDE.md`. It covers the feature model, authoring workflow, constraints, examples, verification, and a reusable agent prompt. This integration document covers consuming-host responsibilities.
+
 QuestionAppBuilder is an ASP.NET Core MVC/Razor Class Library platform. A consuming host owns SQL Server, authentication, authorization policies, branding/layout, email delivery, HTTPS origin, and data-protection keys. The libraries own questionnaire definitions, immutable publication, response persistence, visibility, validation, scoring, and reporting.
 
 ## Packages and framework
@@ -18,6 +20,12 @@ For host-sign-in applications, map the authenticated host's validated issuer and
 
 `scripts/Test-Packages.ps1 -FeedPath <empty-absolute-directory> -Version <unique-prerelease>` creates six packages, restores a host that has only PackageReferences to them from an isolated feed/cache, and checks compiled Editor/Reports views and Core/Editor/Reports assets under custom prefixes. It then runs the real-browser package consumer test. It does not publish packages. `scripts/Test-Release.ps1` adds SQL Server and full solution acceptance.
 
+## Authoring performance
+
+The built-in draft workspace loads its definition once and calculates readiness from that same snapshot through `IDraftService.GetWorkspaceAsync`. The default interface implementation preserves compatibility for existing custom services; override it to provide the same single-load behavior in a custom implementation.
+
+Draft and application-repository graph loaders use scoped split queries rather than joining all options, rules, and visibility collections into one result. On relational databases, a short Serializable transaction protects graph materialization when no caller transaction exists. Existing Save/Publish transactions and revision/rowversion conflict checks remain in place. These changes require no schema migration or cached definition data. See Microsoft's guidance on split-query performance and consistency: https://learn.microsoft.com/en-us/ef/core/querying/single-split-queries.
+
 ## Document answers
 
 `AnswerType.UploadDocument` accepts one PDF, Word `.docx` (without VBA), or UTF-8 `.txt` file per question, up to 10 MiB. Required validation, Presence scoring, visibility rules, and option-linked follow-ups work as for other answers. Designer preview simulates a file without storing bytes.
@@ -25,3 +33,37 @@ For host-sign-in applications, map the authenticated host's validated issuer and
 Apply the UploadDocuments EF migration before serving this type. The default `IResponseDocumentService` stores file bytes separately in SQL Server's ResponseDocuments table; normal answer queries load only filenames. Include these tables in database backup/retention policies. Runtime requires JavaScript for upload/remove and uses antiforgery-protected multipart requests. Allow multipart bodies of at least 11 MiB in any reverse proxy or host request-size configuration. Ordinary answer saves cannot set or clear document answers.
 
 Downloads enforce response ownership/email-grant scope, or the configured Reports policy for an applicable submitted answer. Files download as attachments with no-store and nosniff headers. Files from hidden branches are retained while editing and deleted atomically on submission. A submitted response cannot replace or delete its submitted files. CSV exports contain filenames. Extension/content format checks are not malware scanning; a host that requires scanning should provide its own `IResponseDocumentService` implementation. Never expose document bytes through public static-file paths.
+
+## Points-per-unit question scoring
+
+Numeric range scoring rules on Number questions can choose Award method: Fixed points or Points per unit. Fixed (enum value 0) preserves existing behavior. Points per unit uses the integer PointsPerUnit rate and optional integer MaximumPoints cap; the existing Points field remains the fixed award. The question must require whole numbers, have a nonnegative minimum, and have either a maximum answer or a score cap. Rates and caps are nonnegative, and the maximum rule award is 1,000,000. Definition validation checks the total possible award including combined-rule points before publishing.
+
+Rule eligibility is checked before calculating answer multiplied by rate. A configured cap applies to that rule before Additive or First Match aggregation. Blank, hidden, invalid negative/fractional, or out-of-range answers do not receive a per-unit award. There is no implicit rounding. A score cap limits awarded points; it does not replace question answer validation. Preview, rule traces, submitted question/category totals, and reporting use the actual computed award. New settings are copied through draft/version/category/question duplication; published definitions and submitted scores remain immutable.
+
+Apply migration `20261022153143_PointsPerUnitScoring` before using this feature. It adds AwardMethod (Fixed by default), PointsPerUnit (0 by default), and nullable MaximumPoints to ScoringRules. Per-unit definitions use scoring engine version 2.1; existing fixed-only/composition engine markers are preserved. The original AddRuleAsync service signature is retained; AddRuleWithAwardMethodAsync provides the extended authoring operation.
+
+## Generic composition (optional per published version)
+
+### Dates, reusable values, and dynamic text
+
+Date questions store an invariant `yyyy-MM-dd` answer in the existing TextValue field. They are separate from free-text questions: formatting does not change the stored date or turn arbitrary text into a date. Date questions support required-answer validation and Presence scoring; numeric range scoring continues to require Number questions.
+
+Optional `CompositionDefinition.DynamicText` configuration adds reusable typed values and structured text templates. Sources include question answers, existing calculated fields, other reusable values, constants, and Today. Supported operations include joining text with a separator, formatting dates, calculating age in completed years, and decimal addition, subtraction, multiplication, and division. References use stable logical identifiers instead of question labels, so renaming a question does not break its references. These values are for displayed text; they do not extend scoring or visibility rules.
+
+Templates can customize content/question labels, help text, a review summary, and submission confirmation. Literal text and inserted values are stored separately; neither designer text nor respondent answers execute code. Rendered values are HTML-encoded, and text inside an answer is never interpreted as another template. Missing, hidden, and invalid inputs remain unavailable rather than silently becoming zero. Templates can provide fallback text; content can be hidden until its values are available. Selected choices use the published option labels in definition order, and document answers expose filenames only.
+
+The versioned timezone defaults to UTC and determines Today from one captured evaluation instant. Age uses completed calendar years, rejects future birth dates, and treats a February 29 anniversary as February 28 in a non-leap year. Division by zero is unavailable. Publication validates references, operand types, cycles, and supported configuration limits. Forward references in displayed text are allowed and remain unavailable until answered.
+
+The existing submission composition snapshot also stores the evaluation instant, timezone/reference date, typed values, and resolved text. Receipts and reports use that frozen result, so an age or confirmation does not change when viewed later. Older submissions continue to use their existing static text. This extension uses the existing JSON columns and requires no additional database migration beyond the generic-composition migration.
+
+### Groups, calculations, and combined rules
+
+Validation rules optionally enable "Show validation while answering" (`ShowWhileAnswering`, default false). This versioned JSON flag requires no additional migration. Opted-in failures appear for the current category after the existing background autosave (600 ms typing pause plus server response), and clear after valid answers save. JavaScript and a successful request are required for live updates. All rules retain normal sequential forward-navigation and submission enforcement regardless of the flag. Backward/free navigation behavior is unchanged. Live feedback does not expose unrelated required-field errors. Publish an updated draft and start a new response to use changed settings; existing responses retain their pinned version.
+
+Applications may add a generic composition configuration to a draft; applications without one continue to use the standard questionnaire behavior. Open the visual builder from the authoring workspace at `/ConfigureApp/Composition/Index/{id}` (the editor route prefix can be customized). The builder groups existing questions as presentation metadata; grouped questions remain ordinary questions with their usual answer, visibility, validation, and scoring behavior.
+
+Calculated fields support `Sum` and `Percentage` over numeric question values, selected-option indicators, constants, and other calculated fields. Blank numeric answers and hidden source questions contribute zero. A percentage with a zero denominator has no value and is shown as unavailable. A question can optionally require whole-number input; this is an additional constraint on Number answers and defaults off.
+
+Combined rules support validation and scoring. Conditions gate a rule and all conditions must match; checks can require all checks or any check. An option-selection source evaluates to 1 when selected and 0 otherwise. Score rules can share an ordered band group so only the first matching rule in that group contributes. Validation rules must be attached to the same or a later category than every answer they depend on; invalid future-category dependencies are rejected during configuration and definition validation.
+
+Composition configuration is stored as JSON in `ApplicationVersion.CompositionJson`, so it is versioned with the definition and follows its immutable publication. On submission, calculated values and composition awards are serialized into `Submission.CompositionSnapshotJson`. Reports and CSV export read that stored snapshot; they do not recalculate composition against current definitions or answers. The `20261022021845_GenericComposition` migration adds these two nullable JSON columns and `Questions.WholeNumbersOnly` (default false). Apply the migration before using the new authoring or reporting fields.

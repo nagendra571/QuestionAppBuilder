@@ -1,0 +1,54 @@
+@model QuestionAppBuilder.Application.Authoring.DraftSnapshot
+@using QuestionAppBuilder.Domain.Composition
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Question configuration";
+    var graph = Model.Definition;
+    var compositionJson = ViewData["CompositionDefinitionJson"] as string ?? new CompositionDefinition().ToJson();
+    var recovering = ViewData["CompositionRecovery"] is true;
+    var catalog = new {
+        Categories = graph.Categories.OrderBy(c => c.SortOrder).Select(c => new { Key = c.LogicalKey, c.Name }),
+        TimeZones = TimeZoneInfo.GetSystemTimeZones().Select(zone => new { zone.Id, zone.DisplayName }),
+        Elements = graph.Categories.SelectMany(c => c.Elements.Select(e => new {
+            Key = e.LogicalKey, e.Label, CategoryKey = c.LogicalKey, Content = e.Question is null,
+            AnswerType = e.Question?.AnswerType.ToString()
+        })),
+        Questions = graph.Categories.SelectMany(c => c.Elements.Where(e => e.Question is not null).Select(e => new {
+            Key = e.LogicalKey, e.Label, CategoryKey = c.LogicalKey, AnswerType = e.Question!.AnswerType.ToString(),
+            Numeric = e.Question.AnswerType == QuestionAppBuilder.Domain.Enums.AnswerType.Number,
+            Options = e.Question.Options.Select(o => new { Key = o.LogicalKey, o.Label }) }))
+    };
+}
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor.css" />
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/composition.css" />
+<script src="~/_content/QuestionAppBuilder.Editor/js/composition.js" defer></script>
+<main class="composition-page">
+    <form method="post" action="@Url.Action("Save", "Composition", new { id = graph.Version.ApplicationId })" data-composition-form>
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="expectedRevision" value="@Convert.ToBase64String(Model.Revision)" />
+        <input type="hidden" name="definitionJson" />
+        <header class="composition-header">
+            <div class="composition-heading">
+                <a asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@graph.Version.ApplicationId">Back to authoring workspace</a>
+                <h1>Question configuration</h1>
+                <p>Arrange questions, calculate results, define combined rules, and build reusable dynamic text.</p>
+            </div>
+            <div class="composition-toolbar">
+                <p role="status" aria-live="polite" data-composition-status>@(recovering ? "Unreadable saved configuration has not been changed." : "All changes saved.")</p>
+                <button type="submit" class="aw-primary">@(recovering ? "Save replacement" : "Save configuration")</button>
+            </div>
+        </header>
+        @if (recovering)
+        {
+            <div class="composition-recovery" role="alert">
+                <strong>Saved configuration could not be opened.</strong>
+                <span>The saved settings remain unchanged until you save this replacement. Leaving this page keeps the saved draft as it is.</span>
+            </div>
+        }
+        <nav class="composition-tabs" aria-label="Configuration sections"><button type="button" data-pane="Groups" aria-pressed="true">Question groups</button><button type="button" data-pane="Calculations" aria-pressed="false">Calculated fields</button><button type="button" data-pane="Rules" aria-pressed="false">Combined rules</button><button type="button" data-pane="DynamicText" aria-pressed="false">Dynamic text</button></nav>
+        <section data-composition-editor></section>
+        <noscript>Enable JavaScript to configure groups and calculations.</noscript>
+    </form>
+    <script type="application/json" data-composition-catalog>@Html.Raw(JsonSerializer.Serialize(catalog))</script>
+    <script type="application/json" data-composition-definition>@Html.Raw(compositionJson)</script>
+</main>

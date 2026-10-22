@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using QuestionAppBuilder.Application.Composition;
 using QuestionAppBuilder.Application.Reporting;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Infrastructure.Persistence;
 using ApplicationEntity = QuestionAppBuilder.Domain.Entities.Application;
@@ -141,6 +143,20 @@ public sealed class ReportQueries : IReportQueries
             .Include(version => version.Categories).ThenInclude(category => category.Elements)
                 .ThenInclude(element => element.Question).ThenInclude(question => question!.Rules)
             .SingleAsync(cancellationToken);
+        var compositionSnapshotJson = await db.Submissions.Where(s => s.Id == submissionId)
+            .Select(s => s.CompositionSnapshotJson).SingleAsync(cancellationToken);
+        CompositionResult? compositionSnapshot = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(compositionSnapshotJson))
+                compositionSnapshot = System.Text.Json.JsonSerializer.Deserialize<CompositionResult>(compositionSnapshotJson);
+        }
+        catch (System.Text.Json.JsonException) { }
+        var frozenLabels = compositionSnapshot?.DynamicText?.Texts
+            .Where(text => text.Slot == DynamicTextSlot.ElementLabel && text.OwnerKey != Guid.Empty)
+            .GroupBy(text => text.OwnerKey).ToDictionary(group => group.Key,
+                group => group.Last() is { IsHidden: true } ? string.Empty : group.Last().Text)
+            ?? new Dictionary<Guid, string>();
         var questionStates = await db.SubmissionQuestionStates.AsNoTracking()
             .Where(state => state.SubmissionId == submissionId)
             .ToDictionaryAsync(state => state.QuestionId, cancellationToken);
@@ -181,17 +197,18 @@ public sealed class ReportQueries : IReportQueries
                 var selectedIds = showAnswer && answer is not null && optionsByAnswer.TryGetValue(answer.Id, out var ids)
                     ? ids : Array.Empty<int>();
                 return new SubmissionQuestionDetail(question.Id, state?.QuestionLogicalKey ?? element.LogicalKey,
-                    element.Label, question.AnswerType.ToString(), applicable, showAnswer && answer is not null,
+                    frozenLabels.GetValueOrDefault(state?.QuestionLogicalKey ?? element.LogicalKey, element.Label), question.AnswerType.ToString(), applicable, showAnswer && answer is not null,
                     showAnswer ? answer?.TextValue : null, showAnswer ? answer?.NumberValue : null,
                     selectedIds.Where(optionLabels.ContainsKey).Select(id => optionLabels[id]).ToArray(),
                     state?.PointsEarned ?? (showAnswer ? answer?.PointsEarned ?? 0 : 0));
             }).ToArray();
         var ruleMap = versionGraph.Categories.SelectMany(category => category.Elements)
             .Where(element => element.Question is not null)
-            .SelectMany(element => element.Question!.Rules.Select(rule => (element.Question!.Id, Rule: rule, element.Label)))
+            .SelectMany(element => element.Question!.Rules.Select(rule => (element.Question!.Id, Rule: rule, element.Label, element.LogicalKey)))
             .ToDictionary(x => x.Rule.Id);
         var traces = ruleRows.Select(trace => ruleMap.TryGetValue(trace.RuleId, out var rule)
-            ? new SubmissionRuleDetail(trace.QuestionId, rule.Label, trace.RuleId, rule.Rule.SortOrder,
+            ? new SubmissionRuleDetail(trace.QuestionId, frozenLabels.GetValueOrDefault(rule.LogicalKey, rule.Label),
+                trace.RuleId, rule.Rule.SortOrder,
                 trace.Matches, trace.Contributes, trace.Points)
             : new SubmissionRuleDetail(trace.QuestionId, "Unknown question", trace.RuleId, int.MaxValue,
                 trace.Matches, trace.Contributes, trace.Points))
@@ -204,7 +221,8 @@ public sealed class ReportQueries : IReportQueries
         return new SubmissionDetail(header.Id, header.ApplicationId, header.ApplicationName,
             header.ApplicationVersionId, header.VersionNumber, header.DisplayName,
             DateTime.SpecifyKind(header.SubmittedUtc, DateTimeKind.Utc),
-            header.OwnerReference, header.TotalScore, header.ResultVisibility, categories, questions, traces);
+            header.OwnerReference, header.TotalScore, header.ResultVisibility, categories, questions, traces)
+        { CompositionSnapshotJson = compositionSnapshotJson };
     }
 
     private static IQueryable<Submission> ApplySubmissionFilter(IQueryable<Submission> query, ReportFilter filter)

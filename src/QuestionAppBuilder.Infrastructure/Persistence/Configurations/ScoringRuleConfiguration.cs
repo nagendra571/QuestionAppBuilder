@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using QuestionAppBuilder.Domain.Entities;
+using QuestionAppBuilder.Domain.Enums;
 
 namespace QuestionAppBuilder.Infrastructure.Persistence.Configurations;
 
@@ -13,6 +14,14 @@ public class ScoringRuleConfiguration : IEntityTypeConfiguration<ScoringRule>
         builder.Property(r => r.Family)
             .HasConversion<string>()
             .HasMaxLength(32)
+            .IsRequired();
+        builder.Property(r => r.AwardMethod)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(AwardMethod.Fixed)
+            .IsRequired();
+        builder.Property(r => r.PointsPerUnit)
+            .HasDefaultValue(0)
             .IsRequired();
         builder.Property(r => r.MembershipOperator)
             .HasConversion<string>()

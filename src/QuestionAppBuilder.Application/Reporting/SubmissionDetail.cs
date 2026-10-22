@@ -36,4 +36,7 @@ public sealed record SubmissionDetail(
     ResultVisibility ResultVisibility,
     IReadOnlyList<SubmissionCategoryScore> Categories,
     IReadOnlyList<SubmissionQuestionDetail> Questions,
-    IReadOnlyList<SubmissionRuleDetail> RuleTraces);
+    IReadOnlyList<SubmissionRuleDetail> RuleTraces)
+{
+    public string? CompositionSnapshotJson { get; init; }
+}

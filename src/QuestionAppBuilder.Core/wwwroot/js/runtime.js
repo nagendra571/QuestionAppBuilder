@@ -13,8 +13,20 @@
   let allowSubmit = false;
   let failed = false;
   let documentInFlight = false;
+  let lastLiveValidation = "";
 
   const announce = message => { status.textContent = message; };
+  const announceLiveValidation = messages => {
+    const region = root.querySelector("[data-live-validation-status]");
+    if (!region || !Array.isArray(messages)) return;
+    const uniqueMessages = [...new Set(messages.filter(message => typeof message === "string" && message.trim()))];
+    const key = uniqueMessages.join("\n");
+    if (key === lastLiveValidation) return;
+    const previousMessages = new Set(lastLiveValidation.split("\n").filter(Boolean));
+    const newlyAdded = uniqueMessages.filter(message => !previousMessages.has(message));
+    lastLiveValidation = key;
+    region.textContent = newlyAdded.length ? `Answer feedback: ${newlyAdded.join(" ")}` : "";
+  };
   const applyLiveContent = html => {
     const target = root.querySelector("[data-live-content]");
     if (!target || !html) return;
@@ -60,7 +72,10 @@
           const result = await response.json();
           const revision = form.querySelector("[name='ExpectedRevision']");
           if (revision && result.revision) revision.value = result.revision;
-          if (dirtyVersion === version && result.liveContentHtml) applyLiveContent(result.liveContentHtml);
+          if (dirtyVersion === version && result.liveContentHtml) {
+            applyLiveContent(result.liveContentHtml);
+            announceLiveValidation(result.liveValidationMessages);
+          }
           // A validation response can leave this document at the Navigate POST URL.
           // After saving, refresh should read the saved response rather than replay that POST.
           if (root.dataset.editUrl) {
@@ -121,6 +136,7 @@
       if (!response.ok) throw new Error(result.message || 'The document could not be saved. Please try again.');
       form.querySelector('[name="ExpectedRevision"]').value = result.revision;
       applyLiveContent(result.liveContentHtml);
+      announceLiveValidation(result.liveValidationMessages);
       if (root.dataset.editUrl) {
         const canonical = new URL(root.dataset.editUrl, location.href);
         canonical.searchParams.set('category', form.querySelector('[name="CurrentCategoryIndex"]')?.value || '0');
