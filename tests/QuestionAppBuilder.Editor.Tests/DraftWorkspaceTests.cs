@@ -62,6 +62,36 @@ public sealed class DraftWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task Workspace_save_accepts_more_form_values_than_the_framework_default()
+    {
+        var appId = await CreateDraftAsync();
+        var questionId = await _factory.WithScopeAsync(async services =>
+            (await services.GetRequiredService<IDraftService>().GetAsync(appId)).Definition.Categories.First().Elements.First().Question!.Id);
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("__RequestVerificationToken", token), new("ApplicationId", appId.ToString()),
+            new("ExpectedRevision", ReadRevision(html)), new("Version.DisplayName", "Large workspace"),
+            new("Version.SubmitLabel", "Submit"), new("Questions[0].Id", questionId.ToString()),
+            new("Questions[0].AnswerType", "Number"), new("Questions[0].IsRequired", "true"),
+            new("Questions[0].RequiredMessage", "Large forms still save.")
+        };
+        // A ~50-question workspace posts more than ASP.NET Core's default 1,024 form values.
+        for (var i = 0; i < 1500; i++) fields.Add(new($"Questions[0].MaxLength", ""));
+
+        var response = await client.PostAsync($"/ConfigureApp/Drafts/{appId}/Save", new FormUrlEncodedContent(fields));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Found, await response.Content.ReadAsStringAsync());
+        await _factory.WithScopeAsync(async services =>
+        {
+            var saved = await services.GetRequiredService<IDraftService>().GetAsync(appId);
+            saved.Definition.Categories.First().Elements.First().Question!.RequiredMessage.Should().Be("Large forms still save.");
+            return true;
+        });
+    }
+
+    [Fact]
     public async Task Workspace_exposes_all_six_answer_types_and_revision_bound_readiness()
     {
         var appId = await CreateDraftAsync();

@@ -8,6 +8,9 @@ namespace QuestionAppBuilder.Editor.Controllers;
 [ServiceFilter(typeof(EditorAuthorizationFilter))]
 public abstract class EditorControllerBase : Controller
 {
+    // The workspace posts the whole drafts as one form; ASP.NET Core's default of 1,024 values is reached ar ~50 questions.
+    internal const int WorkspaceFormValueCountLimit = 50_000;
+
     protected EditorControllerBase(QuestionAppBuilderEditorOptions editorOptions)
     {
         EditorOptions = editorOptions;

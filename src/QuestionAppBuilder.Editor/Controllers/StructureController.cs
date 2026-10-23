@@ -8,6 +8,7 @@ using QuestionAppBuilder.Editor.Options;
 
 namespace QuestionAppBuilder.Editor.Controllers;
 
+[RequestFormLimits(ValueCountLimit = EditorControllerBase.WorkspaceFormValueCountLimit)]
 public sealed class StructureController : EditorControllerBase
 {
     private readonly IApplicationDesignService _design;

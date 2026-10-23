@@ -9,6 +9,7 @@ using QuestionAppBuilder.Editor.ViewModels;
 
 namespace QuestionAppBuilder.Editor.Controllers;
 
+[RequestFormLimits(ValueCountLimit = EditorControllerBase.WorkspaceFormValueCountLimit)]
 public sealed class DraftsController : EditorControllerBase
 {
     private readonly IDraftService _drafts;
