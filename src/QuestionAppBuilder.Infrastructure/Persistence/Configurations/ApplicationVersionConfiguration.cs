@@ -19,6 +19,8 @@ public class ApplicationVersionConfiguration : IEntityTypeConfiguration<Applicat
         builder.Property(v => v.NavigationMode).HasConversion<string>().HasMaxLength(32).HasDefaultValue(NavigationMode.Sequential).IsRequired();
         builder.Property(v => v.RespondentAccessMode).HasConversion<string>().HasMaxLength(32).HasDefaultValue(RespondentAccessMode.HostSignIn).IsRequired();
         builder.Property(v => v.ResultVisibility).HasConversion<string>().HasMaxLength(32).HasDefaultValue(ResultVisibility.Total).IsRequired();
+        builder.Property(v => v.SubmittedApplicationVisibility).HasConversion<string>().HasMaxLength(32)
+            .HasDefaultValue(SubmittedApplicationVisibility.WithoutScores).IsRequired();
         builder.Property(v => v.SubmitLabel).HasMaxLength(200).IsRequired();
         builder.Property(v => v.ConfirmationText).HasMaxLength(4000).IsRequired();
         builder.Property(v => v.DisplayName).HasMaxLength(200).IsRequired();

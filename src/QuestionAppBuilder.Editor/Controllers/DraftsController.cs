@@ -100,7 +100,8 @@ public sealed class DraftsController : EditorControllerBase
             ApplicationId = graph.Version.ApplicationId, ExpectedRevision = snapshot.Revision,
             Version = new DraftVersionInput { DisplayName = graph.Version.DisplayName, SubmitLabel = graph.Version.SubmitLabel,
                 ConfirmationText = graph.Version.ConfirmationText, NavigationMode = graph.Version.NavigationMode,
-                RespondentAccessMode = graph.Version.RespondentAccessMode, ResultVisibility = graph.Version.ResultVisibility },
+                RespondentAccessMode = graph.Version.RespondentAccessMode, ResultVisibility = graph.Version.ResultVisibility,
+                SubmittedApplicationVisibility = graph.Version.SubmittedApplicationVisibility },
             Categories = graph.Categories.Select(c => new DraftCategoryInput { Id = c.Id, Name = c.Name, SortOrder = c.SortOrder, VisibilityConditionId = c.VisibilityConditionId }).ToList(),
             Elements = graph.Categories.SelectMany(c => c.Elements).Select(e => new DraftElementInput { Id = e.Id, Label = e.Label, HelpText = e.HelpText, SortOrder = e.SortOrder, VisibilityConditionId = e.VisibilityConditionId }).ToList(),
             Questions = graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).Select(q => new DraftQuestionInput { Id = q.Id,
@@ -123,6 +124,7 @@ public sealed class DraftsController : EditorControllerBase
         var version = graph.Version;
         version.DisplayName = input.Version.DisplayName; version.SubmitLabel = input.Version.SubmitLabel; version.ConfirmationText = input.Version.ConfirmationText ?? string.Empty;
         version.NavigationMode = input.Version.NavigationMode; version.RespondentAccessMode = input.Version.RespondentAccessMode; version.ResultVisibility = input.Version.ResultVisibility;
+        version.SubmittedApplicationVisibility = input.Version.SubmittedApplicationVisibility;
         var categories = graph.Categories.ToDictionary(c => c.Id); var elements = graph.Categories.SelectMany(c => c.Elements).ToDictionary(e => e.Id);
         var questions = graph.Categories.SelectMany(c => c.Elements).Where(e => e.Question is not null).Select(e => e.Question!).ToDictionary(q => q.Id);
         var options = questions.Values.SelectMany(q => q.Options).ToDictionary(o => o.Id);

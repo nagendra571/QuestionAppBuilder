@@ -28,6 +28,7 @@ public sealed class DraftVersionInput
     public NavigationMode NavigationMode { get; set; }
     public RespondentAccessMode RespondentAccessMode { get; set; }
     public ResultVisibility ResultVisibility { get; set; }
+    public SubmittedApplicationVisibility SubmittedApplicationVisibility { get; set; }
 }
 public sealed class DraftCategoryInput { public int Id { get; set; } public string Name { get; set; } = string.Empty; public int SortOrder { get; set; } public int? VisibilityConditionId { get; set; } }
 public sealed class DraftElementInput { public int Id { get; set; } public string Label { get; set; } = string.Empty; public string? HelpText { get; set; } public int SortOrder { get; set; } public int? VisibilityConditionId { get; set; } }
@@ -70,6 +71,7 @@ public sealed record PreviewResponse(QuestionAppBuilder.Core.Rendering.Questionn
     public string Html { get; init; } = string.Empty;
     public QuestionAppBuilder.Domain.Enums.NavigationMode NavigationMode { get; init; }
     public QuestionAppBuilder.Domain.Enums.ResultVisibility ResultVisibility { get; init; }
+    public QuestionAppBuilder.Domain.Enums.SubmittedApplicationVisibility SubmittedApplicationVisibility { get; init; }
     public int CategoryIndex { get; init; }
     public bool IsReceipt { get; init; }
 }

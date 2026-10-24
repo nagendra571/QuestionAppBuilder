@@ -11,5 +11,41 @@
         <ul>@foreach (var category in Model.Score.Categories) { <li>Category @category.CategoryId: @category.Score points</li> }</ul>
         <p data-preview-total="@Model.Score.Total">Total score: @Model.Score.Total</p>
     }
+    @if (Model.ResultVisibility == ResultVisibility.ConfirmationAndAnswerReview)
+    {
+        <section class="qab-submitted-application" aria-label="Submitted application preview">
+            <h3>@Model.Questionnaire.Title</h3>
+            @if (Model.Score is not null)
+            {
+                <p class="qab-score-total" data-preview-total="@Model.Score.Total">@Model.Score.Total</p>
+                <p>This is the score earned from the submitted answers.</p>
+            }
+            @foreach (var category in Model.Questionnaire.Categories)
+            {
+                <section class="qab-review-category">
+                    <header class="qab-submitted-category-heading"><h3>@category.Name</h3>
+                        @if (Model.Score?.Categories.FirstOrDefault(score => score.CategoryId == category.Id) is { Score: > 0 } categoryScore)
+                        { <span class="qab-earned-points">+@categoryScore.Score points</span> }
+                    </header>
+                    @foreach (var element in category.Elements)
+                    {
+                        if (element.IsHidden) { continue; }
+                        if (element.Question is not { } question)
+                        { <article class="qab-content-panel"><h4>@element.Label</h4>@if (!string.IsNullOrWhiteSpace(element.HelpText)) { <p>@element.HelpText</p> }</article>; continue; }
+                        var value = question.Value;
+                        var shown = value?.Text ?? value?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        if (question.AnswerType is AnswerType.Dropdown or AnswerType.RadioGroup or AnswerType.Checkboxes)
+                        { shown = string.Join(", ", question.Options.Where(option => value?.SelectedOptionIds?.Contains(option.Id) == true).Select(option => option.Label)); }
+                        if (question.AnswerType == AnswerType.Date) { shown = question.DateDisplayValue; }
+                        if (string.IsNullOrWhiteSpace(shown)) { shown = "No answer provided."; }
+                        <article class="qab-question"><h4>@question.Label</h4>@if (!string.IsNullOrWhiteSpace(question.HelpText)) { <p class="qab-help">@question.HelpText</p> }<p>@shown</p>
+                            @if (Model.Score?.Questions.FirstOrDefault(score => score.QuestionId == question.Id) is { Points: > 0 } questionScore)
+                            { <span class="qab-earned-points">+@questionScore.Points points</span> }
+                        </article>
+                    }
+                </section>
+            }
+        </section>
+    }
     <p>This is a preview. No response or submission was created.</p>
 </main>

@@ -333,8 +333,8 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         if (!Enum.IsDefined(awardMethod))
             throw new DefinitionValidationException("Select a supported award method.");
         if (awardMethod == AwardMethod.PointsPerUnit
-            && !ScoringAward.TryGetMaximumAward(editable.Target, rule, out _))
-            throw new DefinitionValidationException("Points per unit requires a nonnegative whole-number numeric question and a safe rate, answer maximum, or award cap.");
+            && ScoringAward.GetMaximumAwardError(editable.Target, rule) is string awardError)
+            throw new DefinitionValidationException(awardError);
 
         switch (family)
         {

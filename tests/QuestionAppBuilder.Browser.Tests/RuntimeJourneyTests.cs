@@ -9,6 +9,120 @@ namespace QuestionAppBuilder.Browser.Tests;
 public sealed class RuntimeJourneyTests
 {
     [Fact]
+    public async Task Confirmation_total_and_answer_review_receipt_is_responsive_and_stacked()
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: ResultVisibility.ConfirmationAndAnswerReview)
+        };
+        await using var host = await BrowserTestFixture.StartAsync(runtime);
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+        for (var question = 1; question <= 5; question++)
+        {
+            await page.Locator($"[name='Answers[{question}].Text']").FillAsync($"Answer {question}");
+            await page.GetByRole(AriaRole.Button, new() { Name = question < 5 ? "Save & Continue" : "Review your answers" }).ClickAsync();
+            if (question < 5)
+                await page.GetByRole(AriaRole.Heading, new() { Name = $"Category {question + 1}" }).WaitForAsync();
+        }
+        await page.GetByRole(AriaRole.Button, new() { Name = "Send application" }).ClickAsync();
+        var receipt = page.Locator("main.qab-receipt");
+        await receipt.WaitForAsync();
+
+        var screenshotDirectory = Environment.GetEnvironmentVariable("QAB_UI_SCREENSHOTS");
+        foreach (var width in new[] { 1440, 375 })
+        {
+            await page.SetViewportSizeAsync(width, 900);
+            await page.ReloadAsync();
+            await receipt.WaitForAsync();
+            var dimensions = await page.EvaluateAsync<int[]>("[document.documentElement.scrollWidth, innerWidth]");
+            dimensions[0].Should().BeLessThanOrEqualTo(dimensions[1], $"confirmation receipt must fit at {width}px");
+            var receiptText = await receipt.InnerTextAsync();
+            for (var category = 1; category <= 5; category++) receiptText.Should().Contain($"Category {category}");
+            receiptText.Should().Contain("Answer 1").And.Contain("Application introduction").And.Contain("Supporter");
+            (await receipt.Locator("[data-total-score='2']").CountAsync()).Should().Be(1);
+            (await receipt.Locator(".qab-tabs").CountAsync()).Should().Be(0, "mode 4 keeps the whole review visible at once");
+            (await receipt.Locator("form, input, textarea, select, button, script[src*='runtime.js']").CountAsync()).Should().Be(0);
+            if (!string.IsNullOrWhiteSpace(screenshotDirectory))
+            {
+                Directory.CreateDirectory(screenshotDirectory);
+                await page.ScreenshotAsync(new() { Path = Path.Combine(screenshotDirectory, $"confirmation-answer-review-{width}.png"), FullPage = true });
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(SubmittedApplicationVisibility.WithoutScores, false)]
+    [InlineData(SubmittedApplicationVisibility.WithScores, true)]
+    public async Task Submitted_application_receipt_is_browse_only_and_fits_desktop_and_mobile(
+        SubmittedApplicationVisibility visibility, bool hasResults)
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: ResultVisibility.Total)
+        };
+        runtime.Graph.Version.SubmittedApplicationVisibility = visibility;
+        await using var host = await BrowserTestFixture.StartAsync(runtime);
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+        for (var question = 1; question <= 5; question++)
+        {
+            await page.Locator($"[name='Answers[{question}].Text']").FillAsync($"Answer {question}");
+            await page.GetByRole(AriaRole.Button, new() { Name = question < 5 ? "Save & Continue" : "Review your answers" }).ClickAsync();
+            if (question < 5)
+                await page.GetByRole(AriaRole.Heading, new() { Name = $"Category {question + 1}" }).WaitForAsync();
+        }
+        await page.GetByRole(AriaRole.Button, new() { Name = "Send application" }).ClickAsync();
+        await page.Locator("main.qab-receipt").WaitForAsync();
+
+        var submittedUrl = new Uri(host.BaseAddress,
+            $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Submitted").ToString();
+        var screenshotDirectory = Environment.GetEnvironmentVariable("QAB_UI_SCREENSHOTS");
+        foreach (var width in new[] { 1440, 375 })
+        {
+            await page.SetViewportSizeAsync(width, 900);
+            await page.GotoAsync(submittedUrl);
+            await page.Locator("main.qab-receipt").WaitForAsync();
+            var dimensions = await page.EvaluateAsync<int[]>("[document.documentElement.scrollWidth, innerWidth]");
+            dimensions[0].Should().BeLessThanOrEqualTo(dimensions[1], $"receipt must fit at {width}px");
+            var firstCategoryText = await page.Locator(".qab-receipt").InnerTextAsync();
+            firstCategoryText.Should().Contain("Category 1").And.Contain("Answer 1").And.Contain("Application introduction");
+            (await page.Locator("form, input, textarea, select, button").CountAsync()).Should().Be(0,
+                "a submitted application can be browsed without editing or submitting it");
+            (await page.Locator("script[src*='runtime.js']").CountAsync()).Should().Be(0);
+            if (hasResults)
+            {
+                firstCategoryText.Should().Contain("Supporter").And.Contain("Summary").And.NotContain("+0 points");
+                (await page.Locator("[data-total-score='2']").CountAsync()).Should().Be(1);
+                var groupedAnswer = await page.Locator(".qab-group-table tbody tr td[data-column='Submitted answer']").First.InnerTextAsync();
+                groupedAnswer.IndexOf("Question 1", StringComparison.Ordinal).Should().BeLessThan(groupedAnswer.IndexOf("Answer in the indicated field.", StringComparison.Ordinal));
+                groupedAnswer.IndexOf("Answer in the indicated field.", StringComparison.Ordinal).Should().BeLessThan(groupedAnswer.IndexOf("Answer 1", StringComparison.Ordinal));
+            }
+            else
+            {
+                firstCategoryText.Should().NotContain("Supporter")
+                    .And.NotContain("Points earned");
+                (await page.Locator("[data-total-score]").CountAsync()).Should().Be(0);
+            }
+
+            if (!string.IsNullOrWhiteSpace(screenshotDirectory))
+            {
+                Directory.CreateDirectory(screenshotDirectory);
+                await page.ScreenshotAsync(new() { Path = Path.Combine(screenshotDirectory, $"submitted-receipt-{visibility}-{width}.png"), FullPage = true });
+            }
+            await page.Locator(".qab-tabs a[href='?category=4']").ClickAsync();
+            await page.GetByRole(AriaRole.Heading, new() { Name = "Category 5" }).WaitForAsync();
+            (await page.Locator(".qab-receipt").InnerTextAsync()).Should().Contain("Answer 5");
+        }
+    }
+
+    [Fact]
     public async Task Pending_autosave_preserves_later_edit_renders_new_branch_and_honors_continue_click()
     {
         var graph = TestHostFixture.FakeRuntime.BuildGraph();

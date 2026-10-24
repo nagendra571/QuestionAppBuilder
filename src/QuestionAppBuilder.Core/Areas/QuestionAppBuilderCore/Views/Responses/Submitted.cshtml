@@ -1,0 +1,19 @@
+@model ReceiptPageModel
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
+<main class="qab-runtime qab-receipt" data-submission-id="@Model.Receipt.SubmissionId">
+    <header class="qab-header">
+        <p class="qab-eyebrow">Submitted response</p>
+        <h1>Your submitted application</h1>
+        <p>@Model.Receipt.ConfirmationText</p>
+        @if (!string.IsNullOrWhiteSpace(Model.Receipt.ReviewSummary)) { <p>@Model.Receipt.ReviewSummary</p> }
+    </header>
+    @if (Model.Receipt.SubmittedApplication is not null)
+    {
+        @await Html.PartialAsync("_SubmittedApplicationContent", Model)
+    }
+    else
+    {
+        <p>The submitted application is not available from this runtime.</p>
+    }
+    <p class="qab-footer-note">This submitted response is read-only.</p>
+</main>

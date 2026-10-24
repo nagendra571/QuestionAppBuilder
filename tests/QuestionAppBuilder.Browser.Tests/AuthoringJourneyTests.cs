@@ -12,6 +12,52 @@ namespace QuestionAppBuilder.Browser.Tests;
 public sealed class AuthoringJourneyTests
 {
     [Fact]
+    public async Task Confirmation_and_answer_review_preview_shows_read_only_stacked_application()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var applicationId = await host.SeedDraftPreviewApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{applicationId}").ToString());
+        await page.GetByRole(AriaRole.Link, new() { Name = "Settings", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Questionnaire settings" }).WaitForAsync();
+        await page.Locator("[name='Version.ResultVisibility']").SelectOptionAsync("ConfirmationAndAnswerReview");
+        var save = page.WaitForResponseAsync(response => response.Request.Method == "POST" && response.Url.EndsWith("/Save"));
+        await page.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        (await save).Ok.Should().BeTrue();
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "Preview", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Evaluate preview" }).ClickAsync();
+        var preview = page.Locator("[data-preview-result]");
+        await preview.Locator("[data-preview-category='0'] [data-question-id]").First.WaitForAsync();
+        var firstQuestionId = await preview.Locator("[data-preview-category='0'] [data-question-id]").First.GetAttributeAsync("data-question-id");
+        await preview.Locator($"[name='Answers[{firstQuestionId}].Number']").FillAsync("5");
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
+        await preview.Locator("[data-preview-category='1'] [data-question-id]").WaitForAsync();
+        var secondQuestionId = await preview.Locator("[data-preview-category='1'] [data-question-id]").First.GetAttributeAsync("data-question-id");
+        await preview.Locator($"[name='Answers[{secondQuestionId}].Text']").FillAsync("Filled answer");
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Review your answers" }).ClickAsync();
+        await preview.GetByRole(AriaRole.Heading, new() { Name = "Review your answers" }).WaitForAsync();
+        await preview.GetByRole(AriaRole.Button, new() { Name = "Submit application" }).ClickAsync();
+        var receiptView = preview.Locator("main.qab-runtime-preview");
+        await receiptView.GetByRole(AriaRole.Heading, new() { Name = "Thank you" }).WaitForAsync();
+
+        var applicationView = receiptView.Locator(".qab-submitted-application");
+        var receipt = await applicationView.InnerTextAsync();
+        receipt.Should().Contain("Filled answer").And.Contain("This is the score earned from the submitted answers.")
+            .And.Contain("First category").And.Contain("Second category");
+        (await applicationView.Locator("[data-preview-total]").CountAsync()).Should().Be(1);
+        (await applicationView.Locator("[data-preview-total]").InnerTextAsync()).Should().Be("0");
+        (await host.CountResponsesAsync()).Should().Be(0);
+        (await host.CountSubmissionsAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Preview_keeps_answers_across_sequential_categories_and_shows_runtime_receipt()
     {
         await using var host = await SampleHostFixture.StartAsync();

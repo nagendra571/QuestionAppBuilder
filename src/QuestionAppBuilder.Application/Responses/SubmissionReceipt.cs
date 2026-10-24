@@ -6,4 +6,5 @@ public sealed record SubmissionReceipt(int SubmissionId, Guid ResponseId, DateTi
     int? Total, IReadOnlyList<CategoryScore>? Categories)
 {
     public string? ReviewSummary { get; init; }
+    public SubmittedApplication? SubmittedApplication { get; init; }
 }

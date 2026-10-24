@@ -15,11 +15,30 @@ public sealed class PointsPerUnitJourneyTests
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
         var designer = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
         await Login(designer, host.BaseAddress, "designer");
+        await designer.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Applications/Detail/{applicationId}").ToString());
+        await designer.Locator(".cv-add-rule summary").First.ClickAsync();
+        var detailRule = designer.Locator(".cv-add-rule form[data-award-editor]").First;
+        await detailRule.Locator("select[name='AwardMethod']").SelectOptionAsync("PointsPerUnit");
+        (await detailRule.Locator("[data-per-unit-guidance]").InnerTextAsync()).Should()
+            .Contain("Whole numbers only").And.Contain("Minimum value");
+        (await detailRule.Locator("a").GetAttributeAsync("href")).Should()
+            .Contain($"/ConfigureApp/Drafts/{applicationId}#answer-settings-");
+        await detailRule.Locator("a").ClickAsync();
+        await designer.Locator("details[id^='answer-settings-']:visible").WaitForAsync();
+
         await designer.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{applicationId}").ToString());
         await designer.Locator(".aw-outline-element").First.ClickAsync();
-
+        await designer.Locator(".aw-outline-action[href='#question-assets']").ClickAsync();
+        await designer.Locator("#structure-question").SelectOptionAsync(new SelectOptionValue { Label = "Requested amount" });
+        var prereqRule = designer.Locator("#question-assets [data-award-editor]");
+        await prereqRule.Locator("select[name='awardMethod']").SelectOptionAsync("PointsPerUnit");
+        (await prereqRule.Locator("[data-per-unit-guidance]").InnerTextAsync()).Should()
+            .Contain("Whole numbers only").And.Contain("Minimum value");
+        await prereqRule.Locator("input[name='pointsPerUnit']").FillAsync("3");
+        await prereqRule.Locator("[data-per-unit-settings-link]").ClickAsync();
         var answerSettings = designer.Locator(".aw-element:visible details[id^='answer-settings']");
-        await answerSettings.Locator("summary").ClickAsync();
+        await answerSettings.WaitForAsync();
+        (await prereqRule.Locator("input[name='pointsPerUnit']").InputValueAsync()).Should().Be("3");
         await answerSettings.GetByLabel("Whole numbers only (Number questions)", new() { Exact = true }).CheckAsync();
         await answerSettings.Locator("input[name$='.MinValue']").FillAsync("0");
         await answerSettings.Locator("input[name$='.MaxValue']").FillAsync("100");
@@ -30,6 +49,9 @@ public sealed class PointsPerUnitJourneyTests
         var addRule = designer.Locator("#question-assets [data-award-editor]");
         await addRule.Locator("select[name='awardMethod']").SelectOptionAsync("PointsPerUnit");
         (await addRule.Locator("select[name='family']").InputValueAsync()).Should().Be("NumericRange");
+        (await addRule.Locator("[data-per-unit-guidance]").InnerTextAsync()).Should().Contain("Requirements are met");
+        (await addRule.Locator("[data-per-unit-settings-link]").GetAttributeAsync("href")).Should()
+            .Be($"#answer-settings-{await designer.Locator("#structure-question").InputValueAsync()}");
         (await addRule.Locator("[data-fixed-award]").IsVisibleAsync()).Should().BeFalse();
         (await addRule.Locator("[data-per-unit-fields]").IsVisibleAsync()).Should().BeTrue();
         await addRule.Locator("input[name='pointsPerUnit']").FillAsync("3");
@@ -59,6 +81,7 @@ public sealed class PointsPerUnitJourneyTests
         await reloadedSettings.Locator("select[name$='.AnswerType']").SelectOptionAsync("Textbox");
         await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "All changes saved" }).WaitForAsync();
         (await savedRule.Locator("select[name$='.AwardMethod']").InputValueAsync()).Should().Be("PointsPerUnit");
+        (await savedRule.Locator("[data-per-unit-guidance]").InnerTextAsync()).Should().Contain("Number question");
         (await designer.Locator("#draft-workspace").EvaluateAsync<string>("form => new FormData(form).get('Rules[0].AwardMethod') ?? ''"))
             .Should().Be("PointsPerUnit", "an ineligible currently selected award must remain successful form data");
 

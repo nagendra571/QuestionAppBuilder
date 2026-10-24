@@ -262,6 +262,7 @@ public class CompositionBoundaryTests
     {
         var (graph, a, _) = Graph();
         a.Question!.WholeNumbersOnly = true;
+        graph.Version.SubmittedApplicationVisibility = SubmittedApplicationVisibility.WithScores;
         a.Question.Rules.Add(new ScoringRule
         {
             Id = 77, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
@@ -270,6 +271,7 @@ public class CompositionBoundaryTests
         graph.Version.CompositionJson = new CompositionDefinition { Groups = [new() { Name = "Budget rows", CategoryKey = graph.Categories[0].LogicalKey, Rows = [new() { QuestionKey = a.LogicalKey }] }] }.ToJson();
         var clone = DefinitionCloner.Clone(graph, 2).Graph;
         clone.Version.CompositionJson.Should().Be(graph.Version.CompositionJson);
+        clone.Version.SubmittedApplicationVisibility.Should().Be(SubmittedApplicationVisibility.WithScores);
         clone.Categories[0].Elements[0].LogicalKey.Should().Be(a.LogicalKey);
         clone.Categories[0].Elements[0].Question!.WholeNumbersOnly.Should().BeTrue();
         clone.Categories[0].Elements[0].Question!.Rules.Should().ContainSingle().Which.Should().Match<ScoringRule>(rule =>

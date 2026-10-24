@@ -25,6 +25,7 @@ public sealed record CompositionResult(IReadOnlyList<CalculatedValue> Values, IR
 {
     public IReadOnlyList<CompositionLiveAnswerError> LiveAnswerErrors { get; init; } = [];
     public DynamicTextResult? DynamicText { get; init; }
+    public IReadOnlyList<int>? VisibleCategoryIds { get; init; }
 }
 
 public static class CompositionEngine

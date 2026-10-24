@@ -8,6 +8,28 @@ namespace QuestionAppBuilder.Infrastructure.Tests.SqlServer;
 public class ResponseSchemaTests
 {
     [SqlServerFact]
+    public async Task Submitted_application_visibility_column_defaults_to_without_scores()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await using var db = database.CreateContext();
+        await db.Database.MigrateAsync();
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT dc.definition
+            FROM sys.default_constraints dc
+            JOIN sys.columns c ON c.default_object_id = dc.object_id
+            WHERE c.object_id = OBJECT_ID(N'dbo.ApplicationVersions')
+              AND c.name = N'SubmittedApplicationVisibility';
+            """;
+
+        var defaultValue = await command.ExecuteScalarAsync();
+
+        defaultValue.Should().NotBeNull();
+        defaultValue!.ToString().Should().Contain("WithoutScores");
+    }
+
+    [SqlServerFact]
     public async Task One_submission_per_response_rejects_a_second_insert()
     {
         await using var database = await SqlServerDatabase.CreateAsync();

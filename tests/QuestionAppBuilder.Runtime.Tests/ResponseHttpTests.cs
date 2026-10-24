@@ -266,6 +266,117 @@ public sealed class ResponseHttpTests
         (await json.Content.ReadAsStringAsync()).Should().NotContain("Total").And.NotContain("Categories");
     }
 
+    [Fact]
+    public async Task Legacy_receipt_keeps_result_visibility_while_reopened_view_uses_without_scores_setting()
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: ResultVisibility.Total)
+        };
+        runtime.Graph.Version.SubmittedApplicationVisibility = SubmittedApplicationVisibility.WithoutScores;
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await SubmitResponseAsync(host);
+        var receiptPath = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Receipt";
+
+        var receipt = await host.Client.GetStringAsync(Https(receiptPath));
+        receipt.Should().Contain("data-total-score=\"0\"").And.NotContain("qab-submitted-application")
+            .And.Contain("View submitted application").And.Contain("/Submitted");
+        var receiptJson = await host.Client.GetStringAsync(Https(receiptPath + "?format=json"));
+        receiptJson.Should().Contain("\"total\":0").And.NotContain("submittedApplication");
+
+        var html = await host.Client.GetStringAsync(Https($"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Submitted"));
+
+        html.Should().Contain("Answer 1").And.NotContain("name=\"Answers[")
+            .And.NotContain("Send application").And.NotContain("runtime.js").And.Contain("Application introduction");
+        html.Should().NotContain("data-total-score").And.NotContain("Category scores");
+        html.Should().NotContain("<form", "a submitted application view is browse-only");
+        runtime.SubmissionCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Confirmation_total_and_answer_review_shows_all_categories_as_read_only()
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: ResultVisibility.ConfirmationAndAnswerReview)
+        };
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await SubmitResponseAsync(host);
+        var receiptPath = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Receipt";
+
+        var html = await host.Client.GetStringAsync(Https(receiptPath));
+
+        html.Should().Contain("data-total-score=\"2\"").And.Contain("Question 1")
+            .And.Contain("+1 points").And.NotContain("+0 points")
+            .And.Contain("Supporter").And.Contain("Summary").And.Contain("Application introduction");
+        for (var category = 1; category <= 5; category++) html.Should().Contain($"Category {category}");
+        html.Should().NotContain("<form").And.NotContain("runtime.js");
+        var json = await host.Client.GetStringAsync(Https(receiptPath + "?format=json"));
+        json.Should().Contain("\"total\":2").And.NotContain("submittedApplication")
+            .And.NotContain("pointsEarned").And.NotContain("\"categories\"");
+    }
+
+    [Fact]
+    public async Task Confirmation_only_receipt_can_reopen_with_scores()
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: ResultVisibility.ConfirmationOnly)
+        };
+        runtime.Graph.Version.SubmittedApplicationVisibility = SubmittedApplicationVisibility.WithScores;
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await SubmitResponseAsync(host);
+        var responseId = TestHostFixture.FakeRuntime.ResponseId;
+
+        var receipt = await host.Client.GetStringAsync(Https($"/App/Responses/{responseId}/Receipt"));
+        receipt.Should().NotContain("data-total-score").And.NotContain("qab-submitted-application");
+        var submitted = await host.Client.GetStringAsync(Https($"/App/Responses/{responseId}/Submitted"));
+        submitted.Should().Contain("data-total-score=\"2\"").And.Contain("+1 points").And.Contain("Supporter");
+        submitted.Should().NotContain("+0 points").And.NotContain("<form");
+        var clamped = await host.Client.GetStringAsync(Https($"/App/Responses/{responseId}/Submitted?category=999"));
+        clamped.Should().Contain("Category 5").And.Contain("Answer 5");
+    }
+
+    [Theory]
+    [InlineData(ResultVisibility.Total, false)]
+    [InlineData(ResultVisibility.CategoryBreakdown, true)]
+    public async Task Legacy_scored_receipts_keep_their_existing_shape(ResultVisibility visibility, bool hasCategoryBreakdown)
+    {
+        var runtime = new TestHostFixture.FakeRuntime
+        {
+            Graph = TestHostFixture.FakeRuntime.BuildGraph(visibility: visibility)
+        };
+        await using var host = await TestHostFixture.StartAsync(runtime);
+        await SubmitResponseAsync(host);
+        var receiptPath = $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Receipt";
+
+        var html = await host.Client.GetStringAsync(Https(receiptPath));
+        html.Should().Contain("data-total-score=\"0\"").And.NotContain("qab-submitted-application");
+        var json = await host.Client.GetStringAsync(Https(receiptPath + "?format=json"));
+        json.Should().NotContain("submittedApplication").And.Contain("\"total\":0");
+        if (hasCategoryBreakdown)
+        {
+            html.Should().Contain("Category scores");
+            json.Should().Contain("\"categories\"");
+        }
+        else
+        {
+            html.Should().NotContain("Category scores");
+            json.Should().NotContain("\"categories\"");
+        }
+    }
+
+    private static async Task SubmitResponseAsync(TestHostFixture host)
+    {
+        await StartAsync(host);
+        var answers = new Dictionary<string, string>();
+        for (var q = 1; q <= 5; q++) answers[$"Answers[{q}].Text"] = $"Answer {q}";
+        answers["RequestId"] = Guid.NewGuid().ToString("D");
+        var csrf = await CsrfAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Review");
+        var submit = await csrf.PostAsync(host.Client, $"/App/Responses/{TestHostFixture.FakeRuntime.ResponseId}/Submit", answers);
+        submit.StatusCode.Should().Be(HttpStatusCode.Redirect);
+    }
+
     private static async Task<Csrf> CsrfAsync(HttpClient client, string path)
     {
         var response = await client.GetAsync(Https(path));

@@ -1,0 +1,53 @@
+@model ReceiptPageModel
+@{
+    var application = Model.Receipt.SubmittedApplication;
+    var showScores = Model.Receipt.Total is not null;
+}
+@if (application is not null)
+{
+    <section class="qab-submitted-application" aria-labelledby="submitted-title">
+        <h2 id="submitted-title">@application.Title</h2>
+        @if (showScores && Model.Receipt.Total is int total)
+        {
+            <section class="qab-score qab-submitted-total" aria-labelledby="score-heading">
+                <h2 id="score-heading">Your score</h2>
+                <p class="qab-score-total" data-total-score="@total">@total</p>
+                <p>This is the score earned from your submitted answers.</p>
+            </section>
+        }
+        @if (Model.IsTabbed && application.Categories.Count > 0)
+        {
+            var selectedCategory = application.Categories.ElementAtOrDefault(Model.Category);
+            <div class="qab-response-layout qab-receipt-layout">
+                <nav class="qab-tabs" aria-label="Submitted application categories">
+                    @foreach (var item in application.Categories.Select((value, index) => (value, index)))
+                    {
+                        <a class="qab-tab @(item.index == Model.Category ? "is-current" : "")"
+                           href="?category=@item.index" aria-current="@(item.index == Model.Category ? "page" : null)">
+                            <span>@item.value.Name</span><span class="qab-tab-number">@(item.index + 1)</span>
+                            @if (Model.Receipt.Total is not null && item.value.PointsEarned is int points) { <span class="qab-earned-points">+@points points</span> }
+                        </a>
+                    }
+                </nav>
+                @if (selectedCategory is not null)
+                {
+                    <div class="qab-response-content">
+                        <p class="qab-progress">Category @(Model.Category + 1) of @application.Categories.Count</p>
+                        @await Html.PartialAsync("_SubmittedCategory", new SubmittedCategoryPageModel(selectedCategory, Model.Receipt.ResponseId, showScores))
+                        <nav class="qab-receipt-pager" aria-label="Submitted category navigation">
+                            @if (Model.Category > 0) { <a class="qab-button qab-button-secondary" rel="prev" href="?category=@(Model.Category - 1)">Previous category</a> }
+                            @if (Model.Category < application.Categories.Count - 1) { <a class="qab-button qab-button-primary" rel="next" href="?category=@(Model.Category + 1)">Next category</a> }
+                        </nav>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            @foreach (var category in application.Categories)
+            {
+                @await Html.PartialAsync("_SubmittedCategory", new SubmittedCategoryPageModel(category, Model.Receipt.ResponseId, showScores))
+            }
+        }
+    </section>
+}

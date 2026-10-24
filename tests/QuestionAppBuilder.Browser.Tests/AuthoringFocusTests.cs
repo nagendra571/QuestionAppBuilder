@@ -174,4 +174,113 @@ public sealed class AuthoringFocusTests
         await page.GetByRole(AriaRole.Button, new() { Name = "Remove option: New option 1", Exact = true }).WaitForAsync(new() { State = WaitForSelectorState.Detached });
         (await page.Locator(".cv-opt").CountAsync()).Should().Be(3);
     }
+
+    [Fact]
+    public async Task Detail_additions_close_only_after_success_and_select_new_category()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var id = await host.SeedResponsiveAuthoringApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        var page = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Applications/Detail/{id}").ToString());
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "Add category", Exact = true }).ClickAsync();
+        await page.Locator("#new-category-name").FillAsync("Newly selected category");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add category", Exact = true }).ClickAsync();
+        var newCategory = page.Locator("[data-category-panel]").Filter(new() { HasText = "Newly selected category" });
+        await newCategory.WaitForAsync();
+        (await page.EvaluateAsync<string>("location.hash")).Should().Be("#" + await newCategory.GetAttributeAsync("id"));
+        (await newCategory.IsVisibleAsync()).Should().BeTrue();
+
+        var categoryId = (await newCategory.GetAttributeAsync("id"))!.Replace("manage-category-", "");
+        var addQuestion = page.Locator($"#add-question-{categoryId}");
+        await addQuestion.Locator("summary").ClickAsync();
+        await addQuestion.Locator("input[name='Label']").FillAsync("New question");
+        await addQuestion.Locator("input[name='expectedRevision']").EvaluateAsync("element => element.value = 'AQ=='");
+        await addQuestion.GetByRole(AriaRole.Button, new() { Name = "Add question", Exact = true }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await addQuestion.WaitForAsync();
+        (await addQuestion.GetAttributeAsync("open")).Should().NotBeNull("a stale revision is a failed save and must preserve the form");
+        await addQuestion.Locator("input[name='Label']").FillAsync("New question");
+        await addQuestion.GetByRole(AriaRole.Button, new() { Name = "Add question", Exact = true }).ClickAsync();
+        await page.Locator(".cv-q").Filter(new() { HasText = "New question" }).WaitForAsync();
+        (await page.Locator($"#add-question-{categoryId}").GetAttributeAsync("open")).Should().BeNull();
+        (await page.Locator($"#add-question-{categoryId} > summary").EvaluateAsync<bool>("element => document.activeElement === element")).Should().BeTrue();
+
+        var question = page.Locator(".cv-q").Filter(new() { HasText = "New question" });
+        var addRule = question.Locator(".cv-add-rule");
+        await addRule.Locator("summary").ClickAsync();
+        await addRule.Locator("select[name='Family']").SelectOptionAsync("NumericRange");
+        await addRule.GetByRole(AriaRole.Button, new() { Name = "Add rule", Exact = true }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "needs a minimum and/or a maximum" }).WaitForAsync();
+        (await addRule.GetAttributeAsync("open")).Should().NotBeNull("invalid rules must leave the editor open");
+        await addRule.Locator("select[name='Family']").SelectOptionAsync("Presence");
+        await addRule.Locator("input[name='Points']").FillAsync("2");
+        await addRule.GetByRole(AriaRole.Button, new() { Name = "Add rule", Exact = true }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.Locator(".cv-rule").Filter(new() { HasText = "2" }).WaitForAsync();
+        (await addRule.GetAttributeAsync("open")).Should().BeNull();
+
+        await page.Locator("#application-publishing > summary").ClickAsync();
+        (await page.Locator("#application-publishing").GetAttributeAsync("open")).Should().NotBeNull();
+        var sameCategoryLink = page.Locator($".cv-category-nav a[href='#{await newCategory.GetAttributeAsync("id")}']");
+        await sameCategoryLink.FocusAsync();
+        await sameCategoryLink.PressAsync("Enter");
+        (await page.Locator("#application-publishing").GetAttributeAsync("open")).Should().BeNull("category navigation leaves the publish disclosure behind");
+    }
+
+    [Fact]
+    public async Task Workspace_structure_add_category_selects_the_created_category()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var id = await host.SeedDraftPreviewApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        var page = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}#add-category").ToString());
+        await page.Locator("#add-category:visible").WaitForAsync();
+        await page.Locator("#add-category [name='categoryName']").FillAsync("Workspace destination category");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Add category", Exact = true }).ClickAsync();
+        var createdCategory = page.Locator(".aw-category:visible").Filter(new() { HasText = "Workspace destination category" });
+        await createdCategory.WaitForAsync();
+        var createdCategoryId = await createdCategory.GetAttributeAsync("id");
+        (await page.EvaluateAsync<string>("location.hash")).Should().Be("#" + createdCategoryId);
+        (await page.Locator("[data-workspace-pane]:visible").GetAttributeAsync("id")).Should().Be("content");
+        (await page.Locator("#draft-workspace [name='categoryId']").InputValueAsync()).Should().Be(createdCategoryId!.Replace("category-", ""));
+
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}#add-element").ToString());
+        var addElement = page.Locator("#add-element:visible");
+        await addElement.Locator("[name='categoryId']").SelectOptionAsync(createdCategoryId!.Replace("category-", ""));
+        await addElement.Locator("[name='elementLabel']").FillAsync("Workspace question destination");
+        await addElement.Locator("[name='elementType']").SelectOptionAsync("Textbox");
+        await addElement.GetByRole(AriaRole.Button, new() { Name = "Add element", Exact = true }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        var addedElement = page.Locator(".aw-element:visible").Filter(new() { HasText = "Workspace question destination" });
+        await addedElement.WaitForAsync();
+        (await page.EvaluateAsync<string>("location.hash")).Should().Be("#" + await addedElement.GetAttributeAsync("id"));
+
+        var questionAssets = page.Locator("#question-assets");
+        await questionAssets.WaitForAsync(new() { State = WaitForSelectorState.Attached });
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}#question-assets").ToString());
+        questionAssets = page.Locator("#question-assets:visible");
+        await questionAssets.Locator("select[name='family']").SelectOptionAsync("Presence");
+        await questionAssets.Locator("input[name='points']").FillAsync("2");
+        await questionAssets.GetByRole(AriaRole.Button, new() { Name = "Add scoring rule", Exact = true }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        var addedRule = page.Locator("#rules-" + await page.Locator("#structure-question").InputValueAsync() + " .aw-rule").Last;
+        await addedRule.WaitForAsync();
+        (await page.EvaluateAsync<string>("location.hash")).Should().Be("#" + await addedRule.GetAttributeAsync("id"));
+        (await page.Locator("#rules-" + await page.Locator("#structure-question").InputValueAsync()).GetAttributeAsync("open")).Should().NotBeNull("the new rule's scoring editor must stay open after target selection");
+        (await addedElement.IsVisibleAsync()).Should().BeTrue("the owner question editor should remain selected");
+    }
 }

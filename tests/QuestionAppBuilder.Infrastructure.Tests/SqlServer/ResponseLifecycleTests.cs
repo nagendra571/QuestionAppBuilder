@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Application.Scoring;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Entities;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Exceptions;
@@ -121,6 +122,232 @@ public class ResponseLifecycleTests
 
         resumed.ApplicationVersionId.Should().Be(started.ApplicationVersionId);
         resumed.Definition.Version.VersionNumber.Should().Be(1);
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_reloads_frozen_submitted_application_after_draft_is_cleared()
+    {
+        await using var db = await TestDatabase.CreateAsync(submittedApplication: true,
+            resultVisibility: ResultVisibility.Total, submittedApplicationVisibility: SubmittedApplicationVisibility.WithoutScores);
+        var (responses, identity) = db.CreateService("receipt-owner");
+        var started = await responses.StartAsync(1);
+        var saved = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new("frozen answer", null, null) }));
+        var requestId = Guid.NewGuid();
+
+        var submitted = await db.CreateSubmissionCoordinator(identity).SubmitAsync(
+            new(started.Id, saved.Revision, requestId));
+        var replayed = await db.CreateSubmissionCoordinator(identity).SubmitAsync(
+            new(started.Id, saved.Revision, requestId));
+
+        submitted.SubmittedApplication.Should().BeNull("Results shown controls the immediate receipt");
+        replayed.SubmittedApplication.Should().BeNull();
+        submitted.Total.Should().Be(0);
+        submitted.SubmittedApplication.Should().BeNull();
+        var submittedView = await db.CreateSubmissionCoordinator(identity).GetSubmittedApplicationAsync(started.Id);
+        submittedView.SubmittedApplication.Should().NotBeNull();
+        submittedView.Total.Should().BeNull("the separate reopening setting hides scores");
+        submittedView.Categories.Should().BeNull();
+        submittedView.SubmittedApplication!.Categories.Select(category => category.Name)
+            .Should().Contain("Content only").And.NotContain("Hidden branch");
+        submittedView.SubmittedApplication.Categories.Single(category => category.Name == "Content only")
+            .Elements.Should().ContainSingle(element => element.Label == "Receipt introduction");
+        submittedView.SubmittedApplication.Categories.SelectMany(category => category.Elements)
+            .Where(element => element.Question is not null).Select(element => element.Question!)
+            .Should().NotContain(question => question.Id == db.HiddenQuestionId);
+
+        await using (var context = db.CreateContext())
+        {
+            (await context.ApplicationVersions.Select(version => version.SubmittedApplicationVisibility).SingleAsync())
+                .Should().Be(SubmittedApplicationVisibility.WithoutScores);
+            var response = await context.ResponseDrafts.Include(item => item.Answers).SingleAsync(item => item.Id == started.Id);
+            response.Answers.Should().BeEmpty();
+            var persisted = await context.Submissions.Include(item => item.Answers)
+                .Include(item => item.QuestionStates).SingleAsync(item => item.ResponseId == started.Id);
+            persisted.Answers.Should().ContainSingle(answer => answer.QuestionId == db.QuestionId && answer.TextValue == "frozen answer");
+            persisted.QuestionStates.Should().Contain(state => state.QuestionId == db.HiddenQuestionId && !state.IsApplicable);
+            persisted.CompositionSnapshotJson.Should().Contain("VisibleCategoryIds");
+        }
+        await using (var context = db.CreateContext())
+        {
+            var nextVersion = new ApplicationVersion
+            {
+                ApplicationId = 1, VersionNumber = 2, Status = VersionStatus.Published,
+                CreatedUtc = DateTime.UtcNow, PublishedUtc = DateTime.UtcNow, DisplayName = "Changed questionnaire",
+                Categories = { new Category { Name = "Changed category", SortOrder = 1 } }
+            };
+            context.ApplicationVersions.Add(nextVersion);
+            await context.SaveChangesAsync();
+            var application = await context.Applications.SingleAsync(item => item.Id == 1);
+            application.CurrentVersionId = nextVersion.Id;
+            await context.SaveChangesAsync();
+        }
+
+        var (freshResponses, freshIdentity) = db.CreateService("receipt-owner");
+        var reopened = await db.CreateSubmissionCoordinator(freshIdentity).GetSubmittedApplicationAsync(started.Id);
+        reopened.SubmittedApplication.Should().BeEquivalentTo(submittedView.SubmittedApplication);
+        reopened.SubmittedApplication!.Title.Should().Be("v1");
+        reopened.SubmittedApplication.Categories.Single(category => category.Name == "Basics")
+            .Elements.Where(element => element.Question is not null).Select(element => element.Question!)
+            .Should().ContainSingle(question => question.AnswerText == "frozen answer");
+        var resumedSubmitted = await freshResponses.GetAsync(started.Id);
+        resumedSubmitted.Status.Should().Be(ResponseStatus.Submitted);
+        resumedSubmitted.Definition.Version.SubmittedApplicationVisibility.Should().Be(SubmittedApplicationVisibility.WithoutScores);
+        reopened.SubmittedApplication.Categories.SelectMany(category => category.Elements)
+            .Where(element => element.Question is not null).Select(element => element.Question!.PointsEarned)
+            .Should().OnlyContain(points => points == null);
+        reopened.SubmittedApplication.Categories.SelectMany(category => category.Awards).Should().BeEmpty();
+        reopened.SubmittedApplication.Categories.SelectMany(category => category.CalculatedValues).Should().BeEmpty();
+    }
+
+    [SqlServerFact]
+    public async Task With_results_receipt_keeps_zero_total_without_zero_detail_scores()
+    {
+        await using var db = await TestDatabase.CreateAsync(resultVisibility: ResultVisibility.Total,
+            submittedApplicationVisibility: SubmittedApplicationVisibility.WithScores);
+        var (responses, identity) = db.CreateService("results-owner");
+        var started = await responses.StartAsync(1);
+        var saved = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new("no points", null, null) }));
+
+        await db.CreateSubmissionCoordinator(identity).SubmitAsync(
+            new(started.Id, saved.Revision, Guid.NewGuid()));
+        var receipt = await db.CreateSubmissionCoordinator(identity).GetSubmittedApplicationAsync(started.Id);
+
+        receipt.Total.Should().Be(0);
+        receipt.SubmittedApplication.Should().NotBeNull();
+        receipt.SubmittedApplication!.Categories.SelectMany(category => category.Elements)
+            .Where(element => element.Question is not null).Select(element => element.Question!.PointsEarned)
+            .Should().OnlyContain(points => points == null);
+        receipt.SubmittedApplication.Categories.SelectMany(category => category.Awards).Should().BeEmpty();
+        receipt.SubmittedApplication.Categories.SelectMany(category => category.CalculatedValues).Should().BeEmpty();
+    }
+
+    [SqlServerFact]
+    public async Task With_results_receipt_projects_positive_question_category_and_combined_awards_from_persisted_submission()
+    {
+        await using var db = await TestDatabase.CreateAsync(answerType: AnswerType.Number,
+            submittedApplication: true, resultVisibility: ResultVisibility.ConfirmationAndAnswerReview,
+            submittedApplicationVisibility: SubmittedApplicationVisibility.WithScores, positiveResults: true);
+        await using (var context = db.CreateContext())
+        {
+            (await context.ApplicationVersions.Select(version => version.SubmittedApplicationVisibility).SingleAsync())
+                .Should().Be(SubmittedApplicationVisibility.WithScores);
+        }
+        var (responses, identity) = db.CreateService("positive-results-owner");
+        var started = await responses.StartAsync(1);
+        (await responses.GetAsync(started.Id)).Definition.Version.SubmittedApplicationVisibility
+            .Should().Be(SubmittedApplicationVisibility.WithScores);
+        var saved = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new(null, 5, null) }));
+        var coordinator = db.CreateSubmissionCoordinator(identity);
+        var submitted = await coordinator.SubmitAsync(new(started.Id, saved.Revision, Guid.NewGuid()));
+
+        submitted.Total.Should().Be(2);
+        var category = submitted.SubmittedApplication!.Categories.Single(item => item.Name == "Basics");
+        category.PointsEarned.Should().Be(2);
+        category.Elements.Single(element => element.Question is not null).Question!.PointsEarned.Should().Be(1);
+        category.Awards.Should().ContainSingle().Which.Should().Match<SubmittedAward>(award => award.Name == "Combined award" && award.Points == 1);
+        category.CalculatedValues.Should().ContainSingle().Which.Value.Should().Be(7);
+        category.Groups.Should().ContainSingle().Which.Should().Match<SubmittedGroup>(group => group.TableLayout
+            && group.Rows.Count == 1 && group.Rows[0].Element.Question!.AnswerText == "5"
+            && group.Rows[0].Cells.Single() == "Primary");
+        category.Elements.Single(element => element.Question is not null).Question!.PointsEarned.Should().NotBe(0);
+
+        var reloaded = await db.CreateSubmissionCoordinator(db.CreateService("positive-results-owner").Identity)
+            .GetSubmittedApplicationAsync(started.Id);
+        reloaded.SubmittedApplication.Should().BeEquivalentTo(submitted.SubmittedApplication);
+    }
+
+    [SqlServerFact]
+    public async Task Confirmation_only_receipt_can_reopen_with_scores_when_submitted_application_setting_allows_them()
+    {
+        await using var db = await TestDatabase.CreateAsync(answerType: AnswerType.Number,
+            submittedApplication: true, resultVisibility: ResultVisibility.ConfirmationOnly,
+            submittedApplicationVisibility: SubmittedApplicationVisibility.WithScores, positiveResults: true);
+        var (responses, identity) = db.CreateService("reopen-results-owner");
+        var started = await responses.StartAsync(1);
+        var saved = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new(null, 5, null) }));
+        var coordinator = db.CreateSubmissionCoordinator(identity);
+
+        var confirmation = await coordinator.SubmitAsync(new(started.Id, saved.Revision, Guid.NewGuid()));
+        var reopened = await coordinator.GetSubmittedApplicationAsync(started.Id);
+
+        confirmation.Total.Should().BeNull();
+        confirmation.Categories.Should().BeNull();
+        confirmation.SubmittedApplication.Should().BeNull();
+        reopened.Total.Should().Be(2);
+        reopened.SubmittedApplication.Should().NotBeNull();
+        reopened.SubmittedApplication!.Categories.Single(category => category.Name == "Basics")
+            .PointsEarned.Should().Be(2);
+    }
+
+    [SqlServerFact]
+    public async Task Confirmation_and_answer_review_receipt_keeps_scores_when_reopening_hides_them()
+    {
+        await using var db = await TestDatabase.CreateAsync(submittedApplication: true,
+            resultVisibility: ResultVisibility.ConfirmationAndAnswerReview,
+            submittedApplicationVisibility: SubmittedApplicationVisibility.WithoutScores);
+        var (responses, identity) = db.CreateService("review-owner");
+        var started = await responses.StartAsync(1);
+        var saved = await responses.SaveAsync(new(started.Id, started.Revision,
+            new Dictionary<int, AnswerValue> { [db.QuestionId] = new("answer", null, null) }));
+        var coordinator = db.CreateSubmissionCoordinator(identity);
+
+        var immediate = await coordinator.SubmitAsync(new(started.Id, saved.Revision, Guid.NewGuid()));
+        var reopened = await coordinator.GetSubmittedApplicationAsync(started.Id);
+
+        immediate.Total.Should().Be(0);
+        immediate.SubmittedApplication.Should().NotBeNull();
+        reopened.Total.Should().BeNull();
+        reopened.Categories.Should().BeNull();
+        reopened.SubmittedApplication.Should().NotBeNull();
+        reopened.SubmittedApplication!.Categories.Single(category => category.Name == "Basics")
+            .Elements.Single(element => element.Question is not null).Question!.PointsEarned.Should().BeNull();
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_access_requires_the_owner_and_the_matching_consumed_response_grant()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var (owner, ownerIdentity) = db.CreateService("receipt-owner");
+        var first = await owner.StartAsync(1);
+        var second = await owner.StartAsync(1);
+        foreach (var response in new[] { first, second })
+        {
+            var complete = await owner.SaveAsync(new(response.Id, response.Revision,
+                new Dictionary<int, AnswerValue> { [db.QuestionId] = new($"answer {response.Id}", null, null) }));
+            await db.CreateSubmissionCoordinator(ownerIdentity).SubmitAsync(new(response.Id, complete.Revision, Guid.NewGuid()));
+        }
+
+        var tokenId = Guid.NewGuid();
+        await using (var context = db.CreateContext())
+        {
+            context.ResponseAccessTokens.Add(new ResponseAccessToken
+            {
+                Id = tokenId, TokenDigest = new byte[32], ApplicationId = 1,
+                ApplicationVersionId = first.ApplicationVersionId, ResponseId = first.Id,
+                OwnerKey = "receipt-owner", VerifiedEmail = "person@example.test", CreatedUtc = DateTime.UtcNow,
+                ExpiresUtc = DateTime.UtcNow.AddMinutes(30), ConsumedUtc = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var grantIdentity = new RespondentIdentity("receipt-owner", first.Id, first.ApplicationVersionId, tokenId);
+        var scoped = db.CreateSubmissionCoordinator(new TestRespondentContext(grantIdentity));
+        (await scoped.GetReceiptAsync(first.Id)).ResponseId.Should().Be(first.Id);
+        (await scoped.GetSubmittedApplicationAsync(first.Id)).SubmittedApplication.Should().NotBeNull();
+        Func<Task> otherReceipt = () => scoped.GetReceiptAsync(second.Id);
+        await otherReceipt.Should().ThrowAsync<NotFoundException>();
+        Func<Task> otherSubmittedApplication = () => scoped.GetSubmittedApplicationAsync(second.Id);
+        await otherSubmittedApplication.Should().ThrowAsync<NotFoundException>();
+
+        var otherOwner = db.CreateSubmissionCoordinator(new TestRespondentContext(new RespondentIdentity("someone-else", null, null)));
+        Func<Task> ownerPrivateReceipt = () => otherOwner.GetReceiptAsync(first.Id);
+        await ownerPrivateReceipt.Should().ThrowAsync<NotFoundException>();
+        Func<Task> ownerPrivateSubmittedApplication = () => otherOwner.GetSubmittedApplicationAsync(first.Id);
+        await ownerPrivateSubmittedApplication.Should().ThrowAsync<NotFoundException>();
     }
 
     [SqlServerFact]
@@ -295,6 +522,7 @@ public class ResponseLifecycleTests
         private readonly DefinitionEvaluator _evaluator = new();
         private TestDatabase(SqlServerDatabase sql) => _sql = sql;
         public int QuestionId { get; private set; }
+        public int HiddenQuestionId { get; private set; }
         public (int First, int Second) ChoiceIds { get; private set; }
         public QuestionAppBuilderDbContext CreateContext() => _sql.CreateContext();
         public (IResponseService Service, TestRespondentContext Identity) CreateService(string owner)
@@ -308,12 +536,21 @@ public class ResponseLifecycleTests
             => new ResponseDocumentService(new DatabaseContextFactory(_sql), responses, new DefinitionEvaluator());
         public ISubmissionCoordinator CreateSubmissionCoordinator(IRespondentContext identity)
             => new SubmissionCoordinator(new DatabaseContextFactory(_sql), identity, new DefinitionEvaluator());
-        public static async Task<TestDatabase> CreateAsync(bool choiceQuestion = false, AnswerType answerType = AnswerType.Textbox, bool followUp = false)
+        public static async Task<TestDatabase> CreateAsync(bool choiceQuestion = false, AnswerType answerType = AnswerType.Textbox, bool followUp = false,
+            bool submittedApplication = false, ResultVisibility resultVisibility = ResultVisibility.Total,
+            SubmittedApplicationVisibility submittedApplicationVisibility = SubmittedApplicationVisibility.WithoutScores, bool positiveResults = false)
         {
             var db = new TestDatabase(await SqlServerDatabase.CreateAsync());
             await using var context = db.CreateContext();
             await context.Database.MigrateAsync();
             var question = new Question { AnswerType = choiceQuestion ? AnswerType.Dropdown : answerType, IsRequired = true };
+            if (positiveResults)
+            {
+                question.MinValue = 0;
+                question.MaxValue = 10;
+                question.Rules.Add(new ScoringRule { Family = RuleFamily.NumericRange, MinValue = 0, MaxValue = 10,
+                    Points = 1, AwardMethod = AwardMethod.Fixed });
+            }
             if (choiceQuestion)
             {
                 question.Options.Add(new QuestionOption { Label = "One", Value = "one", SortOrder = 1 });
@@ -324,9 +561,41 @@ public class ResponseLifecycleTests
                 Name = "Response lifecycle", ApplicationTypeId = 1, CreatedUtc = DateTime.UtcNow, UpdatedUtc = DateTime.UtcNow,
                 AcceptNewResponses = true, AcceptSubmissions = true,
                 Versions = { new ApplicationVersion { VersionNumber = 1, Status = VersionStatus.Published, CreatedUtc = DateTime.UtcNow,
-                    PublishedUtc = DateTime.UtcNow, DisplayName = "v1", Categories = { new Category { Name = "Basics", SortOrder = 1,
+                    PublishedUtc = DateTime.UtcNow, DisplayName = "v1", ResultVisibility = resultVisibility,
+                    SubmittedApplicationVisibility = submittedApplicationVisibility, Categories = { new Category { Name = "Basics", SortOrder = 1,
                         Elements = { new Element { Kind = ElementKind.Question, Label = "Answer", SortOrder = 1, Question = question } } } } } }
             };
+            if (submittedApplication)
+            {
+                var version = app.Versions.Single();
+                version.Categories.Add(new Category { Name = "Content only", SortOrder = 2,
+                    Elements = { new Element { Kind = ElementKind.Content, Label = "Receipt introduction", SortOrder = 1 } } });
+                var hiddenQuestion = new Question { AnswerType = AnswerType.Textbox, IsRequired = false };
+                var hiddenElement = new Element { Kind = ElementKind.Question, Label = "Hidden question", SortOrder = 1, Question = hiddenQuestion };
+                var hiddenCategory = new Category { Name = "Hidden branch", SortOrder = 3,
+                    Elements = { hiddenElement } };
+                version.Categories.Add(hiddenCategory);
+                var condition = new VisibilityCondition { Junction = ConditionJunction.All };
+                condition.Predicates.Add(new VisibilityPredicate { SourceQuestion = question, Operator = ConditionOperator.Unanswered });
+                hiddenCategory.VisibilityCondition = condition;
+                version.VisibilityConditions.Add(condition);
+                if (positiveResults)
+                {
+                    var basics = version.Categories.Single(category => category.Name == "Basics");
+                    version.CompositionJson = new CompositionDefinition
+                    {
+                        Groups = [new QuestionGroup { Name = "Summary", CategoryKey = basics.LogicalKey,
+                            Columns = ["Details"], Rows = [new GroupRow { QuestionKey = basics.Elements.Single().LogicalKey, Cells = ["Primary"] }] }],
+                        Calculations = [new CalculatedField { Name = "Combined value", CategoryKey = basics.LogicalKey,
+                            Operation = CalculationOperation.Sum, Sources = [new ValueSource { Kind = SourceKind.Constant, Value = 4 },
+                                new ValueSource { Kind = SourceKind.Constant, Value = 3 }] }],
+                        Rules = [new CompositionRule { Name = "Combined award", CategoryKey = basics.LogicalKey,
+                            TargetQuestionKey = basics.Elements.Single().LogicalKey, Kind = RulePurpose.Score, Points = 1,
+                            Checks = [new ValueCheck { Left = new ValueSource { Kind = SourceKind.Constant, Value = 1 },
+                                Comparison = Comparison.Equal, Right = new ValueSource { Kind = SourceKind.Constant, Value = 1 } }] }]
+                    }.ToJson();
+                }
+            }
             if (followUp)
             {
                 var category = app.Versions.Single().Categories.Single();
@@ -340,6 +609,9 @@ public class ResponseLifecycleTests
             app.CurrentVersionId = app.Versions.Single().Id;
             await context.SaveChangesAsync();
             db.QuestionId = question.Id;
+            db.HiddenQuestionId = submittedApplication
+                ? app.Versions.Single().Categories.Single(category => category.Name == "Hidden branch").Elements.Single().Question!.Id
+                : 0;
             if (choiceQuestion) db.ChoiceIds = (question.Options[0].Id, question.Options[1].Id);
             return db;
         }

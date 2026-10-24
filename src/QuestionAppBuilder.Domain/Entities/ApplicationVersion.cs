@@ -14,6 +14,7 @@ public class ApplicationVersion
     public NavigationMode NavigationMode { get; set; } = NavigationMode.Sequential;
     public RespondentAccessMode RespondentAccessMode { get; set; } = RespondentAccessMode.HostSignIn;
     public ResultVisibility ResultVisibility { get; set; } = ResultVisibility.Total;
+    public SubmittedApplicationVisibility SubmittedApplicationVisibility { get; set; } = SubmittedApplicationVisibility.WithoutScores;
     public string SubmitLabel { get; set; } = "Submit application";
     public string ConfirmationText { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;

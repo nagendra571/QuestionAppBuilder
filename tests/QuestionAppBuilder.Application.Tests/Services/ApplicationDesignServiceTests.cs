@@ -398,6 +398,21 @@ public class ApplicationDesignServiceTests
     }
 
     [Fact]
+    public async Task Points_per_unit_default_number_question_reports_both_missing_question_settings()
+    {
+        using var ctx = new TestContext();
+        var application = await ctx.Service.CreateApplicationAsync("Per unit prerequisites", ctx.ApplicationTypeId);
+        var category = await ctx.Service.AddCategoryAsync(application.Id, "Scoring");
+        var question = await ctx.Service.AddQuestionAsync(category.Id, "Units", AnswerType.Number);
+
+        Func<Task> addRule = () => ctx.Service.AddRuleWithAwardMethodAsync(question.Id, RuleFamily.NumericRange, 1,
+            null, null, 0, 10, AwardMethod.PointsPerUnit, 2, null);
+
+        var error = await addRule.Should().ThrowAsync<DefinitionValidationException>();
+        error.Which.Message.Should().Contain("Whole numbers only").And.Contain("Minimum value").And.Contain("0");
+    }
+
+    [Fact]
     public async Task Null_required_string_arguments_are_rejected_with_argument_exception()
     {
         using var ctx = new TestContext();

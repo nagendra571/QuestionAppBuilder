@@ -1,3 +1,4 @@
+@using System.Globalization
 @using QuestionAppBuilder.Domain.Entities
 @using QuestionAppBuilder.Domain.Enums
 @model (ApplicationDetailViewModel Detail, Question Question)
@@ -100,7 +101,7 @@
         {
             <details class="cv-add-rule" id="add-rule-@question.Id">
                 <summary class="cv-link">Add scoring rule</summary>
-                <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id" data-award-editor data-has-numeric-answer="@(question.AnswerType == AnswerType.Number ? "true" : "false")">
+                <form method="post" asp-controller="Rules" asp-action="Add" asp-route-id="@question.Id" data-award-editor data-question-id="@question.Id" data-has-numeric-answer="@(question.AnswerType == AnswerType.Number ? "true" : "false")" data-whole-numbers-only="@(question.WholeNumbersOnly ? "true" : "false")" data-question-min="@question.MinValue?.ToString(CultureInfo.InvariantCulture)" data-question-max="@question.MaxValue?.ToString(CultureInfo.InvariantCulture)">
                 <partial name="_ClosePanel" model='@("scoring rule form")' />
                     <input type="hidden" name="applicationId" value="@applicationId" />
                     <input type="hidden" name="expectedRevision" value="@revisionValue" />
@@ -133,15 +134,15 @@
                             <div class="cv-field"><label for="rule-maximum-points-@question.Id">Maximum points (optional)</label>
                                 <input id="rule-maximum-points-@question.Id" name="MaximumPoints" type="number" min="0" max="1000000" step="1" />
                             </div>
-                            <p class="cv-note">Example: 12 × <span data-award-rate-preview>2</span> = <span data-award-product-preview>24</span> points before the cap. Use the Numeric range family with a whole-number question, a minimum of 0 or above, and an answer maximum or cap.</p>
+                            <p class="cv-note">Example: 12 × <span data-award-rate-preview>2</span> = <span data-award-product-preview>24</span> points before the cap. <span data-per-unit-guidance></span> <a asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="answer-settings-@question.Id">Edit this question's answer settings</a></p>
                         </div>
                     }
                     <div class="cv-field">
-                        <label for="rule-min-@question.Id">Min value</label>
+                        <label for="rule-min-@question.Id">Rule minimum</label>
                         <input id="rule-min-@question.Id" name="MinValue" type="number" step="any" />
                     </div>
                     <div class="cv-field">
-                        <label for="rule-max-@question.Id">Max value</label>
+                        <label for="rule-max-@question.Id">Rule maximum</label>
                         <input id="rule-max-@question.Id" name="MaxValue" type="number" step="any" />
                     </div>
                     @if (acceptsOptions)

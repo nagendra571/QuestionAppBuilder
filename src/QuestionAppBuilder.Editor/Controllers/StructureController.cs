@@ -20,11 +20,14 @@ public sealed class StructureController : EditorControllerBase
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> AddCategory(int applicationId, string categoryName, byte[] expectedRevision, CancellationToken ct)
     {
-        try { await _design.AddCategoryAsync(applicationId, categoryName, ct, expectedRevision); }
+        try
+        {
+            var category = await _design.AddCategoryAsync(applicationId, categoryName, ct, expectedRevision);
+            return Complete(applicationId, $"category-{category.Id}");
+        }
         catch (NotFoundException) { return NotFound(); }
         catch (DraftConflictException) { return StructureFailure(applicationId, StatusCodes.Status409Conflict, "The draft changed. Reload the workspace before making this change."); }
         catch (DefinitionValidationException exception) { return StructureFailure(applicationId, StatusCodes.Status422UnprocessableEntity, exception.Message); }
-        return Complete(applicationId);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -34,9 +37,15 @@ public sealed class StructureController : EditorControllerBase
         try
         {
             if (string.Equals(elementType, "Content", StringComparison.Ordinal))
-                await _design.AddContentElementAsync(categoryId, elementLabel, elementHelpText, ct, expectedRevision);
+            {
+                var element = await _design.AddContentElementAsync(categoryId, elementLabel, elementHelpText, ct, expectedRevision);
+                return Complete(applicationId, $"element-{element.Id}");
+            }
             else if (Enum.TryParse<AnswerType>(elementType, out var answerType) && Enum.IsDefined(answerType))
-                await _design.AddQuestionAsync(categoryId, elementLabel, answerType, elementRequired, elementHelpText, ct, expectedRevision);
+            {
+                var question = await _design.AddQuestionAsync(categoryId, elementLabel, answerType, elementRequired, elementHelpText, ct, expectedRevision);
+                return Complete(applicationId, $"element-{question.ElementId}");
+            }
             else
                 SetEditorError("Select a supported question type.");
         }
@@ -110,8 +119,9 @@ public sealed class StructureController : EditorControllerBase
 
         try
         {
-            await _design.AddRuleWithAwardMethodAsync(questionId, family, points, membershipOperator, optionIds,
+            var rule = await _design.AddRuleWithAwardMethodAsync(questionId, family, points, membershipOperator, optionIds,
                 minValue, maxValue, awardMethod, pointsPerUnit, maximumPoints, ct, expectedRevision);
+            return Complete(applicationId, $"rule-{rule.Id}");
         }
         catch (NotFoundException) { return NotFound(); }
         catch (DraftConflictException) { SetEditorError("The draft changed. Reload the workspace before making this change."); }
@@ -181,6 +191,13 @@ public sealed class StructureController : EditorControllerBase
         => Request.Headers["X-Requested-With"] == "QuestionAppBuilder"
             ? Json(new { saved = true })
             : RedirectToAction("Index", "Drafts", new { applicationId });
+
+    private IActionResult Complete(int applicationId, string fragment)
+    {
+        if (Request.Headers["X-Requested-With"] == "QuestionAppBuilder") return Json(new { saved = true, fragment });
+        TempData["AuthoringTarget"] = fragment;
+        return Redirect(Url.Action("Index", "Drafts", new { applicationId }) + "#" + fragment);
+    }
 
     private IActionResult StructureFailure(int applicationId, int status, string message)
     {

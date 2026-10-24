@@ -24,6 +24,7 @@ public static class DefinitionCloner
             ApplicationId = source.Version.ApplicationId, VersionNumber = versionNumber, Status = VersionStatus.Draft,
             CreatedUtc = DateTime.UtcNow, NavigationMode = source.Version.NavigationMode,
             RespondentAccessMode = source.Version.RespondentAccessMode, ResultVisibility = source.Version.ResultVisibility,
+            SubmittedApplicationVisibility = source.Version.SubmittedApplicationVisibility,
             SubmitLabel = source.Version.SubmitLabel, ConfirmationText = source.Version.ConfirmationText,
             CompositionJson = source.Version.CompositionJson,
             DisplayName = source.Version.DisplayName

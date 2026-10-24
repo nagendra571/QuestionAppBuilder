@@ -1,0 +1,88 @@
+@model SubmittedCategoryPageModel
+@using QuestionAppBuilder.Domain.Enums
+@{
+    var category = Model.Category;
+    var groupedRows = category.Groups.SelectMany((group, groupIndex) => group.Rows
+        .Select(row => (Group: group, GroupIndex: groupIndex, Row: row)))
+        .ToDictionary(item => item.Row.Element.LogicalKey);
+    var renderedGroups = new HashSet<int>();
+}
+<section class="qab-submitted-category" aria-label="@category.Name">
+    <header class="qab-submitted-category-heading">
+        <h2>@category.Name</h2>
+        @if (Model.ShowScores && category.PointsEarned is int categoryPoints)
+        {
+            <span class="qab-earned-points">+@categoryPoints points</span>
+        }
+    </header>
+    @foreach (var element in category.Elements)
+    {
+        if (groupedRows.TryGetValue(element.LogicalKey, out var groupItem))
+        {
+            if (renderedGroups.Add(groupItem.GroupIndex))
+            {
+                var group = groupItem.Group;
+                <section class="qab-question-group @(group.TableLayout ? "is-table" : "")" aria-label="@group.Name">
+                    <table class="qab-group-table">
+                        <caption>@group.Name</caption>
+                        <thead class="@(group.TableLayout ? "" : "qab-visually-hidden")"><tr>@foreach (var column in group.Columns) { <th scope="col">@column</th> }<th scope="col">Submitted answer</th>@if (Model.ShowScores) { <th scope="col">Points</th> }</tr></thead>
+                        <tbody>
+                            @foreach (var row in group.Rows)
+                            {
+                                var question = row.Element.Question;
+                                <tr>
+                                    @for (var cellIndex = 0; cellIndex < group.Columns.Count; cellIndex++) { <td data-column="@group.Columns[cellIndex]" aria-label="@group.Columns[cellIndex]">@(cellIndex < row.Cells.Count ? row.Cells[cellIndex] : "")</td> }
+                                    <td class="qab-submitted-group-answer" data-column="Submitted answer" aria-label="Submitted answer">
+                                        @if (row.Element.FollowUpContext is not null) { <span class="qab-follow-up-context">@row.Element.FollowUpContext</span> }
+                                        <strong>@row.Element.Label</strong>
+                                        @if (!string.IsNullOrWhiteSpace(row.Element.HelpText)) { <span class="qab-help">@row.Element.HelpText</span> }
+                                        @if (question?.AnswerType == AnswerType.UploadDocument && !string.IsNullOrWhiteSpace(question.AnswerText))
+                                        { <a href="@Url.Action("Document", "Responses", new { area = "QuestionAppBuilderCore", responseId = Model.ResponseId, questionId = question.Id })">@question.AnswerText</a> }
+                                        else if (!string.IsNullOrEmpty(question?.AnswerText)) { <span class="@(question.AnswerType == AnswerType.Textarea ? "qab-answer-multiline" : "")">@question.AnswerText</span> }
+                                        else { <span class="qab-empty-answer">No answer provided.</span> }
+                                    </td>
+                                    @if (Model.ShowScores) { <td data-column="Points">@if (question?.PointsEarned is int points) { <span class="qab-earned-points">+@points points</span> }</td> }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+        else
+        {
+            <article class="@(element.FollowUpDepth > 0 ? "qab-follow-up qab-question" : element.Question is null ? "qab-content-panel" : "qab-question")"
+                     style="@(element.FollowUpDepth > 0 ? $"--branch-depth:{element.FollowUpDepth}" : null)">
+                @if (element.FollowUpContext is not null) { <p class="qab-follow-up-context">@element.FollowUpContext</p> }
+                <h3>@element.Label</h3>
+                @if (!string.IsNullOrWhiteSpace(element.HelpText)) { <p class="qab-help">@element.HelpText</p> }
+                @if (element.Question is { } question)
+                {
+                    <div class="qab-submitted-answer">
+                        @if (question.AnswerType == AnswerType.UploadDocument && !string.IsNullOrWhiteSpace(question.AnswerText))
+                        { <a href="@Url.Action("Document", "Responses", new { area = "QuestionAppBuilderCore", responseId = Model.ResponseId, questionId = question.Id })">@question.AnswerText</a> }
+                        else if (!string.IsNullOrEmpty(question.AnswerText)) { <p class="@(question.AnswerType == AnswerType.Textarea ? "qab-answer-multiline" : "")">@question.AnswerText</p> }
+                        else { <p class="qab-empty-answer">No answer provided.</p> }
+                        @if (Model.ShowScores && question.PointsEarned is int points) { <span class="qab-earned-points">+@points points</span> }
+                    </div>
+                }
+            </article>
+        }
+    }
+    @if (Model.ShowScores && category.CalculatedValues.Count > 0)
+    {
+        <dl class="qab-calculations">
+            @foreach (var value in category.CalculatedValues)
+            {
+                <div><dt>@value.Name</dt><dd>@(value.Value?.ToString("0.##") ?? "—")@(value.Percentage ? "%" : "")</dd></div>
+            }
+        </dl>
+    }
+    @if (Model.ShowScores && category.Awards.Count > 0)
+    {
+        <section class="qab-submitted-awards" aria-label="Additional points">
+            <h3>Additional points</h3>
+            <ul>@foreach (var award in category.Awards) { <li>@award.Name <span class="qab-earned-points">+@award.Points points</span></li> }</ul>
+        </section>
+    }
+</section>

@@ -270,6 +270,13 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("SubmittedApplicationVisibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("WithoutScores");
+
                     b.Property<int>("VersionNumber")
                         .HasColumnType("int");
 

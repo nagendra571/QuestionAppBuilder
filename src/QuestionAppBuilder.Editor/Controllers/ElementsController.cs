@@ -30,6 +30,8 @@ public class ElementsController : EditorControllerBase
         try
         {
             await _designService.AddContentElementAsync(id, form.Label, form.HelpText, ct, expectedRevision);
+            TempData["AuthoringClose"] = $"add-content-{id}";
+            return RedirectToDetail(applicationId);
         }
         catch (NotFoundException)
         {
@@ -60,6 +62,8 @@ public class ElementsController : EditorControllerBase
         try
         {
             await _designService.AddQuestionAsync(id, form.Label, form.AnswerType, form.IsRequired, form.HelpText, ct, expectedRevision);
+            TempData["AuthoringClose"] = $"add-question-{id}";
+            return RedirectToDetail(applicationId);
         }
         catch (NotFoundException)
         {

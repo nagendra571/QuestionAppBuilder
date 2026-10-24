@@ -158,4 +158,31 @@ public class DefinitionValidatorTests
 
         review.Errors.Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData("100", null)]
+    [InlineData(null, 200)]
+    public void Per_unit_rule_is_valid_when_either_question_maximum_or_award_cap_bounds_it(string? questionMaximum, int? awardCap)
+    {
+        var question = new Question
+        {
+            Id = 1, ElementId = 1, AnswerType = AnswerType.Number, WholeNumbersOnly = true,
+            MinValue = 0, MaxValue = questionMaximum is null ? null : decimal.Parse(questionMaximum, System.Globalization.CultureInfo.InvariantCulture),
+            Rules = [new ScoringRule
+            {
+                Id = 1, Family = RuleFamily.NumericRange, AwardMethod = AwardMethod.PointsPerUnit,
+                PointsPerUnit = 2, MaximumPoints = awardCap
+            }]
+        };
+        var graph = new ApplicationVersionGraph
+        {
+            Version = new ApplicationVersion { DisplayName = "Bounded units" },
+            Categories = [new Category { Id = 1, Name = "Numbers", Elements =
+                [new Element { Id = 1, Kind = ElementKind.Question, Label = "Units", Question = question }] }]
+        };
+
+        var review = new DefinitionValidator(new DefinitionEvaluator()).Review(graph, new byte[] { 1 });
+
+        review.Errors.Should().BeEmpty();
+    }
 }

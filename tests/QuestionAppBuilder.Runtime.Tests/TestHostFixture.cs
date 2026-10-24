@@ -97,6 +97,11 @@ public sealed class TestHostFixture : IAsyncDisposable
             var receipt = new SubmissionReceipt(SubmissionCount, request.ResponseId, DateTime.UtcNow, Graph.Version.ConfirmationText,
                 Graph.Version.ResultVisibility == ResultVisibility.ConfirmationOnly ? null : result.Score.Total,
                 Graph.Version.ResultVisibility == ResultVisibility.CategoryBreakdown ? result.Score.Categories : null);
+            if (Graph.Version.ResultVisibility == ResultVisibility.ConfirmationAndAnswerReview)
+            {
+                receipt = receipt with { Total = 2, Categories = null,
+                    SubmittedApplication = BuildSubmittedApplication(snapshot, result, withResults: true) };
+            }
             _responses[request.ResponseId] = snapshot with { Status = ResponseStatus.Submitted };
             _receipts[request.RequestId] = receipt; _requestResponses[request.RequestId] = request.ResponseId;
             return Task.FromResult(receipt);
@@ -106,6 +111,15 @@ public sealed class TestHostFixture : IAsyncDisposable
             var receipt = _receipts.FirstOrDefault(x => _requestResponses[x.Key] == responseId).Value;
             return receipt is null ? Task.FromException<SubmissionReceipt>(new NotFoundException("missing")) : Task.FromResult(receipt);
         }
+        public async Task<SubmissionReceipt> GetSubmittedApplicationAsync(Guid responseId, CancellationToken cancellationToken = default)
+        {
+            var receipt = await GetReceiptAsync(responseId, cancellationToken);
+            var snapshot = _responses[responseId];
+            var result = new DefinitionEvaluator().Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: true);
+            var withScores = Graph.Version.SubmittedApplicationVisibility == SubmittedApplicationVisibility.WithScores;
+            return receipt with { Total = withScores ? 2 : null, Categories = null,
+                SubmittedApplication = BuildSubmittedApplication(snapshot, result, withScores) };
+        }
         public Task RequestAsync(AccessLinkRequest request, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<AccessGrant> RedeemAsync(string token, CancellationToken cancellationToken = default) => Task.FromException<AccessGrant>(new InvalidAccessLinkException());
 
@@ -114,7 +128,9 @@ public sealed class TestHostFixture : IAsyncDisposable
         public static ApplicationVersionGraph BuildGraph(NavigationMode mode = NavigationMode.Sequential, ResultVisibility visibility = ResultVisibility.Total, bool conditional = false)
         {
             var version = new ApplicationVersion { Id = 10, ApplicationId = 1, VersionNumber = 1, Status = VersionStatus.Published,
-                DisplayName = "Test questionnaire", NavigationMode = mode, ResultVisibility = visibility, SubmitLabel = "Send application", ConfirmationText = "Thanks for your response" };
+                DisplayName = "Test questionnaire", NavigationMode = mode, ResultVisibility = visibility,
+                SubmittedApplicationVisibility = SubmittedApplicationVisibility.WithoutScores,
+                SubmitLabel = "Send application", ConfirmationText = "Thanks for your response" };
             var categories = new List<Category>();
             for (var i = 1; i <= 5; i++)
             {
@@ -134,6 +150,33 @@ public sealed class TestHostFixture : IAsyncDisposable
             }
             version.Categories = categories; version.VisibilityConditions = conditions;
             return new ApplicationVersionGraph { Version = version, Categories = categories, VisibilityConditions = conditions };
+        }
+
+        private static SubmittedApplication BuildSubmittedApplication(ResponseSnapshot snapshot,
+            QuestionAppBuilder.Application.Evaluation.EvaluationResult result, bool withResults)
+        {
+            var categories = snapshot.Definition.Categories.OrderBy(category => category.SortOrder).Select(category =>
+            {
+                var elements = category.Elements.OrderBy(element => element.SortOrder)
+                    .Where(element => element.Question is null || result.VisibleQuestionIds.Contains(element.Question.Id))
+                    .Select(element => new SubmittedElement(element.Id, element.LogicalKey, element.Kind, element.Label,
+                        element.Id == 1 ? "Answer in the indicated field." : element.HelpText, 0, null,
+                        element.Question is null ? null : new SubmittedQuestion(element.Question.Id, element.Question.AnswerType,
+                            snapshot.Answers.GetValueOrDefault(element.Question.Id)?.Text,
+                            withResults && element.Question.Id == 1 ? 1 : null))).ToList();
+                if (category.Id == snapshot.Definition.Categories.Min(item => item.Id))
+                    elements.Add(new SubmittedElement(100, Guid.NewGuid(), ElementKind.Content, "Application introduction", null, 0, null, null));
+                var questionElement = elements.FirstOrDefault(element => element.Question is not null);
+                IReadOnlyList<SubmittedGroup> groups = withResults && questionElement is not null
+                    && category.Id == snapshot.Definition.Categories.Min(item => item.Id)
+                    ? new[] { new SubmittedGroup("Summary", true, ["Details"],
+                        [new SubmittedGroupRow(questionElement, ["Primary"])]) }
+                    : Array.Empty<SubmittedGroup>();
+                return new SubmittedCategory(category.Id, category.Name, elements, groups, [],
+                    withResults && category.Id == snapshot.Definition.Categories.Min(item => item.Id) ? 2 : null,
+                    withResults && category.Id == snapshot.Definition.Categories.Min(item => item.Id) ? [new SubmittedAward("Supporter", 1)] : []);
+            }).ToArray();
+            return new SubmittedApplication(snapshot.Definition.Version.DisplayName, categories);
         }
     }
 }

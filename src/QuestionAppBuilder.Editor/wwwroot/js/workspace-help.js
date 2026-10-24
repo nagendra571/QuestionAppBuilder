@@ -59,8 +59,12 @@
       choices: [choice('HostSignIn', 'Host sign-in', 'Use the host application\'s sign-in and access policies.'), choice('EmailLink', 'Email link', 'Use access links sent to an email address, without a host account. The host must have an email sender configured before publishing.')]
     },
     results: {
-      description: 'What respondents see after submission. This does not change how points are calculated or the scores available in authorized reports.',
-      choices: [choice('ConfirmationOnly', 'Confirmation only', 'Show the confirmation message without scores.'), choice('Total', 'Total', 'Show the overall total score.'), choice('CategoryBreakdown', 'Category breakdown', 'Show the overall total and category scores.')]
+      description: 'What respondents see immediately after submission. This does not change how points are calculated or the settings for reopening a submitted application.',
+      choices: [choice('ConfirmationOnly', 'Confirmation only', 'Show the confirmation message without scores.'), choice('Total', 'Total', 'Show the overall total score.'), choice('CategoryBreakdown', 'Category breakdown', 'Show the overall total and category scores.'), choice('ConfirmationAndAnswerReview', 'Confirmation, total & answer review', 'Show the confirmation, total, and all submitted answers by category. Respondents can later reopen the application using the separate submitted application view setting.')]
+    },
+    submittedApplicationVisibility: {
+      description: 'What score details respondents see when they reopen a submitted application. This is separate from the immediate receipt shown after submission.',
+      choices: [choice('WithoutScores', 'Read-only application without scores', 'Show visible categories, frozen wording, and submitted answers without score details.'), choice('WithScores', 'Read-only application with total and positive scores', 'Show the submitted application with the stored total and positive question, category, calculated-field, and combined-award results.')]
     },
     answerType: {
       description: 'Choose the shape of the answer. Required controls whether a visible question must be answered; scoring is configured separately.',
@@ -120,6 +124,7 @@
     if (name.endsWith('.NavigationMode')) return 'navigation';
     if (name.endsWith('.RespondentAccessMode')) return 'access';
     if (name.endsWith('.ResultVisibility')) return 'results';
+    if (name.endsWith('.SubmittedApplicationVisibility')) return 'submittedApplicationVisibility';
     if (name.endsWith('.AnswerType') || name === 'elementType') return 'answerType';
     if (name.startsWith('Rules[') && name.endsWith('.SortOrder')) return 'order';
     if (name.endsWith('.Points') || name === 'points') return 'points';

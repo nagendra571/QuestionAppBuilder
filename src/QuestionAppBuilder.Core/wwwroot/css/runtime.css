@@ -113,6 +113,22 @@ textarea.qab-input { min-height: 88px; resize: vertical; }
 .qab-group-table .qab-question { margin:0; padding:.5rem; border:0; min-width:0; }
 .qab-group-table .qab-input { min-width:0; width:100%; }
 .qab-group-table td:last-child { width:32%; }
+.qab-receipt-layout { margin-top: 18px; }
+.qab-submitted-category { min-width: 0; }
+.qab-submitted-category-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; }
+.qab-submitted-category-heading h2, .qab-submitted-category-heading h3 { margin:0; }
+.qab-earned-points { display:inline-flex; align-items:center; color:#176b3a; font-size:.875rem; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.qab-submitted-answer { display:flex; align-items:baseline; justify-content:space-between; gap:12px; min-width:0; }
+.qab-submitted-answer p { margin:0; overflow-wrap:anywhere; }
+.qab-submitted-group-answer > strong, .qab-submitted-group-answer > span, .qab-submitted-group-answer > a { display:block; margin-top:.25rem; }
+.qab-submitted-group-answer > strong:first-child { margin-top:0; }
+.qab-submitted-group-answer > .qab-help, .qab-submitted-group-answer > .qab-follow-up-context { display:block; }
+.qab-answer-multiline { white-space:pre-wrap; }
+.qab-empty-answer { color:#53647a; font-style:italic; }
+.qab-receipt-pager { display:flex; justify-content:space-between; gap:12px; margin-top:20px; padding-top:14px; border-top:1px solid var(--qab-border); }
+.qab-submitted-awards { margin-top:20px; }
+.qab-submitted-awards ul { padding-left:20px; }
+.qab-submitted-awards li { display:flex; justify-content:space-between; gap:12px; max-width:36rem; padding:4px 0; }
 .qab-calculations { display:flex; flex-wrap:wrap; gap:1rem 2rem; padding:1rem 0; border-top:1px solid #d7dce1; font-variant-numeric:tabular-nums; }
 .qab-calculations dt { font-size:.875rem; color:#53647a; }
 .qab-calculations dd { margin:.25rem 0; font-size:1.1rem; font-weight:600; }
@@ -126,3 +142,4 @@ textarea.qab-input { min-height: 88px; resize: vertical; }
  .qab-group-table td::before { content:attr(data-column); display:block; font-weight:600; font-size:.8rem; color:#53647a; margin-bottom:.25rem; }
  .qab-group-table td:last-child { width:auto; }
 }
+@media(max-width:760px) { .qab-receipt-layout .qab-tabs { flex-direction:row; } .qab-submitted-answer { align-items:flex-start; flex-direction:column; gap:4px; } .qab-receipt-pager { flex-direction:column; } }

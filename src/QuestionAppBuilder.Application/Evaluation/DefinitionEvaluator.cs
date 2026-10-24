@@ -137,7 +137,7 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
                 }
                 else if (ScoringAward.TryGetMaximumAward(question, rule, out var maximumAward)) maximumScore += maximumAward;
                 else issues.Add(new DefinitionIssue("invalid-points-per-unit", element.Id,
-                    "Points per unit requires a nonnegative whole-number numeric question and a safe rate, answer maximum, or award cap."));
+                    ScoringAward.GetMaximumAwardError(question, rule) ?? "The points-per-unit award is invalid."));
                 if (!Enum.IsDefined(rule.Family))
                     issues.Add(new DefinitionIssue("invalid-rule-family", element.Id, "The scoring rule family is not supported."));
                 if (rule.Family == RuleFamily.Selection && (!Enum.IsDefined(rule.MembershipOperator ?? (MembershipOperator)(-1)) || rule.Options.Count == 0))

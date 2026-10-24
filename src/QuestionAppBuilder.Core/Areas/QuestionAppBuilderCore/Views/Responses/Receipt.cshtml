@@ -1,14 +1,17 @@
 @model ReceiptPageModel
 <link rel="stylesheet" href="~/_content/QuestionAppBuilder.Core/css/runtime.css" />
 <main class="qab-runtime qab-receipt" data-submission-id="@Model.Receipt.SubmissionId">
-    <p class="qab-eyebrow">Response submitted</p>
-    <h1>Thank you</h1>
-    <p>@Model.Receipt.ConfirmationText</p>
-    @if (!string.IsNullOrWhiteSpace(Model.Receipt.ReviewSummary))
+    <header class="qab-header">
+        <p class="qab-eyebrow">Response submitted</p>
+        <h1>Thank you</h1>
+        <p>@Model.Receipt.ConfirmationText</p>
+        @if (!string.IsNullOrWhiteSpace(Model.Receipt.ReviewSummary)) { <p>@Model.Receipt.ReviewSummary</p> }
+    </header>
+    @if (Model.Receipt.SubmittedApplication is not null)
     {
-        <p>@Model.Receipt.ReviewSummary</p>
+        @await Html.PartialAsync("_SubmittedApplicationContent", Model)
     }
-    @if (Model.Receipt.Total is int total)
+    else if (Model.Receipt.Total is int total)
     {
         <section class="qab-score" aria-labelledby="score-heading"><h2 id="score-heading">Your score</h2>
             <p class="qab-score-total" data-total-score="@total">@total</p>
@@ -20,5 +23,6 @@
             }
         </section>
     }
+    <p><a href="@Url.Action("Submitted", "Responses", new { area = "QuestionAppBuilderCore", responseId = Model.Receipt.ResponseId })">View submitted application</a></p>
     <p class="qab-footer-note">Your submitted response is saved.</p>
 </main>

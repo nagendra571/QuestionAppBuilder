@@ -77,7 +77,7 @@
 <script src="~/_content/QuestionAppBuilder.Editor/js/authoring-context.js" defer></script>
 <script src="~/_content/QuestionAppBuilder.Editor/js/authoring-detail.js" defer></script>
 <script src="~/_content/QuestionAppBuilder.Editor/js/scoring-award-preview.js" defer></script>
-<main class="cv-management" data-authoring-context>
+<main class="cv-management" data-authoring-context data-authoring-target="@TempData["AuthoringTarget"]" data-authoring-close="@TempData["AuthoringClose"]">
 <a class="cv-back" asp-controller="Applications" asp-action="Index">&#8592; All applications</a>
 
 @if (TempData["EditorError"] is string editorError)

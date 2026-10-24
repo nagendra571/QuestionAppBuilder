@@ -76,7 +76,7 @@ public sealed class ResponsesController : Controller
         ResponseSnapshot snapshot;
         try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
         catch (NotFoundException) { return NotFound(); }
-        if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(ReceiptUrl(responseId));
+        if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(SubmittedUrl(responseId));
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         var visibleCategories = _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, preview: false).Categories;
         if (visibleCategories.Count == 0) return View("Unavailable", "This questionnaire has no available categories.");
@@ -219,7 +219,7 @@ public sealed class ResponsesController : Controller
         ResponseSnapshot snapshot;
         try { snapshot = await _responses.GetAsync(responseId, cancellationToken); }
         catch (NotFoundException) { return NotFound(); }
-        if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(ReceiptUrl(responseId));
+        if (snapshot.Status == ResponseStatus.Submitted) return LocalRedirect(SubmittedUrl(responseId));
         var evaluation = _evaluator.Evaluate(snapshot.Definition, snapshot.Answers, requireComplete: false);
         ViewData["SubmitUrl"] = SubmitUrl(responseId);
         ViewData["EditUrl"] = EditUrl(responseId, _renderer.Create(snapshot.Definition, snapshot.Answers, evaluation, false).Categories.Count - 1);
@@ -269,7 +269,7 @@ public sealed class ResponsesController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Receipt(Guid responseId, string? format = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Receipt(Guid responseId, string? format = null, CancellationToken cancellationToken = default, int category = 0)
     {
         SubmissionReceipt receipt;
         try { receipt = await _submissions.GetReceiptAsync(responseId, cancellationToken); }
@@ -282,7 +282,21 @@ public sealed class ResponsesController : Controller
             if (receipt.Categories is not null) payload["categories"] = receipt.Categories;
             return Json(payload);
         }
-        return View("Receipt", new ReceiptPageModel(receipt, _options.LayoutName));
+        var categoryIndex = receipt.SubmittedApplication is { Categories.Count: > 0 } submitted
+            ? Math.Clamp(category, 0, submitted.Categories.Count - 1) : 0;
+        return View("Receipt", new ReceiptPageModel(receipt, _options.LayoutName) { Category = categoryIndex });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Submitted(Guid responseId, int category = 0, CancellationToken cancellationToken = default)
+    {
+        SubmissionReceipt receipt;
+        try { receipt = await _submissions.GetSubmittedApplicationAsync(responseId, cancellationToken); }
+        catch (NotFoundException) { return NotFound(); }
+        var categoryIndex = receipt.SubmittedApplication is { Categories.Count: > 0 } application
+            ? Math.Clamp(category, 0, application.Categories.Count - 1) : 0;
+        return View("Submitted", new ReceiptPageModel(receipt, _options.LayoutName)
+        { Category = categoryIndex, IsTabbed = true });
     }
 
     [HttpGet]
@@ -435,6 +449,7 @@ public sealed class ResponsesController : Controller
     private string EditUrl(Guid id, int index) => $"{BasePath}/Responses/{id}?category={index}";
     private string ReviewUrl(Guid id) => $"{BasePath}/Responses/{id}/Review";
     private string ReceiptUrl(Guid id) => $"{BasePath}/Responses/{id}/Receipt";
+    private string SubmittedUrl(Guid id) => $"{BasePath}/Responses/{id}/Submitted";
     private string SaveUrl(Guid id) => $"{BasePath}/Responses/{id}/Save";
     private string NavigateUrl(Guid id) => $"{BasePath}/Responses/{id}/Navigate";
     private string SubmitUrl(Guid id) => $"{BasePath}/Responses/{id}/Submit";

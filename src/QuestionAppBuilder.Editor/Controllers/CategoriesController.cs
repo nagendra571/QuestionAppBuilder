@@ -29,7 +29,9 @@ public class CategoriesController : EditorControllerBase
 
         try
         {
-            await _designService.AddCategoryAsync(applicationId, form.Name, ct, expectedRevision);
+            var category = await _designService.AddCategoryAsync(applicationId, form.Name, ct, expectedRevision);
+            TempData["AuthoringTarget"] = $"manage-category-{category.Id}";
+            return RedirectToDetail(applicationId);
         }
         catch (NotFoundException)
         {

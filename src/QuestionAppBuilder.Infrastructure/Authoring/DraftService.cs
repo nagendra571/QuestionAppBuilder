@@ -164,10 +164,13 @@ public sealed class DraftService : IDraftService
     private static void ApplyEditableFields(ApplicationVersionGraph target, ApplicationVersionGraph posted)
     {
         var sourceVersion = posted.Version;
+        if (!Enum.IsDefined(sourceVersion.ResultVisibility) || !Enum.IsDefined(sourceVersion.SubmittedApplicationVisibility))
+            throw new DefinitionValidationException("The draft contains an unsupported respondent result or submitted-application visibility setting.");
         target.Version.CompositionJson = sourceVersion.CompositionJson;
         target.Version.NavigationMode = sourceVersion.NavigationMode;
         target.Version.RespondentAccessMode = sourceVersion.RespondentAccessMode;
         target.Version.ResultVisibility = sourceVersion.ResultVisibility;
+        target.Version.SubmittedApplicationVisibility = sourceVersion.SubmittedApplicationVisibility;
         target.Version.SubmitLabel = sourceVersion.SubmitLabel;
         target.Version.ConfirmationText = sourceVersion.ConfirmationText;
         target.Version.DisplayName = sourceVersion.DisplayName;

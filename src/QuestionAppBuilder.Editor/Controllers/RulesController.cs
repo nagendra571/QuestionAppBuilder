@@ -40,6 +40,7 @@ public class RulesController : EditorControllerBase
             return RedirectToDetail(applicationId);
         }
 
+        var added = false;
         try
         {
             switch (form.Family)
@@ -57,6 +58,7 @@ public class RulesController : EditorControllerBase
                         null, null, form.AwardMethod, form.PointsPerUnit, form.MaximumPoints, ct, expectedRevision);
                     break;
             }
+            added = true;
         }
         catch (NotFoundException)
         {
@@ -67,6 +69,7 @@ public class RulesController : EditorControllerBase
             SetEditorError(exception.Message);
         }
 
+        if (added) TempData["AuthoringClose"] = $"add-rule-{id}";
         return RedirectToDetail(applicationId);
     }
 
