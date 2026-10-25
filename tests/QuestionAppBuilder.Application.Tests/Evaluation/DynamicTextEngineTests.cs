@@ -128,7 +128,7 @@ public class DynamicTextEngineTests
         var composition = CompositionEngine.Evaluate(graph, answers, new HashSet<int>(), new HashSet<int> { 1 });
 
         var result = DynamicTextEngine.Evaluate(graph, answers, new HashSet<int>(), new HashSet<int> { 1 }, composition,
-            new DateTimeOffset(2025, 3, 1, 12, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2025, 3, 1, 12, 0, 0, TimeSpan.Zero), new HashSet<int> { 2 });
 
         result.Values.Single().Value.State.Should().Be(DynamicValueState.NotApplicable);
         result.Texts.Single(x => x.Slot == DynamicTextSlot.ConfirmationText).Text.Should().Be("not available");

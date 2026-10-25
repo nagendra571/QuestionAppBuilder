@@ -35,10 +35,11 @@ public sealed class SqlServerDatabase : IAsyncDisposable
         return fixture;
     }
 
-    public QuestionAppBuilderDbContext CreateContext(IInterceptor? interceptor = null)
+    public QuestionAppBuilderDbContext CreateContext(IInterceptor? interceptor = null, bool enableRetryOnFailure = false)
     {
         var builder = new SqlConnectionStringBuilder(_adminConnectionString) { InitialCatalog = _databaseName };
-        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(builder.ConnectionString);
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(builder.ConnectionString,
+            sql => { if (enableRetryOnFailure) sql.EnableRetryOnFailure(1, TimeSpan.FromSeconds(1), null); });
         if (interceptor is not null) options.AddInterceptors(interceptor);
         return new QuestionAppBuilderDbContext(options.Options);
     }

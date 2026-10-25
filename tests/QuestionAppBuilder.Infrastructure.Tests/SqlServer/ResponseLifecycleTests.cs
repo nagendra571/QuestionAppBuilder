@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Nodes;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Responses;
 using QuestionAppBuilder.Application.Scoring;
@@ -155,6 +156,9 @@ public class ResponseLifecycleTests
         submittedView.SubmittedApplication.Categories.SelectMany(category => category.Elements)
             .Where(element => element.Question is not null).Select(element => element.Question!)
             .Should().NotContain(question => question.Id == db.HiddenQuestionId);
+        submittedView.SubmittedApplication.Categories.SelectMany(category => category.Elements)
+            .Should().Contain(element => element.Label == "Visible conditional introduction")
+            .And.NotContain(element => element.Label == "Conditional introduction");
 
         await using (var context = db.CreateContext())
         {
@@ -166,7 +170,8 @@ public class ResponseLifecycleTests
                 .Include(item => item.QuestionStates).SingleAsync(item => item.ResponseId == started.Id);
             persisted.Answers.Should().ContainSingle(answer => answer.QuestionId == db.QuestionId && answer.TextValue == "frozen answer");
             persisted.QuestionStates.Should().Contain(state => state.QuestionId == db.HiddenQuestionId && !state.IsApplicable);
-            persisted.CompositionSnapshotJson.Should().Contain("VisibleCategoryIds");
+            persisted.CompositionSnapshotJson.Should().Contain("VisibleCategoryIds").And.Contain("VisibleElementIds");
+            persisted.CompositionSnapshotJson.Should().NotContain("CombinedScoreRules").And.NotContain("FailedValidationRules");
         }
         await using (var context = db.CreateContext())
         {
@@ -180,6 +185,10 @@ public class ResponseLifecycleTests
             await context.SaveChangesAsync();
             var application = await context.Applications.SingleAsync(item => item.Id == 1);
             application.CurrentVersionId = nextVersion.Id;
+            var submittedVersion = await context.ApplicationVersions.Include(item => item.VisibilityConditions)
+                .ThenInclude(condition => condition.Predicates).SingleAsync(item => item.Id == started.ApplicationVersionId);
+            submittedVersion.VisibilityConditions.Single(condition => condition.Predicates.Single().Operator == ConditionOperator.Unanswered)
+                .Predicates.Single().Operator = ConditionOperator.Answered;
             await context.SaveChangesAsync();
         }
 
@@ -198,6 +207,43 @@ public class ResponseLifecycleTests
             .Should().OnlyContain(points => points == null);
         reopened.SubmittedApplication.Categories.SelectMany(category => category.Awards).Should().BeEmpty();
         reopened.SubmittedApplication.Categories.SelectMany(category => category.CalculatedValues).Should().BeEmpty();
+
+        await using (var context = db.CreateContext())
+        {
+            var persisted = await context.Submissions.SingleAsync(item => item.ResponseId == started.Id);
+            var snapshot = JsonNode.Parse(persisted.CompositionSnapshotJson!)!.AsObject();
+            snapshot["VisibleElementIds"] = new JsonArray();
+            persisted.CompositionSnapshotJson = snapshot.ToJsonString();
+            await context.SaveChangesAsync();
+        }
+        var explicitEmpty = await db.CreateSubmissionCoordinator(freshIdentity).GetSubmittedApplicationAsync(started.Id);
+        explicitEmpty.SubmittedApplication!.Categories.Single(category => category.Name == "Content only").Elements.Should().BeEmpty();
+
+        await using (var context = db.CreateContext())
+        {
+            var persisted = await context.Submissions.SingleAsync(item => item.ResponseId == started.Id);
+            var snapshot = JsonNode.Parse(persisted.CompositionSnapshotJson!)!.AsObject();
+            snapshot["VisibleElementIds"] = null;
+            persisted.CompositionSnapshotJson = snapshot.ToJsonString();
+            await context.SaveChangesAsync();
+        }
+        var nullLegacy = await db.CreateSubmissionCoordinator(freshIdentity).GetSubmittedApplicationAsync(started.Id);
+        nullLegacy.SubmittedApplication!.Categories.Single(category => category.Name == "Content only")
+            .Elements.Select(element => element.Label).Should().Contain("Receipt introduction").And.Contain("Conditional introduction")
+            .And.Contain("Visible conditional introduction");
+
+        await using (var context = db.CreateContext())
+        {
+            var persisted = await context.Submissions.SingleAsync(item => item.ResponseId == started.Id);
+            var snapshot = JsonNode.Parse(persisted.CompositionSnapshotJson!)!.AsObject();
+            snapshot.Remove("VisibleElementIds");
+            persisted.CompositionSnapshotJson = snapshot.ToJsonString();
+            await context.SaveChangesAsync();
+        }
+        var absentLegacy = await db.CreateSubmissionCoordinator(freshIdentity).GetSubmittedApplicationAsync(started.Id);
+        absentLegacy.SubmittedApplication!.Categories.Single(category => category.Name == "Content only")
+            .Elements.Select(element => element.Label).Should().Contain("Receipt introduction").And.Contain("Conditional introduction")
+            .And.Contain("Visible conditional introduction");
     }
 
     [SqlServerFact]
@@ -568,8 +614,9 @@ public class ResponseLifecycleTests
             if (submittedApplication)
             {
                 var version = app.Versions.Single();
-                version.Categories.Add(new Category { Name = "Content only", SortOrder = 2,
-                    Elements = { new Element { Kind = ElementKind.Content, Label = "Receipt introduction", SortOrder = 1 } } });
+                var contentCategory = new Category { Name = "Content only", SortOrder = 2,
+                    Elements = { new Element { Kind = ElementKind.Content, Label = "Receipt introduction", SortOrder = 1 } } };
+                version.Categories.Add(contentCategory);
                 var hiddenQuestion = new Question { AnswerType = AnswerType.Textbox, IsRequired = false };
                 var hiddenElement = new Element { Kind = ElementKind.Question, Label = "Hidden question", SortOrder = 1, Question = hiddenQuestion };
                 var hiddenCategory = new Category { Name = "Hidden branch", SortOrder = 3,
@@ -577,8 +624,15 @@ public class ResponseLifecycleTests
                 version.Categories.Add(hiddenCategory);
                 var condition = new VisibilityCondition { Junction = ConditionJunction.All };
                 condition.Predicates.Add(new VisibilityPredicate { SourceQuestion = question, Operator = ConditionOperator.Unanswered });
+                contentCategory.Elements.Add(new Element { Kind = ElementKind.Content, Label = "Conditional introduction", SortOrder = 2,
+                    VisibilityCondition = condition });
                 hiddenCategory.VisibilityCondition = condition;
                 version.VisibilityConditions.Add(condition);
+                var answeredCondition = new VisibilityCondition { Junction = ConditionJunction.All };
+                answeredCondition.Predicates.Add(new VisibilityPredicate { SourceQuestion = question, Operator = ConditionOperator.Answered });
+                contentCategory.Elements.Add(new Element { Kind = ElementKind.Content, Label = "Visible conditional introduction", SortOrder = 3,
+                    VisibilityCondition = answeredCondition });
+                version.VisibilityConditions.Add(answeredCondition);
                 if (positiveResults)
                 {
                     var basics = version.Categories.Single(category => category.Name == "Basics");

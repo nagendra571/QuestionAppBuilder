@@ -20,12 +20,32 @@
 <div data-authoring-context data-authoring-target="@TempData["AuthoringTarget"]">
 <div class="aw-page-head" role="region" aria-labelledby="workspace-heading">
     <div><a asp-controller="Applications" asp-action="Detail" asp-route-id="@Model.ApplicationId" class="aw-back">Back to application</a><h1 id="workspace-heading">Authoring workspace</h1><p>Select a category or question to edit. Changes save automatically.</p></div>
-    <a class="aw-secondary" asp-controller="Composition" asp-action="Index" asp-route-id="@Model.ApplicationId">Groups &amp; calculations</a>
     <div class="aw-save-state" role="status" aria-live="polite" data-save-status>All changes saved</div>
 </div>
+<nav class="aw-area-nav" aria-label="Questionnaire areas">
+    <span aria-current="page">Questionnaire</span>
+    <a asp-controller="Composition" asp-action="Index" asp-route-id="@Model.ApplicationId">Groups, rules &amp; dynamic text</a>
+</nav>
 <nav class="aw-workspace-nav" data-workspace-nav aria-label="Authoring tasks">
     <a href="#content">Questionnaire</a><a href="#definition">Settings</a><a href="#visibility">Visibility</a><a href="#scoring">Scoring guide</a><a href="#preview">Preview</a><a href="#readiness">Review &amp; publish</a>
 </nav>
+<section class="aw-workspace-search" aria-labelledby="workspace-search-heading" data-workspace-search
+         data-search-url="@Url.Action("Search", "WorkspaceSearch", new { applicationId = Model.ApplicationId })">
+    <form role="search" data-definition-search>
+        <label for="definition-search-query" id="workspace-search-heading">Search this draft</label>
+        <div class="aw-workspace-search-controls">
+            <input id="definition-search-query" type="search" name="q" minlength="1" maxlength="200" required autocomplete="off" aria-describedby="definition-search-help" data-search-query />
+            <button type="submit" class="aw-secondary">Search</button>
+            <button type="button" class="aw-secondary" data-search-clear>Clear</button>
+        </div>
+        <p id="definition-search-help" class="aw-muted">Search names, configuration text, and direct references in this saved draft.</p>
+    </form>
+    <p data-search-status role="status" aria-live="polite"></p>
+    <details class="aw-workspace-search-results" data-search-results hidden>
+        <summary data-search-summary>Search results</summary>
+        <div data-search-results-content tabindex="0" aria-label="Search result list" aria-live="polite"></div>
+    </details>
+</section>
     <div class="aw-layout">
         <aside class="aw-rail" aria-label="Questionnaire outline"><details class="aw-outline" id="questionnaire-outline" open><summary>On this questionnaire</summary><partial name="_Outline" model="Model" /></details></aside>
         <main class="aw-editor">
@@ -70,6 +90,13 @@
                         {
                             <article data-branch-depth="@FollowUpStructure.Depth(element, category.Elements)" class="aw-element" id="element-@element.Id" data-question-id="@element.Question?.Id">
                                 <h3 class="aw-question-title" data-item-title>@element.Label</h3>
+                                <details class="aw-dependencies" data-dependency-panel data-dependency-url="@Url.Action("Dependencies", "Drafts", new { applicationId = Model.ApplicationId, elementId = element.LogicalKey })"
+                                         data-workspace-url="@Url.Action("Index", "Drafts", new { applicationId = Model.ApplicationId })"
+                                         data-composition-url="@Url.Action("Index", "Composition", new { id = Model.ApplicationId })">
+                                    <summary>Used by and related items</summary>
+                                    <p class="aw-dependency-note">Shows references in this saved draft. Lists references, not deletion effects.</p>
+                                    <div data-dependency-results aria-live="polite"><p class="aw-muted">Open this section to check references.</p></div>
+                                </details>
                                 <partial name="_ElementEditor" model="element" />
                                 @if (FollowUpStructure.Parent(element, category.Elements) is { } parent)
                                 {
@@ -230,6 +257,29 @@
 <section class="aw-panel aw-preview" id="preview" data-workspace-pane="preview" aria-labelledby="preview-heading">
     <header><div><h2 id="preview-heading">Preview and scoring trace</h2></div><button type="button" class="aw-secondary" data-preview-button data-preview-url="@Url.Action("Evaluate", "Preview", new { applicationId = Model.ApplicationId })">Evaluate preview</button></header>
     <div data-preview-result aria-live="polite">Evaluate the draft to begin a questionnaire preview.</div>
+    <section class="aw-preview-scenarios" data-preview-scenarios
+             data-application-id="@Model.ApplicationId" data-version-id="@Model.Graph.Version.Id"
+             data-list-url="@Url.Action("List", "PreviewScenarios", new { id = Model.ApplicationId })"
+             data-save-url="@Url.Action("Save", "PreviewScenarios", new { id = Model.ApplicationId })"
+             data-load-url="@Url.Action("Load", "PreviewScenarios", new { id = Model.ApplicationId })"
+             data-run-url="@Url.Action("Run", "PreviewScenarios", new { id = Model.ApplicationId })"
+             data-delete-url="@Url.Action("Delete", "PreviewScenarios", new { id = Model.ApplicationId })">
+        <h3>Reusable preview scenarios</h3>
+        <p class="aw-muted">Scenarios are synthetic test data shared with other designers. Save answers with an expected result, then run them against the saved draft; time-based calculations use the time of each run. Scenarios never create respondent responses.</p>
+        <div class="aw-preview-scenario-fields">
+            <label class="aw-field">Scenario name<input type="text" name="scenario.Name" maxlength="200" data-scenario-name /></label>
+            <label class="aw-field">Expected answer validity<select name="scenario.ExpectedValid" data-scenario-validity>
+                <option value="ignore">Do not check</option><option value="valid">Valid</option><option value="invalid">Invalid</option>
+            </select></label>
+            <label class="aw-field">Expected total points (optional)<input type="number" name="scenario.ExpectedTotal" min="0" max="2147483647" step="1" data-scenario-total /></label>
+            <button type="button" class="aw-secondary" data-scenario-save>Save current answers as a scenario</button>
+            <button type="button" class="aw-secondary" data-scenario-cancel>Clear scenario fields</button>
+            <button type="button" class="aw-secondary" data-scenario-run>Run all scenarios</button>
+        </div>
+        <p data-scenario-status role="status" aria-live="polite"></p>
+        <div class="aw-preview-scenario-list" data-scenario-list>Loading saved scenarios…</div>
+        <section aria-label="Saved scenario results"><h4>Latest saved-scenario results</h4><div class="aw-preview-scenario-results" data-scenario-results aria-live="polite"></div></section>
+    </section>
 </section>
 <form data-workspace-pane="readiness" id="publish-draft" method="post" asp-controller="Drafts" asp-action="Publish" asp-route-applicationId="@Model.ApplicationId">
     @Html.AntiForgeryToken()<input type="hidden" name="ApplicationId" value="@Model.ApplicationId" /><input type="hidden" name="ExpectedRevision" value="@Convert.ToBase64String(Model.Revision)" />

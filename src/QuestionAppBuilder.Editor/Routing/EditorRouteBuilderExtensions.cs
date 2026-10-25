@@ -31,6 +31,14 @@ public static class EditorRouteBuilderExtensions
             name: "QuestionAppBuilderEditorDraftReadiness",
             pattern: $"{basePath}/Drafts/{{applicationId:int}}/Readiness",
             defaults: new { area = EditorArea.Name, controller = "Drafts", action = "Readiness" });
+        var dependencies = endpoints.MapControllerRoute(
+            name: "QuestionAppBuilderEditorDraftDependencies",
+            pattern: $"{basePath}/Drafts/{{applicationId:int}}/Dependencies",
+            defaults: new { area = EditorArea.Name, controller = "Drafts", action = "Dependencies" });
+        var search = endpoints.MapControllerRoute(
+            name: "QuestionAppBuilderEditorDraftSearch",
+            pattern: $"{basePath}/Drafts/{{applicationId:int}}/Search",
+            defaults: new { area = EditorArea.Name, controller = "WorkspaceSearch", action = "Search" });
         var workspace = endpoints.MapControllerRoute(
             name: "QuestionAppBuilderEditorDraftWorkspace",
             pattern: $"{basePath}/Drafts/{{applicationId:int}}",
@@ -44,6 +52,8 @@ public static class EditorRouteBuilderExtensions
         save.RequireAuthorization(options.DesignPolicy);
         publish.RequireAuthorization(options.DesignPolicy);
         readiness.RequireAuthorization(options.DesignPolicy);
+        dependencies.RequireAuthorization(options.DesignPolicy);
+        search.RequireAuthorization(options.DesignPolicy);
         workspace.RequireAuthorization(options.DesignPolicy);
         route.RequireAuthorization(options.DesignPolicy);
 

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Text.Json;
 using QuestionAppBuilder.Application.Composition;
 using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Application.Evaluation;
@@ -64,6 +65,222 @@ public class CompositionBoundaryTests
         submission.AnswerIssues.Where(issue => issue.Code == "combined-validation").Select(issue => issue.Message)
             .Should().BeEquivalentTo("Live ceiling exceeded.", "Submission ceiling exceeded.");
         submission.AnswerIssues.Should().NotContain(issue => issue.Code == "required", "both the live UI and submission have answers for every required question");
+    }
+
+    [Fact]
+    public void Failed_validation_trace_captures_actual_check_reads_and_does_not_serialize()
+    {
+        var (graph, first, second) = Graph();
+        var rule = new CompositionRule
+        {
+            Name = "Funding threshold", CategoryKey = graph.Categories[0].LogicalKey,
+            TargetQuestionKey = first.LogicalKey, Kind = RulePurpose.Validation,
+            Message = "Increase funding.", ShowWhileAnswering = true,
+            Checks =
+            [
+                new ValueCheck { Left = Q(first), Comparison = Comparison.GreaterThanOrEqual, Right = new() { Value = 10 } },
+                new ValueCheck { Left = Q(second), Comparison = Comparison.GreaterThanOrEqual, Right = new() { Value = 5 } }
+            ]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [rule] }.ToJson();
+
+        var result = new DefinitionEvaluator().Evaluate(graph,
+            new Dictionary<int, AnswerValue> { [first.Question!.Id] = new(null, 3, null), [second.Question!.Id] = new(null, 4, null) },
+            requireComplete: false);
+
+        result.AnswerIssues.Should().ContainSingle(issue => issue.Code == "combined-validation");
+        var trace = result.Composition!.FailedValidationRules.Should().ContainSingle().Which;
+        trace.RuleId.Should().Be(rule.Id);
+        trace.TargetQuestionId.Should().Be(first.Question.Id);
+        trace.ShowWhileAnswering.Should().BeTrue();
+        trace.AnyCheck.Should().BeFalse();
+        trace.Checks.Should().ContainSingle();
+        trace.Checks[0].Index.Should().Be(0);
+        trace.Checks[0].Matches.Should().BeFalse();
+        trace.Checks[0].Left.Value.Should().Be(3);
+        trace.Checks[0].Left.Effects.Should().ContainSingle().Which.Code.Should().Be("question");
+        trace.Checks[0].Right.Value.Should().Be(10);
+        trace.Checks[0].Right.Effects.Should().BeEmpty();
+        var snapshotJson = JsonSerializer.Serialize(result.Composition);
+        snapshotJson.Should().NotContain("FailedValidationRules");
+        var snapshot = JsonSerializer.Deserialize<CompositionResult>(snapshotJson)!;
+        snapshot.FailedValidationRules.Should().BeNull();
+        snapshot.LiveAnswerErrors.Should().ContainSingle().Which.Message.Should().Be("Increase funding.");
+    }
+
+    [Fact]
+    public void Failed_validation_trace_marks_missing_sources_and_respects_any_short_circuit()
+    {
+        var (graph, first, second) = Graph();
+        var rule = new CompositionRule
+        {
+            Name = "Any threshold", CategoryKey = graph.Categories[0].LogicalKey,
+            TargetQuestionKey = first.LogicalKey, Kind = RulePurpose.Validation,
+            Message = "Increase funding.", AnyCheck = true,
+            Checks =
+            [
+                new ValueCheck { Left = Q(first), Comparison = Comparison.GreaterThan, Right = new() { Value = 10 } },
+                new ValueCheck { Left = Q(second), Comparison = Comparison.GreaterThan, Right = new() { Value = 10 } }
+            ]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [rule] }.ToJson();
+
+        var result = new DefinitionEvaluator().Evaluate(graph, new Dictionary<int, AnswerValue>(), requireComplete: false);
+
+        var trace = result.Composition!.FailedValidationRules.Should().ContainSingle().Which;
+        trace.AnyCheck.Should().BeTrue();
+        trace.Checks.Select(check => check.Index).Should().Equal(0, 1);
+        trace.Checks.Should().OnlyContain(check => !check.Matches);
+        trace.Checks.Select(check => check.Left.Effects.Single().Code).Should().AllBe("missing-number");
+        trace.Checks.Select(check => check.Left.Value).Should().OnlyContain(value => value == 0);
+    }
+
+    [Fact]
+    public void Failed_validation_trace_propagates_hidden_and_missing_calculation_inputs()
+    {
+        var (graph, first, second) = Graph();
+        var total = new CalculatedField
+        {
+            Name = "Total", CategoryKey = graph.Categories[0].LogicalKey,
+            Sources = [Q(first), Q(second)]
+        };
+        var rule = new CompositionRule
+        {
+            Name = "Minimum total", CategoryKey = graph.Categories[0].LogicalKey,
+            TargetQuestionKey = second.LogicalKey, Kind = RulePurpose.Validation, Message = "Increase total.",
+            Checks = [new ValueCheck { Left = C(total.Id), Comparison = Comparison.GreaterThanOrEqual, Right = new() { Value = 1 } }]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition { Calculations = [total], Rules = [rule] }.ToJson();
+
+        var result = CompositionEngine.Evaluate(graph,
+            new Dictionary<int, AnswerValue> { [first.Question!.Id] = new(null, 99, null) },
+            new HashSet<int> { second.Question!.Id });
+
+        var check = result.FailedValidationRules.Should().ContainSingle().Which.Checks.Should().ContainSingle().Which;
+        check.Left.Value.Should().Be(0);
+        check.Left.Effects.Select(effect => effect.Code).Should().Contain("hidden-question").And.Contain("missing-number")
+            .And.Contain("calculation");
+        check.Matches.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Failed_validation_trace_preserves_unavailable_calculation_comparison_semantics()
+    {
+        var (graph, first, second) = Graph();
+        var percentage = new CalculatedField
+        {
+            Name = "Percentage", CategoryKey = graph.Categories[0].LogicalKey, Operation = CalculationOperation.Percentage,
+            Sources = [Q(first), Q(second)]
+        };
+        var rule = new CompositionRule
+        {
+            Name = "Unavailable percentage", CategoryKey = graph.Categories[0].LogicalKey,
+            TargetQuestionKey = first.LogicalKey, Kind = RulePurpose.Validation, Message = "Review percentage.",
+            Checks = [new ValueCheck { Left = C(percentage.Id), Comparison = Comparison.NotEqual, Right = new() { Value = 0 } }]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition { Calculations = [percentage], Rules = [rule] }.ToJson();
+
+        var result = new DefinitionEvaluator().Evaluate(graph,
+            new Dictionary<int, AnswerValue> { [first.Question!.Id] = new(null, 5, null), [second.Question!.Id] = new(null, 0, null) },
+            requireComplete: false);
+
+        var check = result.FailedValidationRules.Should().ContainSingle().Which.Checks.Should().ContainSingle().Which;
+        check.Left.Value.Should().BeNull();
+        check.Left.Effects.Should().Contain(effect => effect.Kind == SourceKind.Calculation && effect.Code == "unavailable-calculation");
+        check.Matches.Should().BeFalse("a null numeric value makes every comparison false, including NotEqual");
+    }
+
+    [Fact]
+    public void Failed_validation_trace_keeps_same_target_and_message_rules_distinct_by_identifier()
+    {
+        var (graph, first, _) = Graph();
+        CompositionRule Rule(string name) => new()
+        {
+            Name = name, CategoryKey = graph.Categories[0].LogicalKey, TargetQuestionKey = first.LogicalKey,
+            Kind = RulePurpose.Validation, Message = "Review the request.",
+            Checks = [new ValueCheck { Left = Q(first), Comparison = Comparison.GreaterThan, Right = new() { Value = 10 } }]
+        };
+        var firstRule = Rule("First rule");
+        var secondRule = Rule("Second rule");
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [firstRule, secondRule] }.ToJson();
+
+        var result = new DefinitionEvaluator().Evaluate(graph,
+            new Dictionary<int, AnswerValue> { [first.Question!.Id] = new(null, 1, null) }, requireComplete: false);
+
+        result.FailedValidationRules.Should().HaveCount(2);
+        result.FailedValidationRules!.Select(failure => failure.RuleId).Should().BeEquivalentTo([firstRule.Id, secondRule.Id]);
+        result.FailedValidationRules.Select(failure => failure.TargetQuestionId).Should().OnlyContain(id => id == first.Question.Id);
+    }
+
+    [Fact]
+    public void Failed_validation_trace_distinguishes_present_zero_and_skips_unreached_rules()
+    {
+        var (graph, first, _) = Graph();
+        var rule = new CompositionRule
+        {
+            Name = "Minimum", CategoryKey = graph.Categories[0].LogicalKey, TargetQuestionKey = first.LogicalKey,
+            Kind = RulePurpose.Validation, Message = "Increase the value.",
+            Checks = [new ValueCheck { Left = Q(first), Comparison = Comparison.GreaterThan, Right = new() { Value = 1 } }]
+        };
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [rule] }.ToJson();
+        var visible = new HashSet<int> { first.Question!.Id };
+
+        var zero = CompositionEngine.Evaluate(graph,
+            new Dictionary<int, AnswerValue> { [first.Question.Id] = new(null, 0, null) }, visible);
+        var zeroEffect = zero.FailedValidationRules.Should().ContainSingle().Which.Checks.Single().Left.Effects.Should().ContainSingle().Which;
+        zeroEffect.Code.Should().Be("question");
+        zeroEffect.UsedValue.Should().Be(0);
+
+        rule.Conditions = [new ValueCheck { Left = new() { Value = 1 }, Comparison = Comparison.GreaterThan, Right = new() { Value = 2 } }];
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [rule] }.ToJson();
+        var conditionMismatch = CompositionEngine.Evaluate(graph, new Dictionary<int, AnswerValue>(), visible);
+        conditionMismatch.AnswerErrors.Should().BeEmpty();
+        conditionMismatch.FailedValidationRules.Should().BeEmpty();
+
+        rule.Conditions = [];
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [rule] }.ToJson();
+        var hiddenTarget = CompositionEngine.Evaluate(graph, new Dictionary<int, AnswerValue>(), new HashSet<int>());
+        hiddenTarget.AnswerErrors.Should().BeEmpty();
+        hiddenTarget.FailedValidationRules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Combined_score_trace_records_target_gates_checks_and_zero_point_band_winners()
+    {
+        var (graph, first, second) = Graph();
+        var categoryKey = graph.Categories[0].LogicalKey;
+        ValueCheck ConstantCheck(decimal left, Comparison comparison, decimal right) => new()
+        {
+            Left = new() { Kind = SourceKind.Constant, Value = left }, Comparison = comparison,
+            Right = new() { Kind = SourceKind.Constant, Value = right }
+        };
+        CompositionRule Rule(string name, Guid target, int points, string? band, ValueCheck check) => new()
+        {
+            Name = name, CategoryKey = categoryKey, TargetQuestionKey = target, Kind = RulePurpose.Score,
+            Points = points, BandGroup = band ?? "", Checks = [check]
+        };
+        var hiddenTarget = Rule("Hidden target", second.LogicalKey, 5, null, ConstantCheck(1, Comparison.Equal, 1));
+        var gated = Rule("Gated", first.LogicalKey, 5, null, ConstantCheck(1, Comparison.Equal, 1));
+        gated.Conditions = [ConstantCheck(0, Comparison.Equal, 1)];
+        var unmatched = Rule("Unmatched", first.LogicalKey, 5, null, ConstantCheck(0, Comparison.Equal, 1));
+        var winner = Rule("Zero point winner", first.LogicalKey, 0, " reserve ", ConstantCheck(1, Comparison.Equal, 1));
+        var suppressed = Rule("Suppressed", first.LogicalKey, 7, "RESERVE", ConstantCheck(1, Comparison.Equal, 1));
+        graph.Version.CompositionJson = new CompositionDefinition { Rules = [hiddenTarget, gated, unmatched, winner, suppressed] }.ToJson();
+
+        var result = CompositionEngine.Evaluate(graph, new Dictionary<int, AnswerValue>(), new HashSet<int> { first.Question!.Id });
+
+        result.DefinitionErrors.Should().BeEmpty();
+        result.Awards.Should().ContainSingle().Which.Should().Match<CompositionAward>(award => award.Id == winner.Id && award.Points == 0);
+        result.CombinedScoreRules.Should().HaveCount(5);
+        var trace = result.CombinedScoreRules!;
+        trace.Select(item => item.Outcome).Should().Equal("target-hidden", "condition-not-matched", "checks-not-matched", "awarded", "band-suppressed");
+        trace[0].TargetQuestionId.Should().Be(second.Question!.Id);
+        trace[1].Conditions.Should().ContainSingle().Which.Matches.Should().BeFalse();
+        trace[2].Checks.Should().ContainSingle().Which.Matches.Should().BeFalse();
+        trace[3].AwardedPoints.Should().Be(0);
+        trace[4].SupersedingRuleId.Should().Be(winner.Id);
+        JsonSerializer.Serialize(result).Should().NotContain("CombinedScoreRules");
+        JsonSerializer.Deserialize<CompositionResult>(JsonSerializer.Serialize(result))!.CombinedScoreRules.Should().BeNull();
     }
 
     [Fact]

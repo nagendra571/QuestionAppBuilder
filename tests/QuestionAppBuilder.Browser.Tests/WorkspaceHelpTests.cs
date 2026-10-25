@@ -74,4 +74,33 @@ public sealed class WorkspaceHelpTests
         errors.Should().BeEmpty();
         await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-help-visibility-1440.png"), FullPage = true });
     }
+
+    [Fact]
+    public async Task Content_visibility_help_describes_its_condition_and_dynamic_hide_behavior()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var id = await host.SeedContentVisibilityPreviewApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        var page = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
+        var errors = new List<string>();
+        page.PageError += (_, error) => errors.Add(error);
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{id}").ToString());
+        await page.SetViewportSizeAsync(1440, 900);
+        await page.Locator(".aw-outline-element").Filter(new() { HasText = "Conditional preview instructions" }).ClickAsync();
+        var contentElement = page.Locator(".aw-element:visible").Filter(new() { HasText = "Conditional preview instructions" });
+        await contentElement.WaitForAsync();
+        (await contentElement.CountAsync()).Should().Be(1);
+        await contentElement.GetByRole(AriaRole.Button, new() { Name = "Help for Show when", Exact = true }).ClickAsync();
+        var help = page.Locator(".aw-field-help:visible");
+        var contentHelp = await help.InnerTextAsync();
+        contentHelp.Should().Contain("category").And.Contain("own Show when condition").And.Contain("Hide when unavailable")
+            .And.Contain("Condition 1: all checks").And.Contain("Visibility trigger: has an answer")
+            .And.NotContain("does not currently hide static content");
+        errors.Should().BeEmpty();
+    }
 }

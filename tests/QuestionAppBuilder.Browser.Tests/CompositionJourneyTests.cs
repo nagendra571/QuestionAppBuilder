@@ -6,6 +6,114 @@ namespace QuestionAppBuilder.Browser.Tests;
 public class CompositionJourneyTests
 {
     [Fact]
+    public async Task Composition_changes_require_save_and_newer_edits_remain_dirty_after_a_delayed_save()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var appId = await host.SeedCompositionApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        var designer = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await Login(designer, host.BaseAddress, "designer");
+        await designer.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Composition/Index/{appId}").ToString());
+
+        await designer.GetByRole(AriaRole.Heading, new() { Name = "Groups, rules & dynamic text", Exact = true }).WaitForAsync();
+        var areaNav = designer.GetByRole(AriaRole.Navigation, new() { Name = "Questionnaire areas" });
+        (await areaNav.GetByText("Groups, rules & dynamic text", new() { Exact = true }).GetAttributeAsync("aria-current")).Should().Be("page");
+        (await designer.GetByText("Changes on this page are saved only when you select Save configuration.").CountAsync()).Should().Be(1);
+        foreach (var width in new[] { 1440, 375 })
+        {
+            await designer.SetViewportSizeAsync(width, 900);
+            (await designer.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue($"configuration navigation fits at {width}px");
+            await designer.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), $"qab-configuration-navigation-{width}.png"), FullPage = false });
+        }
+        await designer.SetViewportSizeAsync(320, 800);
+        (await designer.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue("configuration navigation fits at 320px");
+        await designer.SetViewportSizeAsync(1280, 900);
+
+        var firstSaveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondSaveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thirdSaveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseThirdSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fourthSaveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var saveCount = 0;
+        await designer.RouteAsync("**/ConfigureApp/Composition/Save/*", async route =>
+        {
+            var currentSave = Interlocked.Increment(ref saveCount);
+            if (currentSave == 1)
+            {
+                firstSaveStarted.TrySetResult();
+                await releaseFirstSave.Task;
+            }
+            else if (currentSave == 2) secondSaveStarted.TrySetResult();
+            else if (currentSave == 3)
+            {
+                thirdSaveStarted.TrySetResult();
+                await releaseThirdSave.Task;
+                await route.FulfillAsync(new RouteFulfillOptions { Status = (int)System.Net.HttpStatusCode.Conflict,
+                    ContentType = "application/json", Body = "{\"message\":\"This draft changed elsewhere. Reload before saving; your edits are still shown.\"}" });
+                return;
+            }
+            else if (currentSave == 4) fourthSaveStarted.TrySetResult();
+            await route.ContinueAsync();
+        });
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Add group", Exact = true }).ClickAsync();
+        var group = designer.Locator(".composition-item").Last;
+        var name = group.GetByLabel("Name", new() { Exact = true });
+        await name.FillAsync("First saved value");
+        await group.GetByLabel("Question to add", new() { Exact = true })
+            .SelectOptionAsync(new SelectOptionValue { Label = "Requested amount" });
+        await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "Select Save configuration to keep them." }).WaitForAsync();
+        saveCount.Should().Be(0, "typing and adding configuration items require an explicit save");
+        var unloadBlocked = await designer.EvaluateAsync<bool>("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }");
+        unloadBlocked.Should().BeTrue();
+        var firstResponse = designer.WaitForResponseAsync(response => response.Request.Method == "POST"
+            && response.Url.Contains("/Composition/Save", StringComparison.Ordinal), new PageWaitForResponseOptions { Timeout = 15000 });
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Save configuration", Exact = true }).ClickAsync();
+        await firstSaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await name.FillAsync("Newer value entered during save");
+        await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "Saving configuration. Newer edits still need saving." }).WaitForAsync();
+        releaseFirstSave.TrySetResult();
+        var firstSaveResponse = await firstResponse;
+        firstSaveResponse.Status.Should().Be((int)System.Net.HttpStatusCode.OK, await firstSaveResponse.TextAsync());
+        await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "Saved. Newer edits still need saving." }).WaitForAsync();
+
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Save configuration", Exact = true }).ClickAsync();
+        await secondSaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await designer.GetByText("Configuration saved.", new() { Exact = true }).WaitForAsync();
+        saveCount.Should().Be(2);
+        var cleanUnloadBlocked = await designer.EvaluateAsync<bool>("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }");
+        cleanUnloadBlocked.Should().BeFalse();
+
+        var savedValue = await name.InputValueAsync();
+        await name.FillAsync("Temporary value sent during a failed save");
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Save configuration", Exact = true }).ClickAsync();
+        await thirdSaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await name.FillAsync(savedValue);
+        await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "Saving configuration. Newer edits still need saving." }).WaitForAsync();
+        var revertUnloadBlocked = await designer.EvaluateAsync<bool>("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }");
+        revertUnloadBlocked.Should().BeTrue("the sent value may still be committed even though the editor reverted to the previous value");
+        releaseThirdSave.TrySetResult();
+        await designer.GetByRole(AriaRole.Status).Filter(new() { HasText = "This draft changed elsewhere. Reload before saving; your edits are still shown." }).WaitForAsync();
+        var failedSaveUnloadBlocked = await designer.EvaluateAsync<bool>("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }");
+        failedSaveUnloadBlocked.Should().BeTrue("a failed response leaves the committed state uncertain");
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Save configuration", Exact = true }).ClickAsync();
+        await fourthSaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await designer.GetByText("Configuration saved.", new() { Exact = true }).WaitForAsync();
+        saveCount.Should().Be(4);
+        var retriedUnloadBlocked = await designer.EvaluateAsync<bool>("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }");
+        retriedUnloadBlocked.Should().BeFalse("a confirmed successful save clears the uncertain result");
+
+        await designer.ReloadAsync();
+        group = designer.Locator(".composition-item").Last;
+        (await group.GetByLabel("Name", new() { Exact = true }).InputValueAsync()).Should().Be("Newer value entered during save");
+
+        await designer.EvaluateAsync("window.confirm = () => false");
+        await group.GetByRole(AriaRole.Button, new() { Name = "Delete group", Exact = true }).ClickAsync();
+        await designer.GetByText("All changes saved.", new() { Exact = true }).WaitForAsync();
+    }
+
+    [Fact]
     public async Task Designer_builds_budget_group_calculation_and_validation_then_publishes_and_submits()
     {
         await using var host = await SampleHostFixture.StartAsync();
@@ -54,13 +162,82 @@ public class CompositionJourneyTests
         await designer.GetByRole(AriaRole.Button, new() { Name = "Add rule", Exact = true }).ClickAsync();
         var rule = designer.Locator(".composition-item").Last;
         await rule.GetByLabel("Name", new() { Exact = true }).FillAsync("Budget ceiling");
-        await rule.GetByLabel("Validation message", new() { Exact = true }).FillAsync("The total budget must not exceed $1,000.");
+        var validationMessage = rule.GetByLabel("Validation message", new() { Exact = true });
+        await validationMessage.FillAsync("The total budget must not exceed $1,000.");
+        (await rule.Locator("summary.composition-summary").InnerTextAsync()).Should().Contain("Incomplete",
+            "the collapsed rule summary should not imply an incomplete rule is ready");
+        await validationMessage.FillAsync("<img src=x onerror=window.__ruleSummaryXss=1>");
+        var ruleDescription = rule.Locator(".composition-rule-description");
+        (await ruleDescription.InnerTextAsync()).Should().Contain("<img src=x onerror=window.__ruleSummaryXss=1>");
+        (await ruleDescription.Locator("img, script").CountAsync()).Should().Be(0, "designer text must remain text in the description");
+        (await validationMessage.EvaluateAsync<bool>("element => element === document.activeElement")).Should().BeTrue("updating a summary must not replace its active editor");
+        await validationMessage.FillAsync("The total budget must not exceed $1,000.");
         var checks = rule.Locator("fieldset").Last;
         await checks.GetByRole(AriaRole.Button, new() { Name = "Add check", Exact = true }).ClickAsync();
         var check = rule.Locator("fieldset").Last;
         await check.GetByLabel("Value", new() { Exact = true }).SelectOptionAsync(new SelectOptionValue { Label = "Calculated: Total budget" });
         await check.GetByLabel("Comparison", new() { Exact = true }).SelectOptionAsync("LessThanOrEqual");
         await check.GetByLabel("Number", new() { Exact = true }).FillAsync("1000");
+        var conditions = rule.Locator("fieldset").First;
+        await conditions.GetByRole(AriaRole.Button, new() { Name = "Add check", Exact = true }).ClickAsync();
+        var condition = rule.Locator("fieldset").First.Locator(".composition-check").Last;
+        await condition.GetByLabel("Value", new() { Exact = true }).SelectOptionAsync(new SelectOptionValue { Label = "Requested amount" });
+        await condition.GetByLabel("Comparison", new() { Exact = true }).SelectOptionAsync("GreaterThan");
+        await condition.GetByLabel("Number", new() { Exact = true }).FillAsync("0");
+        var validationSummary = rule.Locator("summary.composition-summary");
+        (await validationSummary.InnerTextAsync()).Should().Contain("Require: calculated Total budget is at most 1,000")
+            .And.Contain("show message when unmet").And.Contain("applies when the condition matches");
+        var descriptionText = await ruleDescription.InnerTextAsync();
+        descriptionText.Should().Contain("Target: first visible question in Budget")
+            .And.Contain("Applies when: all of: Requested amount is greater than 0")
+            .And.Contain("Must satisfy: all of: calculated Total budget is at most 1,000")
+            .And.Contain("Message when unmet: The total budget must not exceed $1,000.")
+            .And.Contain("Checked during navigation and submission");
+        await check.GetByLabel("Comparison", new() { Exact = true }).SelectOptionAsync("GreaterThan");
+        (await validationSummary.InnerTextAsync()).Should().Contain("Require: calculated Total budget is greater than 1,000", "comparison edits should update the summary immediately");
+        await check.GetByLabel("Comparison", new() { Exact = true }).SelectOptionAsync("LessThanOrEqual");
+        await rule.GetByLabel("Required checks", new() { Exact = true }).SelectOptionAsync("true");
+        (await ruleDescription.InnerTextAsync()).Should().Contain("Must satisfy: any of:");
+        await rule.GetByLabel("Required checks", new() { Exact = true }).SelectOptionAsync("false");
+        await rule.GetByLabel("Purpose", new() { Exact = true }).SelectOptionAsync("Score");
+        await rule.GetByLabel("Points", new() { Exact = true }).FillAsync("5");
+        await rule.GetByLabel("Scoring band name (optional)", new() { Exact = true }).FillAsync("Tier A  ");
+        (await rule.Locator("summary.composition-summary").InnerTextAsync()).Should().Contain("Award 5 points").And.Contain("first in “Tier A” band");
+        (await rule.Locator(".composition-rule-description").InnerTextAsync()).Should().Contain("first matching rule in this category")
+            .And.Contain("case-insensitive");
+        await rule.GetByLabel("Points", new() { Exact = true }).FillAsync("1.5");
+        (await rule.Locator("summary.composition-summary").InnerTextAsync()).Should().Contain("Incomplete — points must be a whole number");
+        await rule.GetByLabel("Points", new() { Exact = true }).FillAsync("5");
+        await rule.GetByLabel("Purpose", new() { Exact = true }).SelectOptionAsync("Validation");
+
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Calculated fields", Exact = true }).ClickAsync();
+        var calculationEditor = designer.Locator(".composition-item").Last;
+        if (await calculationEditor.GetAttributeAsync("open") is null) await calculationEditor.Locator("summary").ClickAsync();
+        await calculationEditor.GetByLabel("Name", new() { Exact = true }).FillAsync("Combined total");
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Combined rules", Exact = true }).ClickAsync();
+        (await validationSummary.InnerTextAsync()).Should().Contain("calculated Combined total", "rule references should use the current calculation name");
+
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Calculated fields", Exact = true }).ClickAsync();
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Add calculated field", Exact = true }).ClickAsync();
+        var temporaryCalculation = designer.Locator(".composition-item").Last;
+        await temporaryCalculation.GetByLabel("Name", new() { Exact = true }).FillAsync("Temporary incomplete");
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Combined rules", Exact = true }).ClickAsync();
+        await check.GetByLabel("Value", new() { Exact = true }).SelectOptionAsync(new SelectOptionValue { Label = "Calculated: Temporary incomplete" });
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Calculated fields", Exact = true }).ClickAsync();
+        var incompleteCalculation = designer.Locator(".composition-item").Last;
+        if (await incompleteCalculation.GetAttributeAsync("open") is null) await incompleteCalculation.Locator("summary").ClickAsync();
+        await incompleteCalculation.GetByRole(AriaRole.Button, new() { Name = "Delete calculation", Exact = true }).ClickAsync();
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Combined rules", Exact = true }).ClickAsync();
+        (await validationSummary.InnerTextAsync()).Should().Contain("Incomplete");
+        (await ruleDescription.InnerTextAsync()).Should().Contain("Missing calculation — choose another");
+        await check.GetByLabel("Value", new() { Exact = true }).SelectOptionAsync(new SelectOptionValue { Label = "Calculated: Combined total" });
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Calculated fields", Exact = true }).ClickAsync();
+        var calculationToRestore = designer.Locator(".composition-item").Last;
+        if (await calculationToRestore.GetAttributeAsync("open") is null) await calculationToRestore.Locator("summary").ClickAsync();
+        await calculationToRestore.GetByLabel("Name", new() { Exact = true }).FillAsync("Total budget");
+        await designer.GetByRole(AriaRole.Button, new() { Name = "Combined rules", Exact = true }).ClickAsync();
+        (await validationSummary.InnerTextAsync()).Should().Contain("calculated Total budget");
+
         var showWhileAnswering = rule.GetByLabel("Show validation while answering", new() { Exact = true });
         (await showWhileAnswering.IsCheckedAsync()).Should().BeFalse("live validation is opt-in for existing and newly authored rules");
         await showWhileAnswering.CheckAsync();
@@ -94,6 +271,14 @@ public class CompositionJourneyTests
         (await savedCheck.GetByLabel("Value", new() { Exact = true }).Locator("option:checked").InnerTextAsync()).Should().Be("Calculated: Total budget");
         (await savedCheck.GetByLabel("Number", new() { Exact = true }).InputValueAsync()).Should().Be("1000");
         await CapturePane(designer, "rules");
+        await designer.SetViewportSizeAsync(1440, 900);
+        await savedRule.Locator("summary.composition-summary").ClickAsync();
+        await designer.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-composition-rule-summary-1440.png"), FullPage = true });
+        await designer.SetViewportSizeAsync(375, 900);
+        (await designer.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue("rule summaries should fit narrow screens");
+        (await savedRule.Locator("summary.composition-summary").InnerTextAsync()).Should().Contain("Require: calculated Total budget is at most 1,000");
+        await designer.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-composition-rule-summary-375.png"), FullPage = true });
+        await savedRule.Locator("summary.composition-summary").ClickAsync();
         await designer.SetViewportSizeAsync(820, 900);
         (await designer.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue("the rules pane should fit at tablet width");
 
@@ -161,11 +346,12 @@ public class CompositionJourneyTests
         var failingPayload = await failingResponse.JsonAsync();
         failingPayload!.Value.GetProperty("liveValidationMessages").EnumerateArray().Select(message => message.GetString())
             .Should().ContainSingle().Which.Should().Be("The total budget must not exceed $1,000.");
+        await Assertions.Expect(filler.Locator(".qab-save-status")).ToHaveTextAsync("Saved just now.");
+        (await matchingQuestion.InputValueAsync()).Should().Be("401", "the latest autosaved answer should be rendered before focus is checked");
         await filler.Locator("[data-live-content] .qab-error-summary").GetByRole(AriaRole.Link,
             new() { Name = "The total budget must not exceed $1,000.", Exact = true }).WaitForAsync();
         filler.Url.Should().Be(responseUrl, "live validation follows autosave without navigating away");
-        (await matchingQuestion.EvaluateAsync<bool>("element => element === document.activeElement"))
-            .Should().BeTrue("replacing the live fragment must preserve the respondent's focus");
+        await Assertions.Expect(matchingQuestion).ToBeFocusedAsync();
         await CaptureRuntimeState(filler, "live-error");
         await SaveChange(filler, () => amountQuestion.FillAsync("500"));
         (await filler.Locator("[data-live-content] .qab-error-summary").CountAsync()).Should().Be(0,

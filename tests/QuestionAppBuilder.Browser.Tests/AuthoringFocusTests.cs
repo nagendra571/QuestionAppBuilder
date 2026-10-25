@@ -6,6 +6,72 @@ namespace QuestionAppBuilder.Browser.Tests;
 public sealed class AuthoringFocusTests
 {
     [Fact]
+    public async Task Deletion_preview_is_read_only_until_confirmed_and_fits_small_screens()
+    {
+        await using var host = await SampleHostFixture.StartAsync();
+        var id = await host.SeedDeletionPreviewApplicationAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        var context = await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/Account/Login").ToString());
+        await page.GetByLabel("Username").FillAsync("designer");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("DevPassword!1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        var detail = new Uri(host.BaseAddress, $"/ConfigureApp/Applications/Detail/{id}").ToString();
+        await page.GotoAsync(detail);
+        var originalQuestionCount = await page.Locator(".cv-q").CountAsync();
+        var elementRemoval = page.GetByRole(AriaRole.Link, new() { Name = "Remove question: Deletion source", Exact = true });
+        var previewLink = await elementRemoval.GetAttributeAsync("href");
+        previewLink.Should().Contain("Deletions/Preview");
+        await elementRemoval.ClickAsync();
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Review deletion", Exact = true }).WaitForAsync();
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Removed", Exact = true }).WaitForAsync();
+        var targetName = await page.Locator("#deletion-target").InnerTextAsync();
+        targetName.Should().Be("Deletion source");
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Needs repair", Exact = true }).WaitForAsync();
+        var repairLink = page.Locator("a[href$='#Calculations']");
+        (await repairLink.CountAsync()).Should().Be(1);
+        var repairUrl = new Uri(new Uri(page.Url), (await repairLink.GetAttributeAsync("href"))!);
+        repairUrl.AbsolutePath.Should().Contain("Composition");
+        repairUrl.Fragment.Should().Be("#Calculations");
+        await page.GetByRole(AriaRole.Link, new() { Name = "Cancel", Exact = true }).WaitForAsync();
+        (await page.GetByRole(AriaRole.Button, new() { Name = "Confirm deletion", Exact = true }).IsEnabledAsync()).Should().BeTrue();
+
+        await page.SetViewportSizeAsync(1440, 1000);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-deletion-preview-desktop.png"), FullPage = true });
+        await page.SetViewportSizeAsync(375, 900);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-deletion-preview-mobile.png"), FullPage = true });
+        await page.SetViewportSizeAsync(320, 800);
+        (await page.EvaluateAsync<int>("document.documentElement.scrollWidth - window.innerWidth")).Should().Be(0);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-deletion-preview-320.png"), FullPage = true });
+
+        await repairLink.ClickAsync();
+        await page.Locator("[data-pane='Calculations'][aria-pressed='true']").WaitForAsync();
+        await page.GoBackAsync();
+        await page.GetByRole(AriaRole.Link, new() { Name = "Cancel", Exact = true }).WaitForAsync();
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "Cancel", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Link, new() { Name = "Remove question: Deletion source", Exact = true }).ClickAsync();
+        var pageB = await context.NewPageAsync();
+        await pageB.GotoAsync(detail);
+        var sourceCategory = pageB.Locator("[data-category-panel]").First;
+        await sourceCategory.Locator(".cv-rename > summary").ClickAsync();
+        await sourceCategory.Locator(".cv-rename input[name='Name']").FillAsync("Renamed source section");
+        await sourceCategory.Locator(".cv-rename-form button[type='submit']").ClickAsync();
+        await pageB.Locator(".cv-category").Filter(new() { HasText = "Renamed source section" }).WaitForAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Confirm deletion", Exact = true }).ClickAsync();
+        await page.Locator(".cv-alert").WaitForAsync();
+        (await page.Locator(".cv-alert").InnerTextAsync()).Should().Contain("draft changed after this preview");
+        (await page.Locator(".cv-q").CountAsync()).Should().Be(originalQuestionCount);
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "Remove question: Deletion source", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Confirm deletion", Exact = true }).ClickAsync();
+        await page.GetByText(targetName, new() { Exact = true }).WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        (await page.Locator(".cv-q").CountAsync()).Should().Be(originalQuestionCount - 1);
+    }
+
+    [Fact]
     public async Task Expandable_forms_close_without_submitting_and_keep_input_and_keyboard_focus()
     {
         await using var host = await SampleHostFixture.StartAsync();
@@ -139,7 +205,7 @@ public sealed class AuthoringFocusTests
         var optionActions = page.Locator(".cv-opt").First.Locator(".cv-row-actions");
         (await optionActions.Locator(".qab-icon-action").CountAsync()).Should().Be(2);
         (await optionActions.InnerTextAsync()).Should().BeNullOrWhiteSpace("repeated actions should use icons with accessible names");
-        var removeIcon = optionActions.GetByRole(AriaRole.Button, new() { Name = "Remove option:", Exact = false });
+        var removeIcon = optionActions.GetByRole(AriaRole.Link, new() { Name = "Remove option:", Exact = false });
         await removeIcon.FocusAsync();
         (await removeIcon.EvaluateAsync<string>("element => getComputedStyle(element).outlineStyle")).Should().NotBe("none");
         var edit = page.Locator(".cv-opt-edit").First;
@@ -170,8 +236,11 @@ public sealed class AuthoringFocusTests
         await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-authoring-detail-desktop.png"), FullPage = true });
         await page.SetViewportSizeAsync(375, 900);
         await page.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), "qab-authoring-detail-mobile.png"), FullPage = true });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Remove option: New option 1", Exact = true }).ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Remove option: New option 1", Exact = true }).WaitForAsync(new() { State = WaitForSelectorState.Detached });
+        await page.GetByRole(AriaRole.Link, new() { Name = "Remove option: New option 1", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Heading, new() { Name = "Review deletion", Exact = true }).WaitForAsync();
+        await page.GetByRole(AriaRole.Heading, new() { Name = "New option 1", Exact = true }).WaitForAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Confirm deletion", Exact = true }).ClickAsync();
+        await page.Locator(".cv-opt").Filter(new() { HasText = "New option 1" }).WaitForAsync(new() { State = WaitForSelectorState.Detached });
         (await page.Locator(".cv-opt").CountAsync()).Should().Be(3);
     }
 

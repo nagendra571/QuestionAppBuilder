@@ -71,7 +71,8 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
             if (evaluated.AnswerIssues.Count != 0) throw new AnswerValidationException(string.Join(" ", evaluated.AnswerIssues.Select(i => i.Message)), evaluated.AnswerIssues.Where(i => i.QuestionId.HasValue).Select(i => i.QuestionId!.Value).Distinct().ToArray());
 
             var compositionSnapshot = evaluated.Composition is null ? null : evaluated.Composition with
-            { VisibleCategoryIds = evaluated.VisibleCategoryIds.OrderBy(id => id).ToArray() };
+            { VisibleCategoryIds = evaluated.VisibleCategoryIds.OrderBy(id => id).ToArray(),
+                VisibleElementIds = evaluated.VisibleElementIds?.OrderBy(id => id).ToArray() };
             var compositionSnapshotJson = System.Text.Json.JsonSerializer.Serialize(compositionSnapshot);
             var now = evaluated.Composition?.DynamicText?.EvaluatedAtUtc.UtcDateTime ?? DateTime.UtcNow;
             var submission = new Submission { ApplicationId = response.ApplicationId, ApplicationVersionId = version.Id, UserId = identity.OwnerKey,
@@ -214,6 +215,7 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
                 || category.Elements.Any(element => element.Question is { } question
                     && states.TryGetValue(question.Id, out var state) && state.IsApplicable))
                 .Select(category => category.Id).ToHashSet();
+        var visibleElementIds = snapshot?.VisibleElementIds?.ToHashSet();
         var dynamicTexts = snapshot?.DynamicText?.Texts ?? [];
         var resolvedTexts = dynamicTexts.GroupBy(text => (text.Slot, text.OwnerKey))
             .ToDictionary(group => group.Key, group => group.Last());
@@ -252,6 +254,7 @@ public sealed class SubmissionCoordinator : ISubmissionCoordinator
         {
             var orderedElements = FollowUpStructure.Ordered(category.Elements);
             var retainedElements = orderedElements.Where(element => !HiddenLabel(element)
+                && (visibleElementIds is null || visibleElementIds.Contains(element.Id))
                 && (element.Question is null || states.TryGetValue(element.Question.Id, out var state) && state.IsApplicable)).ToArray();
             var elementDtos = retainedElements.Select(element =>
             {

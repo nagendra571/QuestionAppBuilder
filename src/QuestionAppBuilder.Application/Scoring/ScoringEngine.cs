@@ -3,18 +3,27 @@ using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Domain.Graphs;
 using QuestionAppBuilder.Domain;
 using QuestionAppBuilder.Domain.Composition;
+using QuestionAppBuilder.Application.Composition;
 using System.Text.Json;
 
 namespace QuestionAppBuilder.Application.Scoring;
 
 public sealed class ScoringEngine : IScoringEngine
 {
+    private sealed record AwardAttempt(bool Matches, int Points, string Outcome, decimal? Units,
+        int? Rate, int? Cap, bool CapReached);
+
     public SubmissionScore Score(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers, IReadOnlySet<int>? applicableQuestionIds = null)
     {
         if (!HasSupportedMaximumScore(graph))
-            return ScoreWithZeroAwards(graph, applicableQuestionIds);
+            return ScoreWithZeroAwards(graph, applicableQuestionIds) with
+            {
+                Diagnostics = new ScoringDiagnostics([], null,
+                    "Scoring explanations are unavailable because the configured maximum award exceeds the supported total.")
+            };
 
         var questionScores = new List<QuestionScore>();
+        var questionDiagnostics = new List<QuestionScoringDiagnostic>();
         var categoryScores = new List<CategoryScore>();
         var total = 0;
 
@@ -26,9 +35,15 @@ public sealed class ScoringEngine : IScoringEngine
                 var question = element.Question;
                 if (element.Kind != ElementKind.Question || question is null) continue;
                 var applicable = applicableQuestionIds is null || applicableQuestionIds.Contains(question.Id);
-                var (points, trace) = applicable ? ScoreQuestion(question, answers) : (0, (IReadOnlyList<RuleEvaluation>)Array.Empty<RuleEvaluation>());
-                questionScores.Add(new QuestionScore(question.Id, points) { IsApplicable = applicable, Rules = trace });
-                categoryTotal = checked(categoryTotal + points);
+                var answer = answers.TryGetValue(question.Id, out var found) ? found : new AnswerValue(null, null, null);
+                var answered = applicable && AnswerSemantics.IsAnswered(question.AnswerType, answer);
+                var scored = applicable ? ScoreQuestion(question, answer, answered)
+                    : (0, (IReadOnlyList<RuleEvaluation>)Array.Empty<RuleEvaluation>(), (IReadOnlyList<QuestionScoringRuleDiagnostic>)Array.Empty<QuestionScoringRuleDiagnostic>());
+                questionScores.Add(new QuestionScore(question.Id, scored.Item1) { IsApplicable = applicable, Rules = scored.Item2 });
+                questionDiagnostics.Add(new QuestionScoringDiagnostic(question.Id, applicable, answered,
+                    applicable ? answer.Number : null,
+                    applicable ? answer.SelectedOptionIds?.ToArray() ?? [] : [], scored.Item3));
+                categoryTotal = checked(categoryTotal + scored.Item1);
             }
             categoryScores.Add(new CategoryScore(category.Id, categoryTotal));
             total = checked(total + categoryTotal);
@@ -43,7 +58,11 @@ public sealed class ScoringEngine : IScoringEngine
         var combinedCategories = categoryScores.Select(c => c with { Score = checked(c.Score +
             composition.Awards.Where(a => a.CategoryKey == graph.Categories.Single(x => x.Id == c.CategoryId).LogicalKey)
                 .Aggregate(0, (sum, award) => checked(sum + award.Points))) }).ToArray();
-        return new SubmissionScore(checked(total + extra), questionScores, combinedCategories, GetEngineVersion(graph));
+        return new SubmissionScore(checked(total + extra), questionScores, combinedCategories, GetEngineVersion(graph))
+        {
+            Diagnostics = new ScoringDiagnostics(questionDiagnostics, composition.CombinedScoreRules,
+                CombinedDefinitionErrors: composition.DefinitionErrors.Count == 0 ? [] : composition.DefinitionErrors)
+        };
     }
 
     private static bool HasSupportedMaximumScore(ApplicationVersionGraph graph)
@@ -89,60 +108,75 @@ public sealed class ScoringEngine : IScoringEngine
         return hasPointsPerUnit ? "2.1" : hasCompositionScoring ? "2.0" : "1.0";
     }
 
-    private static (int Points, IReadOnlyList<RuleEvaluation> Trace) ScoreQuestion(Question question, IReadOnlyDictionary<int, AnswerValue> answers)
+    private static (int Points, IReadOnlyList<RuleEvaluation> Trace, IReadOnlyList<QuestionScoringRuleDiagnostic> Diagnostics)
+        ScoreQuestion(Question question, AnswerValue answer, bool answered)
     {
-        var answer = answers.TryGetValue(question.Id, out var found) ? found : new AnswerValue(null, null, null);
-        var answered = AnswerSemantics.IsAnswered(question.AnswerType, answer);
         var rules = question.Rules.OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToArray();
-        var raw = rules.Select(rule =>
-        {
-            var matches = TryGetAward(question, rule, answer, answered, out var points);
-            return (Rule: rule, Matches: matches, Points: points);
-        }).ToArray();
-        var first = question.ScoringMode == ScoringMode.FirstMatch ? Array.FindIndex(raw, item => item.Matches) : -1;
+        var raw = rules.Select(rule => (Rule: rule, Attempt: TryGetAward(question, rule, answer, answered))).ToArray();
+        var first = question.ScoringMode == ScoringMode.FirstMatch ? Array.FindIndex(raw, item => item.Attempt.Matches) : -1;
         var trace = new List<RuleEvaluation>(raw.Length);
+        var diagnostics = new List<QuestionScoringRuleDiagnostic>(raw.Length);
         var total = 0;
         for (var i = 0; i < raw.Length; i++)
         {
             var contributes = question.ScoringMode switch
             {
-                ScoringMode.Additive => raw[i].Matches,
+                ScoringMode.Additive => raw[i].Attempt.Matches,
                 ScoringMode.FirstMatch => i == first,
                 _ => false
             };
-            var points = contributes ? raw[i].Points : 0;
+            var points = contributes ? raw[i].Attempt.Points : 0;
             total = checked(total + points);
-            trace.Add(new RuleEvaluation(raw[i].Rule.Id, raw[i].Matches, contributes, points));
+            trace.Add(new RuleEvaluation(raw[i].Rule.Id, raw[i].Attempt.Matches, contributes, points));
+            var outcome = raw[i].Attempt.Outcome;
+            int? supersedingRuleId = null;
+            if (raw[i].Attempt.Matches && contributes) outcome = "awarded";
+            else if (raw[i].Attempt.Matches && question.ScoringMode == ScoringMode.FirstMatch)
+            {
+                outcome = "first-match-suppressed";
+                supersedingRuleId = first >= 0 ? raw[first].Rule.Id : null;
+            }
+            else if (raw[i].Attempt.Matches && !Enum.IsDefined(question.ScoringMode)) outcome = "unsupported-scoring-mode";
+            diagnostics.Add(new QuestionScoringRuleDiagnostic(raw[i].Rule.Id, outcome,
+                raw[i].Attempt.Matches ? raw[i].Attempt.Points : null, raw[i].Attempt.Units,
+                raw[i].Attempt.Rate, raw[i].Attempt.Cap, raw[i].Attempt.CapReached,
+                raw[i].Attempt.Matches, contributes, points, supersedingRuleId));
         }
-        return (total, trace);
+        return (total, trace, diagnostics);
     }
 
-    private static bool TryGetAward(Question question, ScoringRule rule, AnswerValue answer, bool answered, out int points)
+    private static AwardAttempt TryGetAward(Question question, ScoringRule rule, AnswerValue answer, bool answered)
     {
-        points = 0;
-        if (!ScoringAward.TryGetMaximumAward(question, rule, out _)
-            || !RuleMatches(rule, answer, answered)) return false;
+        var units = rule.AwardMethod == AwardMethod.PointsPerUnit ? answer.Number : null;
+        var configuredRate = rule.AwardMethod == AwardMethod.PointsPerUnit ? rule.PointsPerUnit : (int?)null;
+        var configuredCap = rule.AwardMethod == AwardMethod.PointsPerUnit ? rule.MaximumPoints : null;
+        if (!ScoringAward.TryGetMaximumAward(question, rule, out _))
+            return new(false, 0, "invalid-award-configuration", units, configuredRate, configuredCap, false);
+        if (!RuleMatches(rule, answer, answered))
+            return new(false, 0, "condition-not-matched", units, configuredRate, configuredCap, false);
         if (rule.AwardMethod == AwardMethod.Fixed)
-        {
-            points = rule.Points;
-            return true;
-        }
+            return new(true, rule.Points, "matched", null, null, null, false);
 
         if (answer.Text is not null || answer.SelectedOptionIds is not null
             || answer.Number is not decimal value || value < 0 || decimal.Truncate(value) != value
             || question.AnswerType != AnswerType.Number || !question.WholeNumbersOnly
             || question.MinValue is not decimal minimum || minimum < 0 || value < minimum
-            || question.MaxValue is decimal maximum && value > maximum) return false;
+            || question.MaxValue is decimal maximum && value > maximum)
+            return new(false, 0, "invalid-per-unit-answer", units, configuredRate, configuredCap, false);
         var rate = rule.PointsPerUnit;
-        if (rate == 0) return true;
+        if (rate == 0) return new(true, 0, "matched", units, rate, configuredCap, false);
         if (rule.MaximumPoints is int cap)
         {
-            points = value >= (decimal)cap / rate ? cap : (int)(value * rate);
-            return true;
+            var capReached = value >= (decimal)cap / rate;
+            var points = capReached ? cap : (int)(value * rate);
+            return new(true, points, "matched", units, rate, cap, capReached);
         }
-        if (value > (decimal)ScoringAward.MaximumRuleAward / rate) return false;
-        points = (int)(value * rate);
-        return points <= ScoringAward.MaximumRuleAward;
+        if (value > (decimal)ScoringAward.MaximumRuleAward / rate)
+            return new(false, 0, "per-unit-limit", units, rate, null, false);
+        var uncappedPoints = (int)(value * rate);
+        return uncappedPoints <= ScoringAward.MaximumRuleAward
+            ? new(true, uncappedPoints, "matched", units, rate, null, false)
+            : new(false, 0, "per-unit-limit", units, rate, null, false);
     }
 
     private static bool RuleMatches(ScoringRule rule, AnswerValue answer, bool answered) => rule.Family switch

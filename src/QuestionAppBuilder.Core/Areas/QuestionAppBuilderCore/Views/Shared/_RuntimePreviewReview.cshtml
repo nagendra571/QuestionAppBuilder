@@ -12,8 +12,13 @@
     @foreach (var category in Model.Questionnaire.Categories)
     {
         <section class="qab-review-category"><h3>@category.Name</h3>
-            @foreach (var element in category.Elements.Where(e => e.Question is not null))
+            @foreach (var element in category.Elements.Where(e => !e.IsHidden))
             {
+                if (element.Question is null)
+                {
+                    @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_RenderElement.cshtml", element)
+                    continue;
+                }
                 var question = element.Question!;
                 var value = question.Value;
                 var shown = value?.Text ?? value?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -29,7 +34,14 @@
         </section>
     }
     <div class="qab-action-bar">
-        <button type="button" class="qab-button qab-button-secondary" data-preview-target="@(Model.Questionnaire.Categories.Count - 1)">Back to answers</button>
+        @if (Model.Questionnaire.Categories.Count > 0)
+        {
+            <button type="button" class="qab-button qab-button-secondary" data-preview-target="@(Model.Questionnaire.Categories.Count - 1)">Back to answers</button>
+        }
+        else
+        {
+            <p>No categories are visible with the answers entered in this preview.</p>
+        }
         <button type="button" class="qab-button qab-button-primary" data-preview-submit>@Model.Questionnaire.SubmitLabel</button>
     </div>
 </main>

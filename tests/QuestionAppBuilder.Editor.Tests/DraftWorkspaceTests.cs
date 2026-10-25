@@ -5,12 +5,15 @@ using System.Text.RegularExpressions;
 using System.Text.Encodings.Web;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using QuestionAppBuilder.Application.Authoring;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Application.Services;
 using QuestionAppBuilder.Domain.Entities;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Domain.Enums;
 using QuestionAppBuilder.Infrastructure.Persistence;
 
@@ -306,6 +309,199 @@ public sealed class DraftWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task Preview_reports_hidden_items_from_the_evaluated_path_and_rejects_a_stale_revision()
+    {
+        var appId = await CreateDraftAsync();
+        var questionId = await _factory.WithScopeAsync(async services =>
+        {
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var drafts = services.GetRequiredService<IDraftService>();
+            var snapshot = await drafts.GetAsync(appId);
+            var category = snapshot.Definition.Categories.Single();
+            var questionId = category.Elements.Single(element => element.Question is not null).Question!.Id;
+            var content = await design.AddContentElementAsync(category.Id, "Conditional instructions", expectedRevision: snapshot.Revision);
+            snapshot = await drafts.GetAsync(appId);
+            await design.AddVisibilityPredicateAsync(content.Id, questionId, ConditionOperator.Answered,
+                ConditionJunction.All, expectedRevision: snapshot.Revision);
+            snapshot = await drafts.GetAsync(appId);
+            var questionElement = snapshot.Definition.Categories.SelectMany(item => item.Elements)
+                .Single(element => element.Question?.Id == questionId);
+            snapshot.Definition.Version.CompositionJson = new CompositionDefinition
+            {
+                Rules = [new CompositionRule
+                {
+                    Name = "Income threshold", CategoryKey = category.LogicalKey, TargetQuestionKey = questionElement.LogicalKey,
+                    Kind = RulePurpose.Validation, Message = "Increase annual income.", ShowWhileAnswering = false,
+                    Checks =
+                    [
+                        new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = questionElement.LogicalKey },
+                            Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 0 } },
+                        new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = questionElement.LogicalKey },
+                            Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 9007199254740993.123456789012m } },
+                        new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = questionElement.LogicalKey },
+                            Comparison = Comparison.LessThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 1000 } }
+                    ]
+                }]
+            }.ToJson();
+            await drafts.SaveAsync(new SaveDraftRequest(appId, snapshot.Revision, snapshot.Definition));
+            return questionId;
+        });
+        var client = await _factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await _factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        var revision = ReadRevision(html);
+        async Task<(HttpStatusCode Status, JsonDocument? Json, string Content)> EvaluateAsync(bool answered)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new
+                {
+                    ExpectedRevision = revision,
+                    Answers = answered
+                        ? new Dictionary<int, object> { [questionId] = new { Number = "5" } }
+                        : new Dictionary<int, object>()
+                }), Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("RequestVerificationToken", token);
+            var response = await client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            return (response.StatusCode, response.IsSuccessStatusCode ? JsonDocument.Parse(content) : null, content);
+        }
+
+        var hidden = await EvaluateAsync(answered: false);
+        hidden.Status.Should().Be(HttpStatusCode.OK, hidden.Content);
+        var item = hidden.Json!.RootElement.GetProperty("hiddenItems").EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("name").GetString().Should().Be("Conditional instructions");
+        item.GetProperty("kind").GetString().Should().Be("Content");
+        item.GetProperty("message").GetString().Should().Contain("Annual income is answered");
+        item.GetProperty("configurationUrl").GetString().Should().Be("#visibility");
+        var failedRule = hidden.Json.RootElement.GetProperty("failedValidationRules").EnumerateArray().Should().ContainSingle().Subject;
+        failedRule.GetProperty("name").GetString().Should().Be("Income threshold");
+        failedRule.GetProperty("targetName").GetString().Should().Be("Annual income");
+        failedRule.GetProperty("message").GetString().Should().Be("Increase annual income.");
+        failedRule.GetProperty("showWhileAnswering").GetBoolean().Should().BeFalse();
+        failedRule.GetProperty("skippedCheckCount").GetInt32().Should().Be(1);
+        var evaluatedChecks = failedRule.GetProperty("checks").EnumerateArray().ToArray();
+        evaluatedChecks.Should().HaveCount(2);
+        evaluatedChecks[0].GetProperty("matches").GetBoolean().Should().BeTrue();
+        evaluatedChecks[1].GetProperty("matches").GetBoolean().Should().BeFalse();
+        evaluatedChecks[1].GetProperty("leftValue").GetDecimal().Should().Be(0);
+        evaluatedChecks[1].GetProperty("rightValueText").GetString().Should().Be("9007199254740993.123456789012");
+        failedRule.GetProperty("configurationUrl").GetString().Should().Contain("#Rules/");
+        hidden.Json.RootElement.GetProperty("html").GetString().Should().NotContain("Conditional instructions");
+        var previewRevision = hidden.Json.RootElement.GetProperty("revision").GetString();
+        previewRevision.Should().Be(revision);
+        hidden.Json.Dispose();
+
+        var visible = await EvaluateAsync(answered: true);
+        visible.Status.Should().Be(HttpStatusCode.OK, visible.Content);
+        visible.Json!.RootElement.GetProperty("hiddenItems").GetArrayLength().Should().Be(0);
+        var visibleChecks = visible.Json.RootElement.GetProperty("failedValidationRules").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("checks").EnumerateArray().ToArray();
+        visibleChecks.Should().HaveCount(2);
+        visibleChecks[0].GetProperty("leftValueText").GetString().Should().Be("5");
+        visibleChecks[1].GetProperty("leftValueText").GetString().Should().Be("5");
+        visible.Json.RootElement.GetProperty("html").GetString().Should().Contain("Conditional instructions");
+        visible.Json.Dispose();
+
+        await _factory.WithScopeAsync(async services =>
+        {
+            var drafts = services.GetRequiredService<IDraftService>();
+            var snapshot = await drafts.GetAsync(appId);
+            snapshot.Definition.Version.DisplayName = "Changed elsewhere";
+            await drafts.SaveAsync(new SaveDraftRequest(appId, snapshot.Revision, snapshot.Definition));
+            return true;
+        });
+        var stale = await EvaluateAsync(answered: false);
+        stale.Status.Should().Be(HttpStatusCode.Conflict, stale.Content);
+        stale.Content.Should().Contain("Reload the workspace");
+    }
+
+    [Fact]
+    public async Task Preview_keeps_hidden_explanations_unavailable_for_a_custom_evaluator_without_trace()
+    {
+        using var factory = new NoTraceEditorWebApplicationFactory();
+        var appId = await factory.WithScopeAsync(async services =>
+        {
+            await services.GetRequiredService<QuestionAppBuilderDbContext>().Database.EnsureCreatedAsync();
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var type = (await design.ListApplicationTypesAsync()).First();
+            var application = await design.CreateApplicationAsync("Custom preview " + Guid.NewGuid().ToString("N"), type.Id);
+            var category = await design.AddCategoryAsync(application.Id, "Overview");
+            var question = await design.AddQuestionAsync(category.Id, "A question", AnswerType.Textbox);
+            var snapshot = await services.GetRequiredService<IDraftService>().GetAsync(application.Id);
+            await design.AddRuleAsync(question.Id, RuleFamily.Presence, 2, expectedRevision: snapshot.Revision);
+            snapshot = await services.GetRequiredService<IDraftService>().GetAsync(application.Id);
+            var content = await design.AddContentElementAsync(category.Id, "Hidden custom content", expectedRevision: snapshot.Revision);
+            snapshot = await services.GetRequiredService<IDraftService>().GetAsync(application.Id);
+            await design.AddVisibilityPredicateAsync(content.Id, question.Id, ConditionOperator.Answered,
+                ConditionJunction.All, expectedRevision: snapshot.Revision);
+            return application.Id;
+        });
+        var client = await factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                ExpectedRevision = ReadRevision(html),
+                Answers = new Dictionary<int, object>()
+            }), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("RequestVerificationToken", token);
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var parsed = JsonDocument.Parse(body);
+        parsed.RootElement.GetProperty("hiddenItems").ValueKind.Should().Be(JsonValueKind.Null);
+        parsed.RootElement.GetProperty("failedValidationRules").ValueKind.Should().Be(JsonValueKind.Null);
+        var scoring = parsed.RootElement.GetProperty("scoring");
+        scoring.ValueKind.Should().Be(JsonValueKind.Object);
+        var questionScoring = scoring.GetProperty("questions").EnumerateArray().Single();
+        questionScoring.GetProperty("name").GetString().Should().Be("A question");
+        questionScoring.GetProperty("rules").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("requirement").GetString().Should().Contain("answer is present");
+        parsed.RootElement.GetProperty("html").GetString().Should().NotContain("Hidden custom content");
+    }
+
+    [Fact]
+    public async Task Preview_does_not_infer_scoring_explanations_when_a_custom_scorer_has_no_trace()
+    {
+        using var factory = new NoTraceScoringEditorWebApplicationFactory();
+        var appId = await factory.WithScopeAsync(async services =>
+        {
+            await services.GetRequiredService<QuestionAppBuilderDbContext>().Database.EnsureCreatedAsync();
+            var design = services.GetRequiredService<IApplicationDesignService>();
+            var type = (await design.ListApplicationTypesAsync()).First();
+            var application = await design.CreateApplicationAsync("Custom scorer " + Guid.NewGuid().ToString("N"), type.Id);
+            var category = await design.AddCategoryAsync(application.Id, "Overview");
+            var question = await design.AddQuestionAsync(category.Id, "Annual income", AnswerType.Number, isRequired: false);
+            var snapshot = await services.GetRequiredService<IDraftService>().GetAsync(application.Id);
+            await design.AddRuleAsync(question.Id, RuleFamily.NumericRange, 3, minValue: 10, maxValue: 20,
+                expectedRevision: snapshot.Revision);
+            return application.Id;
+        });
+        var client = await factory.CreateSignedInClientAsync("designer");
+        var (token, html) = await factory.GetFormAsync(client, $"/ConfigureApp/Drafts/{appId}");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/ConfigureApp/Preview/{appId}/Evaluate")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                ExpectedRevision = ReadRevision(html),
+                Answers = new Dictionary<int, object>()
+            }), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("RequestVerificationToken", token);
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var parsed = JsonDocument.Parse(body);
+        parsed.RootElement.GetProperty("score").GetProperty("total").GetInt32().Should().Be(0);
+        parsed.RootElement.GetProperty("scoring").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task Preview_uses_sequential_required_gate_preserves_answers_and_honors_result_visibility()
     {
         var applicationId = await CreateDraftAsync();
@@ -413,5 +609,48 @@ public sealed class DraftWorkspaceTests : IDisposable
         var match = Regex.Match(html, "name=\"ExpectedRevision\" value=\"([^\"]+)\"");
         match.Success.Should().BeTrue("the form includes a draft revision");
         return WebUtility.HtmlDecode(match.Groups[1].Value);
+    }
+
+    private sealed class NoTraceEditorWebApplicationFactory : EditorWebApplicationFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDefinitionEvaluator>();
+                services.AddSingleton<IDefinitionEvaluator, NoTraceEvaluator>();
+            });
+        }
+    }
+
+    private sealed class NoTraceEvaluator : IDefinitionEvaluator
+    {
+        private readonly DefinitionEvaluator _inner = new();
+        public EvaluationResult Evaluate(QuestionAppBuilder.Domain.Graphs.ApplicationVersionGraph graph,
+            IReadOnlyDictionary<int, AnswerValue> answers, bool requireComplete)
+            => _inner.Evaluate(graph, answers, requireComplete) with { HiddenElementReasons = null, FailedValidationRules = null };
+    }
+
+    private sealed class NoTraceScoringEditorWebApplicationFactory : EditorWebApplicationFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IScoringEngine>();
+                services.AddSingleton<IScoringEngine, NoTraceScoringEngine>();
+            });
+        }
+    }
+
+    private sealed class NoTraceScoringEngine : IScoringEngine
+    {
+        private readonly ScoringEngine _inner = new();
+
+        public SubmissionScore Score(QuestionAppBuilder.Domain.Graphs.ApplicationVersionGraph graph,
+            IReadOnlyDictionary<int, AnswerValue> answers, IReadOnlySet<int>? applicableQuestionIds = null)
+            => _inner.Score(graph, answers, applicableQuestionIds) with { Diagnostics = null };
     }
 }

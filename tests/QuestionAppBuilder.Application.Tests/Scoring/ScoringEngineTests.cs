@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Text.Json;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Domain.Entities;
@@ -92,8 +93,10 @@ public class ScoringEngineTests
     public void First_match_trace_separates_matching_from_contributing_rules()
     {
         var first = NumericRule(3, 0m, 100m);
+        first.Id = 1;
         first.SortOrder = 1;
         var second = NumericRule(2, 0m, 200m);
+        second.Id = 2;
         second.SortOrder = 2;
         var graph = BuildGraph(CategoryWith(1, QuestionElementWithOptions(1, AnswerType.Number, [], ScoringMode.FirstMatch, first, second)));
 
@@ -104,6 +107,11 @@ public class ScoringEngineTests
         result.Questions.Single().Rules.Should().SatisfyRespectively(
             rule => { rule.Matches.Should().BeTrue(); rule.Contributes.Should().BeTrue(); rule.Points.Should().Be(3); },
             rule => { rule.Matches.Should().BeTrue(); rule.Contributes.Should().BeFalse(); rule.Points.Should().Be(0); });
+        var rules = result.Diagnostics!.Questions.Single().Rules;
+        rules.Should().SatisfyRespectively(
+            rule => { rule.Outcome.Should().Be("awarded"); rule.MatchedPoints.Should().Be(3); rule.Points.Should().Be(3); },
+            rule => { rule.Outcome.Should().Be("first-match-suppressed"); rule.MatchedPoints.Should().Be(2); rule.Points.Should().Be(0); rule.SupersedingRuleId.Should().Be(first.Id); });
+        JsonSerializer.Serialize(result).Should().NotContain("Diagnostics");
     }
 
     [Fact]
@@ -149,6 +157,15 @@ public class ScoringEngineTests
         belowCap.Questions.Single().Rules.Single().Points.Should().Be(15);
         atCap.Questions.Single().Points.Should().Be(18);
         atCap.EngineVersion.Should().Be("2.1");
+        var belowDiagnostic = belowCap.Diagnostics!.Questions.Single().Rules.Single();
+        belowDiagnostic.Units.Should().Be(5);
+        belowDiagnostic.Rate.Should().Be(3);
+        belowDiagnostic.Cap.Should().Be(18);
+        belowDiagnostic.CapReached.Should().BeFalse();
+        var capDiagnostic = atCap.Diagnostics!.Questions.Single().Rules.Single();
+        capDiagnostic.Units.Should().Be(9);
+        capDiagnostic.MatchedPoints.Should().Be(18);
+        capDiagnostic.CapReached.Should().BeTrue();
     }
 
     [Fact]
@@ -223,6 +240,12 @@ public class ScoringEngineTests
 
         score.Total.Should().Be(500);
         score.Questions.Single().Rules.Single().Points.Should().Be(500);
+        var diagnostic = score.Diagnostics!.Questions.Single().Rules.Single();
+        diagnostic.Units.Should().Be(decimal.MaxValue);
+        diagnostic.Rate.Should().Be(1_000_000);
+        diagnostic.Cap.Should().Be(500);
+        diagnostic.CapReached.Should().BeTrue();
+        diagnostic.MatchedPoints.Should().Be(500);
     }
 
     [Fact]
@@ -242,6 +265,24 @@ public class ScoringEngineTests
         result.DefinitionIssues.Should().BeEmpty();
         result.Score.Total.Should().Be(0);
         result.Score.EngineVersion.Should().Be("2.1");
+    }
+
+    [Fact]
+    public void Unsupported_maximum_score_marks_scoring_diagnostics_unavailable()
+    {
+        var rules = Enumerable.Range(1, 2148).Select(id => new ScoringRule
+        {
+            Id = id, Family = RuleFamily.Presence, Points = 1_000_000
+        }).ToArray();
+        var graph = BuildGraph(CategoryWith(1, QuestionElement(1, AnswerType.Textbox, rules)));
+
+        var result = _engine.Score(graph, Answers((1, new AnswerValue("answered", null, null))));
+
+        result.Total.Should().Be(0);
+        result.Diagnostics.Should().NotBeNull();
+        result.Diagnostics!.UnavailableReason.Should().Contain("maximum award");
+        result.Diagnostics.Questions.Should().BeEmpty("the maximum-score guard skips actual scoring");
+        result.Diagnostics.CombinedRules.Should().BeNull();
     }
 
     [Fact]

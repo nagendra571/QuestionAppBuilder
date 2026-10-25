@@ -59,6 +59,7 @@ public sealed class PreviewAnswerInput { public string? Text { get; set; } publi
 public sealed class PreviewRequest
 {
     public Dictionary<int, PreviewAnswerInput> Answers { get; set; } = new();
+    public string? ExpectedRevision { get; set; }
     public int CategoryIndex { get; set; }
     public int? TargetCategoryIndex { get; set; }
     public bool Review { get; set; }
@@ -74,4 +75,33 @@ public sealed record PreviewResponse(QuestionAppBuilder.Core.Rendering.Questionn
     public QuestionAppBuilder.Domain.Enums.SubmittedApplicationVisibility SubmittedApplicationVisibility { get; init; }
     public int CategoryIndex { get; init; }
     public bool IsReceipt { get; init; }
+    public string? Revision { get; init; }
+    public IReadOnlyList<HiddenPreviewItem>? HiddenItems { get; init; }
+    public IReadOnlyList<FailedCombinedValidationPreviewItem>? FailedValidationRules { get; init; }
+    public ScoringPreview? Scoring { get; init; }
 }
+public sealed record HiddenPreviewItem(string Name, string Kind, string Message, string ItemUrl, string? ConfigurationUrl);
+public sealed record FailedCombinedValidationPreviewItem(string Name, string Message, string TargetName, string ItemUrl,
+    string ConfigurationUrl, bool ShowWhileAnswering, bool AnyCheck, int SkippedCheckCount,
+    IReadOnlyList<FailedCombinedCheckPreview> Checks);
+public sealed record FailedCombinedCheckPreview(string Requirement, string LeftDescription, decimal? LeftValue,
+    IReadOnlyList<string> LeftEffects, string RightDescription, decimal? RightValue, IReadOnlyList<string> RightEffects,
+    bool Matches)
+{
+    public string? LeftValueText { get; init; }
+    public string? RightValueText { get; init; }
+}
+public sealed record ScoringPreview(string? UnavailableReason, IReadOnlyList<string> CombinedDefinitionErrors,
+    IReadOnlyList<ScoringCategoryPreview> Categories, IReadOnlyList<ScoringQuestionPreview> Questions,
+    IReadOnlyList<CombinedScoringRulePreview>? CombinedRules);
+public sealed record ScoringCategoryPreview(string Name, int Points);
+public sealed record ScoringQuestionPreview(string Name, string CategoryName, string AnswerType, int Points, bool Applicable, bool Answered,
+    string? AnswerNumberText, IReadOnlyList<string> SelectedOptions, string ScoringMode,
+    IReadOnlyList<QuestionScoringRulePreview> Rules, string EditUrl);
+public sealed record QuestionScoringRulePreview(string Name, string Requirement, string Outcome, bool Matches,
+    bool Contributes, int Points, string? MatchedPointsText, string? UnitsText, int? Rate, int? Cap,
+    bool CapReached, string? SupersedingRuleName, string EditUrl);
+public sealed record CombinedScoringRulePreview(string Name, string CategoryName, string TargetName, string Outcome,
+    string OutcomeCode, int AwardedPoints, string BandName, string? SupersedingRuleName, bool AnyCheck, int SkippedConditionCount,
+    int SkippedCheckCount, IReadOnlyList<FailedCombinedCheckPreview> Conditions,
+    IReadOnlyList<FailedCombinedCheckPreview> Checks, string ConfigurationUrl, string? TargetUrl);

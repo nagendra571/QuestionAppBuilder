@@ -21,6 +21,11 @@ public static class DynamicTextEngine
     public static DynamicTextResult Evaluate(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers,
         IReadOnlySet<int> visibleQuestionIds, IReadOnlySet<int> visibleCategoryIds, CompositionResult composition,
         DateTimeOffset evaluatedAtUtc)
+        => Evaluate(graph, answers, visibleQuestionIds, visibleCategoryIds, composition, evaluatedAtUtc, null);
+
+    public static DynamicTextResult Evaluate(ApplicationVersionGraph graph, IReadOnlyDictionary<int, AnswerValue> answers,
+        IReadOnlySet<int> visibleQuestionIds, IReadOnlySet<int> visibleCategoryIds, CompositionResult composition,
+        DateTimeOffset evaluatedAtUtc, IReadOnlySet<int>? visibleElementIds)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(answers);
@@ -266,6 +271,7 @@ public static class DynamicTextEngine
                 var owner = elementByKey[template.OwnerKey];
                 var ownerCategory = elementCategory[template.OwnerKey];
                 if (!visibleCategoryIds.Contains(ownerCategory.Id)
+                    || visibleElementIds is not null && !visibleElementIds.Contains(owner.Id)
                     || owner.Question is { } ownerQuestion && !visibleQuestionIds.Contains(ownerQuestion.Id)) continue;
             }
             var parts = new List<string>();

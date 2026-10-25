@@ -1,0 +1,97 @@
+@model DeletionPreviewViewModel
+@using QuestionAppBuilder.Application.Authoring
+@{
+    var preview = Model.Preview;
+    ViewData["Title"] = "Review deletion";
+    var cancelFragment = preview.Kind switch
+    {
+        DraftDeletionKind.Category => $"manage-category-{preview.TargetId}",
+        DraftDeletionKind.Element => $"manage-element-{preview.TargetId}",
+        DraftDeletionKind.Option => $"manage-option-{preview.TargetId}",
+        _ => string.Empty
+    };
+    string? ImpactUrl(DeletionImpactItem item)
+    {
+        if (item.Section == "Questionnaire")
+        {
+            var fragment = item.ElementId is int elementId ? $"element-{elementId}"
+                : item.CategoryId is int categoryId ? $"category-{categoryId}" : null;
+        return fragment is null ? Url.Action("Index", "Drafts", new { applicationId = preview.ApplicationId })
+            : Url.Action("Index", "Drafts", new { applicationId = preview.ApplicationId }) + "#" + fragment;
+        }
+        var section = item.Section switch
+        {
+            "Groups" => "Groups", "Calculations" => "Calculations", "Rules" => "Rules", "DynamicText" => "DynamicText", _ => null
+        };
+        if (item.Section == "Visibility") return Url.Action("Index", "Drafts", new { applicationId = preview.ApplicationId }) + "#visibility";
+        return section is null ? null : Url.Action("Index", "Composition", new { id = preview.ApplicationId }) + "#" + section;
+    }
+}
+<main class="deletion-preview cv-management" data-authoring-context>
+    <p><a class="cv-back" asp-controller="Applications" asp-action="Detail" asp-route-id="@preview.ApplicationId">Back to application</a></p>
+    <header class="cv-head"><div><h1>Review deletion</h1><p>Review what changes in the saved draft before confirming.</p></div></header>
+    <section class="cv-card cv-cbody" aria-labelledby="deletion-target">
+        <h2 id="deletion-target">@preview.TargetName</h2>
+        <p>@preview.Kind</p>
+        <p>This preview uses the saved draft. Confirmation applies only if this exact revision is still current.</p>
+    </section>
+    @if (preview.Warnings.Count > 0)
+    {
+        <section class="cv-alert" role="alert"><h2>Impact could not be fully inspected</h2><ul>@foreach (var warning in preview.Warnings) { <li>@warning</li> }</ul></section>
+    }
+    @foreach (var group in new[] {
+        (Title: "Removed", Items: preview.Removed),
+        (Title: "Automatically changed", Items: preview.AutomaticallyChanged),
+        (Title: "Needs repair", Items: preview.NeedsRepair),
+        (Title: "Blocked", Items: preview.Blocked)
+    })
+    {
+        @if (group.Items.Count > 0)
+        {
+            <section class="cv-card cv-cbody"><h2>@group.Title</h2>
+                <ul>
+                    @foreach (var item in group.Items)
+                    {
+                        <li><strong>@item.Name</strong> — @item.Detail
+                            @if (ImpactUrl(item) is string impactUrl) { <a href="@impactUrl">Open related configuration</a> }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+    <p>These are configuration references and effects; this preview does not predict which questions respondents will see.</p>
+    <div class="deletion-preview-actions">
+        <a class="cv-btn-ghost" asp-controller="Applications" asp-action="Detail" asp-route-id="@preview.ApplicationId" asp-fragment="@cancelFragment">Cancel</a>
+        @if (preview.CanDelete)
+        {
+            <form method="post" asp-controller="Deletions" asp-action="Confirm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="confirmationToken" value="@Model.ConfirmationToken" />
+                <button class="cv-btn cv-danger" type="submit">Confirm deletion</button>
+            </form>
+        }
+        else
+        {
+            <p role="status">This deletion is blocked until the listed issue is resolved.</p>
+        }
+    </div>
+</main>
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/authoring-detail.css" />
+<link rel="stylesheet" href="~/_content/QuestionAppBuilder.Editor/css/editor-actions.css" />
+<style>
+    .deletion-preview { max-width: 900px; margin: 0 auto; padding: 24px 16px 40px; color: #1B1B1B; }
+    .deletion-preview h1 { font-size: 26px; margin: 14px 0 6px; }
+    .deletion-preview h2 { font-size: 18px; margin: 0 0 10px; overflow-wrap: anywhere; }
+    .deletion-preview p { color: #565C65; }
+    .deletion-preview section { background: #fff; border: 1px solid #D5DAE0; border-radius: 6px; margin: 14px 0; padding: 16px; }
+    .deletion-preview li { margin: 8px 0; overflow-wrap: anywhere; }
+    .deletion-preview li a { display: inline-block; margin-left: 8px; }
+    .deletion-preview-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
+    .deletion-preview-actions .cv-btn, .deletion-preview-actions .cv-btn-ghost { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; padding: 8px 16px; border-radius: 4px; font-family: inherit; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
+    .deletion-preview-actions .cv-btn-ghost { background: #fff; color: #005EA2; border: 1px solid #005EA2; }
+    .deletion-preview-actions .cv-btn { background: #005EA2; color: #fff; border: 1px solid #005EA2; }
+    .deletion-preview .cv-danger { background: #B50909; color: #fff; border: 1px solid #B50909; }
+    .deletion-preview .cv-danger:hover { background: #8B0000; }
+    @@media(max-width:760px) { .deletion-preview { padding: 16px 12px 32px; } }
+</style>

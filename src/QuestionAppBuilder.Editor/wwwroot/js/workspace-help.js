@@ -9,7 +9,7 @@
       description: 'How this question combines its matching scoring rules. This does not decide whether an answer is correct or required.', hint: true,
       choices: [
         choice('Additive', 'Additive', 'Add the points from every matching rule. A rule contributes once, even if several of its options match.', 'A 2-point rule and a 3-point rule both match: the question earns 5 points.'),
-        choice('FirstMatch', 'First match', 'Use only the first matching rule in order, even if it awards 0 points. Later matches contribute nothing.', 'With matching 2-point and 3-point rules, the first one awards 2 points. Give rules distinct order numbers when priority matters.')
+        choice('FirstMatch', 'First match', 'Evaluate rules in order, but let only the first matching rule contribute, even if it awards 0 points. Later matches contribute nothing.', 'With matching 2-point and 3-point rules, the first one awards 2 points. Give rules distinct order numbers when priority matters.')
       ]
     },
     family: {
@@ -80,7 +80,7 @@
     source: { description: 'Choose the earlier question whose answer drives this visibility check. It must appear before the category or question being controlled. Numeric operators need a Number source; option operators need a choice source.' },
     compareNumber: { description: 'The comparison value for numeric visibility operators such as Equal or Greater than. Use a Number source question. Leave this blank for Answered, Unanswered, or option-based checks.' },
     helpText: { description: 'Instructions displayed to respondents below this question or content heading. Explain what information to provide or how it will be used. This is respondent-facing text, not an internal authoring note.' },
-    contentVisibility: { description: 'Static content currently follows its category\'s visibility. To hide a content block conditionally, put it in a category with the appropriate Show when condition. An item-level condition does not currently hide static content.', hint: true, note: 'Static content follows its category. Set conditional visibility on the category.' }
+    contentVisibility: { description: 'A content block is shown only when its category is visible and its own Show when condition passes. Dynamic text with Hide when unavailable can additionally hide the block until its inserted values are available.', hint: true, note: 'Both category and block conditions apply. Dynamic text can also hide content while values are unavailable.' }
   };
 
   const input = name => document.getElementsByName(name)[0];
@@ -145,12 +145,13 @@
   };
   const topicForEntry = entry => {
     if (entry.key === 'visibility') return visibility();
+    if (entry.key === 'contentVisibility') return { ...topics.contentVisibility, choices: visibility().choices };
     if (entry.key === 'answerType' && entry.control.name === 'elementType')
       return { ...topics.answerType, choices: [choice('Content', 'Content block', 'Display instructions or explanatory text without collecting an answer or awarding points.'), ...topics.answerType.choices] };
     return topics[entry.key];
   };
   const shortNotes = {
-    scoringMode: { Additive: 'Add points from every matching rule.', FirstMatch: 'Use the first matching rule in order; later rules contribute nothing.' },
+    scoringMode: { Additive: 'Add points from every matching rule.', FirstMatch: 'Evaluate rules in order; only the first matching rule contributes, and later matches contribute nothing.' },
     family: { Presence: 'Points for a nonblank answer; the number 0 counts as answered.', Selection: 'Points for matching target answer options.', NumericRange: 'Points when a number falls within the rule\'s bounds.' },
     membership: { '': 'Only Selection rules use membership.', AnyOf: 'One or more target options must be selected.', AllOf: 'Every target option must be selected; extras are allowed.' },
     matchMode: { All: 'Every check must pass (AND).', Any: 'At least one check must pass (OR).' }

@@ -2,12 +2,12 @@
 @using QuestionAppBuilder.Domain.Composition
 @using System.Text.Json
 @{
-    ViewData["Title"] = "Question configuration";
+    ViewData["Title"] = "Groups, rules & dynamic text";
     var graph = Model.Definition;
     var compositionJson = ViewData["CompositionDefinitionJson"] as string ?? new CompositionDefinition().ToJson();
     var recovering = ViewData["CompositionRecovery"] is true;
     var catalog = new {
-        Categories = graph.Categories.OrderBy(c => c.SortOrder).Select(c => new { Key = c.LogicalKey, c.Name }),
+        Categories = graph.Categories.OrderBy(c => c.SortOrder).ThenBy(c => c.Id).Select(c => new { Key = c.LogicalKey, c.Name, c.SortOrder, c.Id }),
         TimeZones = TimeZoneInfo.GetSystemTimeZones().Select(zone => new { zone.Id, zone.DisplayName }),
         Elements = graph.Categories.SelectMany(c => c.Elements.Select(e => new {
             Key = e.LogicalKey, e.Label, CategoryKey = c.LogicalKey, Content = e.Question is null,
@@ -29,15 +29,20 @@
         <input type="hidden" name="definitionJson" />
         <header class="composition-header">
             <div class="composition-heading">
-                <a asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@graph.Version.ApplicationId">Back to authoring workspace</a>
-                <h1>Question configuration</h1>
-                <p>Arrange questions, calculate results, define combined rules, and build reusable dynamic text.</p>
+                <a asp-controller="Applications" asp-action="Detail" asp-route-id="@graph.Version.ApplicationId">Back to application</a>
+                <h1>Groups, rules &amp; dynamic text</h1>
+                <p>Group questions, calculate results, define combined rules, and build reusable dynamic text.</p>
             </div>
             <div class="composition-toolbar">
                 <p role="status" aria-live="polite" data-composition-status>@(recovering ? "Unreadable saved configuration has not been changed." : "All changes saved.")</p>
                 <button type="submit" class="aw-primary">@(recovering ? "Save replacement" : "Save configuration")</button>
             </div>
         </header>
+        <nav class="aw-area-nav" aria-label="Questionnaire areas">
+            <a asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@graph.Version.ApplicationId">Questionnaire</a>
+            <span aria-current="page">Groups, rules &amp; dynamic text</span>
+        </nav>
+        <p class="composition-save-hint">Changes on this page are saved only when you select Save configuration.</p>
         @if (recovering)
         {
             <div class="composition-recovery" role="alert">
@@ -45,6 +50,27 @@
                 <span>The saved settings remain unchanged until you save this replacement. Leaving this page keeps the saved draft as it is.</span>
             </div>
         }
+        <section class="composition-limit-recipe" data-limit-recipe data-recovering="@recovering.ToString().ToLowerInvariant()" aria-labelledby="limit-recipe-heading">
+            <div class="composition-limit-recipe-heading">
+                <div><h2 id="limit-recipe-heading">Limit a combined total</h2><p>Build a sum of numeric answers and show a validation message when it exceeds a limit.</p></div>
+                <button type="button" data-limit-recipe-toggle aria-expanded="false">Create a limit</button>
+            </div>
+            <div class="composition-limit-recipe-body" data-limit-recipe-body hidden>
+                <p class="composition-limit-recipe-note">This adds one calculation and one validation rule to the current configuration. Review the proposal, then use <strong>Add this limit to configuration</strong>. It is not saved until you select Save configuration.</p>
+                <div class="composition-limit-recipe-fields">
+                    <label class="composition-field">Rule name <input type="text" maxlength="200" data-limit-name autocomplete="off" /></label>
+                    <fieldset class="composition-limit-sources"><legend>Numeric answers to add</legend><div data-limit-sources></div></fieldset>
+                    <label class="composition-field">Show this rule on question <select data-limit-target></select></label>
+                    <label class="composition-field">Maximum total <input type="text" inputmode="decimal" maxlength="128" data-limit-maximum autocomplete="off" aria-describedby="limit-maximum-help" /></label>
+                    <p id="limit-maximum-help" class="composition-live-help">Use a plain decimal number. The limit must fit the editor’s numeric precision exactly.</p>
+                    <label class="composition-field composition-limit-message">Validation message <textarea maxlength="500" data-limit-message rows="2"></textarea></label>
+                    <label class="composition-live-toggle composition-limit-live"><input type="checkbox" data-limit-live /><span>Show validation while answering</span></label>
+                </div>
+                <div class="composition-limit-recipe-actions"><button type="button" data-limit-preview>Preview limit</button><button type="button" data-limit-add disabled>Add this limit to configuration</button><button type="button" data-limit-discard>Discard limit</button></div>
+                <p class="composition-limit-recipe-status" role="status" aria-live="polite" data-limit-status></p>
+                <div class="composition-limit-recipe-preview" data-limit-preview-result hidden></div>
+            </div>
+        </section>
         <nav class="composition-tabs" aria-label="Configuration sections"><button type="button" data-pane="Groups" aria-pressed="true">Question groups</button><button type="button" data-pane="Calculations" aria-pressed="false">Calculated fields</button><button type="button" data-pane="Rules" aria-pressed="false">Combined rules</button><button type="button" data-pane="DynamicText" aria-pressed="false">Dynamic text</button></nav>
         <section data-composition-editor></section>
         <noscript>Enable JavaScript to configure groups and calculations.</noscript>

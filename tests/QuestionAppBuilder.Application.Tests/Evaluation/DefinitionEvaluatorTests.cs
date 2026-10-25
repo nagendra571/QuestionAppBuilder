@@ -1,4 +1,5 @@
 using FluentAssertions;
+using QuestionAppBuilder.Domain.Composition;
 using QuestionAppBuilder.Application.Evaluation;
 using QuestionAppBuilder.Application.Scoring;
 using QuestionAppBuilder.Domain.Entities;
@@ -70,10 +71,15 @@ public class DefinitionEvaluatorTests
     [Fact]
     public void Hidden_source_values_do_not_reveal_dependents()
     {
-        var graph = Graph(
-            Category(1, Question(1, AnswerType.Dropdown, options: [10]),
-                Question(2, AnswerType.Dropdown, options: [20], conditionId: 1)),
-            CategoryWithCondition(2, 2, Question(3, AnswerType.Textbox)));
+        var visibleCategory = Category(1, Question(1, AnswerType.Dropdown, options: [10]),
+            Question(2, AnswerType.Dropdown, options: [20], conditionId: 1));
+        var visibleCategoryContent = new Element { Id = 4, CategoryId = 1, Kind = ElementKind.Content,
+            Label = "Should stay hidden", VisibilityConditionId = 2 };
+        visibleCategory.Elements.Add(visibleCategoryContent);
+        var hiddenCategory = CategoryWithCondition(2, 2, Question(3, AnswerType.Textbox));
+        var hiddenCategoryContent = new Element { Id = 5, CategoryId = 2, Kind = ElementKind.Content, Label = "Hidden category content" };
+        hiddenCategory.Elements.Add(hiddenCategoryContent);
+        var graph = Graph(visibleCategory, hiddenCategory);
         graph.VisibilityConditions =
         [
             Condition(1, Predicate(1, ConditionOperator.HasAnyOption, 10)),
@@ -84,7 +90,75 @@ public class DefinitionEvaluatorTests
 
         result.VisibleQuestionIds.Should().Contain(1).And.NotContain(2).And.NotContain(3);
         result.VisibleCategoryIds.Should().Contain(1).And.NotContain(2);
+        result.VisibleElementIds.Should().Contain(1).And.NotContain(2).And.NotContain(3).And.NotContain(4).And.NotContain(5);
         result.Score.Questions.Single(q => q.QuestionId == 2).IsApplicable.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Hidden_preview_reasons_report_only_the_winning_evaluated_gate()
+    {
+        var source = Question(1, AnswerType.Checkboxes, options: [10, 11]);
+        var followUp = Question(2, AnswerType.Textbox);
+        followUp.ParentOptionId = 10;
+        followUp.VisibilityConditionId = 3;
+        var ownConditionElement = Question(3, AnswerType.Textbox, conditionId: 4);
+        var unavailableContent = new Element { Id = 4, CategoryId = 1, Kind = ElementKind.Content, Label = "Conditional content" };
+        var visibleCategory = Category(1, source, followUp, ownConditionElement, unavailableContent);
+        var hiddenCategoryQuestion = Question(5, AnswerType.Textbox);
+        var hiddenCategoryContent = new Element { Id = 6, CategoryId = 2, Kind = ElementKind.Content, Label = "Hidden section content" };
+        var hiddenCategory = CategoryWithCondition(2, 5, hiddenCategoryQuestion, hiddenCategoryContent);
+        var graph = Graph(visibleCategory, hiddenCategory);
+        graph.VisibilityConditions = [
+            Condition(3, Predicate(1, ConditionOperator.HasAnyOption, 11)),
+            Condition(4, Predicate(1, ConditionOperator.HasAnyOption, 10)),
+            Condition(5, Predicate(1, ConditionOperator.HasAnyOption, 10))
+        ];
+        graph.Version.CompositionJson = new CompositionDefinition
+        {
+            DynamicText = new DynamicTextDefinition
+            {
+                Templates = [new DynamicTemplate
+                {
+                    Slot = DynamicTextSlot.ElementLabel, OwnerKey = unavailableContent.LogicalKey, HideWhenUnavailable = true,
+                    Parts = [new DynamicTextPart { Kind = DynamicPartKind.Value,
+                        Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = source.LogicalKey }, Fallback = "" }]
+                }]
+            }
+        }.ToJson();
+
+        var result = _evaluator.Evaluate(graph, Answers((1, new AnswerValue(null, null, []))), false);
+
+        result.HiddenElementReasons.Should().NotBeNull();
+        result.HiddenElementReasons!.Should().ContainSingle(reason => reason.ElementId == 2 && reason.Code == "parent-option-unselected");
+        result.HiddenElementReasons.Should().ContainSingle(reason => reason.ElementId == 3 && reason.Code == "element-condition" && reason.ConditionId == 4);
+        result.HiddenElementReasons.Should().Contain(reason => reason.ElementId == 5 && reason.Code == "category-condition" && reason.ConditionId == 5);
+        result.HiddenElementReasons.Should().Contain(reason => reason.ElementId == 6 && reason.Code == "category-condition" && reason.ConditionId == 5);
+        result.HiddenElementReasons.Should().ContainSingle(reason => reason.ElementId == 4 && reason.Code == "dynamic-content-unavailable");
+        result.HiddenElementReasons.Select(reason => reason.ElementId).Should().BeEquivalentTo([2, 3, 4, 5, 6]);
+    }
+
+    [Fact]
+    public void Hidden_parent_explanations_preserve_unanswered_predicates_for_hidden_sources()
+    {
+        var gate = Question(1, AnswerType.Dropdown, options: [10]);
+        var hiddenSource = Question(2, AnswerType.Dropdown, conditionId: 1, options: [20]);
+        var unansweredDependent = Question(3, AnswerType.Textbox, conditionId: 2);
+        var followUp = Question(4, AnswerType.Textbox);
+        followUp.ParentOptionId = 20;
+        var graph = Graph(Category(1, gate, hiddenSource, unansweredDependent, followUp));
+        graph.VisibilityConditions = [
+            Condition(1, Predicate(1, ConditionOperator.HasAnyOption, 10)),
+            new VisibilityCondition { Id = 2, Predicates = [new VisibilityPredicate { SourceQuestionId = 2, Operator = ConditionOperator.Unanswered }] }
+        ];
+
+        var result = _evaluator.Evaluate(graph, Answers(
+            (1, new AnswerValue(null, null, [])),
+            (2, new AnswerValue(null, null, [20]))), false);
+
+        result.VisibleQuestionIds.Should().Contain(1).And.Contain(3).And.NotContain(2).And.NotContain(4);
+        result.HiddenElementReasons.Should().ContainSingle(reason => reason.ElementId == 2 && reason.Code == "element-condition");
+        result.HiddenElementReasons.Should().ContainSingle(reason => reason.ElementId == 4 && reason.Code == "parent-hidden");
+        result.HiddenElementReasons.Should().NotContain(reason => reason.ElementId == 3);
     }
 
     [Fact]

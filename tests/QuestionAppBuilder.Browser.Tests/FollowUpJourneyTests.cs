@@ -57,7 +57,7 @@ public class FollowUpJourneyTests
         }
         await designer.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Applications/Detail/{appId}").ToString());
         (await designer.Locator(".cv-follow-up").CountAsync()).Should().Be(2);
-        (await designer.Locator("form[data-confirm]").CountAsync()).Should().BeGreaterThan(0);
+        (await designer.Locator("a.qab-icon-danger[href*='Deletions/Preview']").CountAsync()).Should().BeGreaterThan(0);
         await designer.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Drafts/{appId}#readiness").ToString());
         await designer.GetByRole(AriaRole.Button, new() { Name = "Publish version 1", Exact = true }).ClickAsync();
         await designer.WaitForURLAsync("**/Applications/Detail/**");
@@ -141,7 +141,11 @@ public class FollowUpJourneyTests
         await form.GetByRole(AriaRole.Button, new() { Name = "Add follow-up question", Exact = true }).ClickAsync();
         await reload;
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        (await page.Locator(".aw-element:visible [data-item-title]").InnerTextAsync()).Should().Be(label);
+        var visibleElement = page.Locator(".aw-element:visible").First;
+        var visibleElementId = await visibleElement.GetAttributeAsync("id");
+        visibleElementId.Should().NotBeNullOrWhiteSpace();
+        (await page.EvaluateAsync<string>("() => location.hash")).Should().Be($"#{visibleElementId}", "the new follow-up must remain the selected target after reload");
+        (await visibleElement.Locator("[data-item-title]").InnerTextAsync()).Should().Be(label);
     }
 
     private static async Task SaveChange(IPage page, Func<Task> action)

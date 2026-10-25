@@ -69,7 +69,7 @@ public class UploadDocumentJourneyTests
         await filler.GetByRole(AriaRole.Button, new() { Name = "Submit application" }).ClickAsync();
         await filler.GetByRole(AriaRole.Heading, new() { Name = "Thank you", Exact = true }).WaitForAsync();
         await filler.GotoAsync(responseUrl);
-        await filler.WaitForURLAsync("**/Receipt");
+        await filler.WaitForURLAsync("**/Submitted");
         var analyst = await (await browser.NewContextAsync(new() { IgnoreHTTPSErrors = true })).NewPageAsync();
         await Login(analyst, host.BaseAddress, "analyst");
         await analyst.GotoAsync(new Uri(host.BaseAddress, "/Reports/Detail/1").ToString());

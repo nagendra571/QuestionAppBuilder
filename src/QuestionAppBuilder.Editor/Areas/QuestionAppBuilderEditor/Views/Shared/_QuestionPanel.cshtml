@@ -39,7 +39,7 @@
     <div class="cv-opts">
         @foreach (var option in options)
         {
-            <div class="cv-opt">
+            <div class="cv-opt" id="manage-option-@option.Id">
                 <span class="cv-radio" aria-hidden="true"></span>
                 <span>@option.Label</span>
                 @if (editable)
@@ -51,11 +51,8 @@
                 {
                     <div class="cv-row-actions" role="group" aria-label="Actions for @option.Label">
                         <a class="qab-icon-action cv-opt-edit" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="option-@option.Id" aria-label="Edit option: @option.Label" title="Edit option: @option.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
-                        <form method="post" asp-controller="Options" asp-action="Remove" asp-route-id="@option.Id" class="cv-opt-remove" data-confirm="@(graphElements.Any(e => e.ParentOptionId == option.Id) ? $"Remove {option.Label} and all of its follow-up questions?" : null)">
-                            <input type="hidden" name="applicationId" value="@applicationId" />
-                            <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                            <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove option: @option.Label" title="Remove option: @option.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
-                        </form>
+                        <a class="qab-icon-action qab-icon-danger cv-opt-remove" aria-label="Remove option: @option.Label" title="Remove option: @option.Label"
+                           asp-controller="Deletions" asp-action="Preview" asp-route-applicationId="@applicationId" asp-route-kind="Option" asp-route-targetId="@option.Id" asp-route-expectedRevision="@revisionValue"><partial name="_ActionIcon" model='@("remove")' /></a>
                     </div>
                 }
             </div>

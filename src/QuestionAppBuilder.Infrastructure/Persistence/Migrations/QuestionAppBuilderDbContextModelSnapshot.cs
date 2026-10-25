@@ -380,6 +380,43 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.ToTable("Elements", (string)null);
                 });
 
+            modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.PreviewScenario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ApplicationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "Name");
+
+                    b.ToTable("PreviewScenarios", (string)null);
+                });
+
             modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.Question", b =>
                 {
                     b.Property<int>("Id")
@@ -1048,6 +1085,15 @@ namespace QuestionAppBuilder.Infrastructure.Persistence.Migrations
                     b.Navigation("ParentOption");
 
                     b.Navigation("VisibilityCondition");
+                });
+
+            modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.PreviewScenario", b =>
+                {
+                    b.HasOne("QuestionAppBuilder.Domain.Entities.Application", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("QuestionAppBuilder.Domain.Entities.Question", b =>

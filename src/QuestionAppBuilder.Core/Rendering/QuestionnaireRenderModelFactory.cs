@@ -25,7 +25,9 @@ public sealed class QuestionnaireRenderModelFactory : IQuestionnaireRenderer
             .Where(c => evaluation.VisibleCategoryIds.Contains(c.Id))
             .Select((category, index) => new RenderCategory(category.Id, category.Name, index,
                 FollowUpStructure.Ordered(category.Elements)
-                    .Where(e => e.Question is null || evaluation.VisibleQuestionIds.Contains(e.Question.Id))
+                    .Where(e => evaluation.VisibleElementIds is { } visibleElements
+                        ? visibleElements.Contains(e.Id)
+                        : e.Question is null || evaluation.VisibleQuestionIds.Contains(e.Question.Id))
                     .Select(element => MapElement(element, answers, category.Elements, Resolve, dynamicTexts)).ToArray()) {
                     Groups = evaluation.Composition?.DefinitionErrors.Count == 0
                         ? (composition.Groups ?? []).Where(g => g is not null && g.CategoryKey == category.LogicalKey).ToArray()

@@ -9,6 +9,52 @@ namespace QuestionAppBuilder.Browser.Tests;
 public sealed class RuntimeJourneyTests
 {
     [Fact]
+    public async Task Conditional_content_appears_after_autosave_and_on_review()
+    {
+        var graph = TestHostFixture.FakeRuntime.BuildGraph();
+        var condition = new VisibilityCondition { Id = 98, ApplicationVersionId = graph.Version.Id, Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { Id = 98, SourceQuestionId = 1, Operator = ConditionOperator.Answered } } };
+        graph.Version.VisibilityConditions.Add(condition);
+        ((List<Element>)graph.Categories[0].Elements).Add(new Element { Id = 98, Kind = ElementKind.Content,
+            Label = "Conditional instructions", SortOrder = 2, VisibilityConditionId = condition.Id, LogicalKey = Guid.NewGuid() });
+        var unansweredCondition = new VisibilityCondition { Id = 97, ApplicationVersionId = graph.Version.Id, Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { Id = 97, SourceQuestionId = 1, Operator = ConditionOperator.Unanswered } } };
+        graph.Version.VisibilityConditions.Add(unansweredCondition);
+        ((List<Element>)graph.Categories[0].Elements).Add(new Element { Id = 97, Kind = ElementKind.Content,
+            Label = "Unanswered-only instructions", SortOrder = 3, VisibilityConditionId = unansweredCondition.Id, LogicalKey = Guid.NewGuid() });
+        var runtime = new TestHostFixture.FakeRuntime { Graph = graph };
+        await using var host = await BrowserTestFixture.StartAsync(runtime);
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await (await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true })).NewPageAsync();
+        await page.GotoAsync(new Uri(host.BaseAddress, "/App/1").ToString());
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start questionnaire" }).ClickAsync();
+        (await page.Locator("main.qab-runtime").InnerTextAsync()).Should().NotContain("Conditional instructions");
+        (await page.Locator("main.qab-runtime").InnerTextAsync()).Should().Contain("Unanswered-only instructions");
+        await page.Locator("[name='Answers[1].Text']").FillAsync("show content");
+        await page.GetByText("Conditional instructions", new() { Exact = true }).WaitForAsync();
+        await page.GetByText("Unanswered-only instructions", new() { Exact = true }).WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await page.Locator("[name='Answers[1].Text']").FillAsync("");
+        await page.GetByText("Conditional instructions", new() { Exact = true }).WaitForAsync(new() { State = WaitForSelectorState.Hidden });
+        await page.Locator("[name='Answers[1].Text']").FillAsync("show content again");
+        await page.GetByText("Conditional instructions", new() { Exact = true }).WaitForAsync();
+
+        for (var question = 1; question <= 5; question++)
+        {
+            if (question > 1) await page.Locator($"[name='Answers[{question}].Text']").FillAsync($"answer {question}");
+            if (question < 5)
+            {
+                await page.GetByRole(AriaRole.Button, new() { Name = "Save & Continue" }).ClickAsync();
+                await page.GetByRole(AriaRole.Heading, new() { Name = $"Category {question + 1}" }).WaitForAsync();
+            }
+        }
+        await page.GetByRole(AriaRole.Button, new() { Name = "Review your answers" }).ClickAsync();
+        var review = page.Locator("main.qab-review");
+        await review.GetByText("Conditional instructions", new() { Exact = true }).WaitForAsync();
+        (await review.InnerTextAsync()).Should().Contain("Conditional instructions").And.NotContain("Unanswered-only instructions");
+    }
+
+    [Fact]
     public async Task Confirmation_total_and_answer_review_receipt_is_responsive_and_stacked()
     {
         var runtime = new TestHostFixture.FakeRuntime

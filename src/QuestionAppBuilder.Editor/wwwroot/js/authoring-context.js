@@ -18,7 +18,8 @@
     };
     try { sessionStorage.setItem(key, JSON.stringify(state)); } catch { /* Storage may be unavailable in an embedded host. */ }
   };
-  window.qabAuthoringContext = { remember };
+  const clear = () => { try { sessionStorage.removeItem(key); } catch { /* Storage may be unavailable in an embedded host. */ } };
+  window.qabAuthoringContext = { remember, clear };
   root.addEventListener('submit', event => { if (!event.defaultPrevented) remember(event.submitter, event.target); });
   let state;
   try { state = JSON.parse(sessionStorage.getItem(key)); sessionStorage.removeItem(key); } catch { state = null; }

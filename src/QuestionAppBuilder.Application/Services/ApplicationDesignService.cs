@@ -162,13 +162,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     public async Task RemoveCategoryAsync(int categoryId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Category, categoryId, g => FindCategory(g, categoryId), ct, expectedRevision);
-        var removedElements = editable.Target.Elements.Select(e => e.Id).ToHashSet();
-        var removedQuestions = editable.Target.Elements.Where(e => e.Question is not null).Select(e => e.Question!.Id).ToHashSet();
-        var removedOptions = editable.Target.Elements.Where(e => e.Question is not null).SelectMany(e => e.Question!.Options).Select(o => o.Id).ToHashSet();
-        var removedQuestionKeys = editable.Target.Elements.Where(e => e.Question is not null).Select(e => e.LogicalKey).ToHashSet();
-        QuestionAppBuilder.Application.Composition.CompositionCloner.RemoveCategory(editable.Graph, editable.Target.LogicalKey, removedQuestionKeys);
-        PruneVisibilityConditions(editable.Graph, removedQuestions, removedOptions, removedElements, new HashSet<int> { editable.Target.Id });
-        editable.Graph.Version.Categories.Remove(editable.Target);
+        DraftDeletionGraph.Apply(editable.Graph, editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -474,9 +468,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     public async Task RemoveElementAsync(int elementId, CancellationToken ct = default, byte[]? expectedRevision = null)
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Element, elementId, g => FindElement(g, elementId), ct, expectedRevision);
-
-        var category = editable.Graph.Categories.Single(c => c.Elements.Contains(editable.Target));
-        RemoveBranch(editable.Graph, category, FollowUpStructure.Branch(editable.Target, category.Elements));
+        DraftDeletionGraph.Apply(editable.Graph, editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -484,19 +476,7 @@ public sealed class ApplicationDesignService : IApplicationDesignService
     {
         var editable = await OpenForEditAsync(ChildEntityKind.Option, optionId, g => FindOption(g, optionId), ct, expectedRevision);
 
-        if (IsOptionReferencedByAnyRule(editable.Graph, editable.Target))
-        {
-            throw new DefinitionValidationException($"Option {optionId} is used by a scoring rule; remove or change the rule first.");
-        }
-
-        var question = FindQuestionContainingOption(editable.Graph, editable.Target)
-            ?? throw new NotFoundException($"Option {optionId} was not found.");
-        var category = editable.Graph.Categories.Single(c => c.Elements.Any(e => ReferenceEquals(e.Question, question)));
-        var removed = category.Elements.Where(e => e.ParentOptionId == editable.Target.Id)
-            .SelectMany(e => FollowUpStructure.Branch(e, category.Elements)).Distinct().ToArray();
-        RemoveBranch(editable.Graph, category, removed);
-        PruneVisibilityConditions(editable.Graph, new HashSet<int>(), new HashSet<int> { editable.Target.Id }, new HashSet<int>(), new HashSet<int>());
-        question.Options.Remove(editable.Target);
+        DraftDeletionGraph.Apply(editable.Graph, editable.Target);
         await _repository.SaveChangesAsync(ct);
     }
 
@@ -612,31 +592,6 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         graph.Version.RevisionNonce = Guid.NewGuid();
     }
 
-    private static void PruneVisibilityConditions(ApplicationVersionGraph graph, ISet<int> removedQuestionIds, ISet<int> removedOptionIds,
-        ISet<int> removedElementIds, ISet<int> removedCategoryIds)
-    {
-        var conditionIds = graph.VisibilityConditions
-            .Where(condition => condition.Predicates.Any(predicate => removedQuestionIds.Contains(predicate.SourceQuestionId)
-                || predicate.Options.Any(option => removedOptionIds.Contains(option.QuestionOptionId))))
-            .Select(condition => condition.Id).ToHashSet();
-        conditionIds.UnionWith(graph.Categories.Where(category => removedCategoryIds.Contains(category.Id) && category.VisibilityConditionId is not null)
-            .Select(category => category.VisibilityConditionId!.Value));
-        conditionIds.UnionWith(graph.Categories.SelectMany(category => category.Elements)
-            .Where(element => removedElementIds.Contains(element.Id) && element.VisibilityConditionId is not null)
-            .Select(element => element.VisibilityConditionId!.Value));
-        if (conditionIds.Count == 0) return;
-        foreach (var category in graph.Categories)
-        {
-            if (category.VisibilityConditionId is int categoryConditionId && conditionIds.Contains(categoryConditionId))
-            { category.VisibilityConditionId = null; category.VisibilityCondition = null; }
-            foreach (var element in category.Elements)
-                if (element.VisibilityConditionId is int elementConditionId && conditionIds.Contains(elementConditionId))
-                { element.VisibilityConditionId = null; element.VisibilityCondition = null; }
-        }
-        if (graph.Version.VisibilityConditions is { } conditions)
-            conditions.RemoveAll(condition => conditionIds.Contains(condition.Id));
-    }
-
     private async Task<int> GetNextVersionNumberAsync(ApplicationEntity application, int sourceVersionNumber, CancellationToken ct)
     {
         var maxExisting = sourceVersionNumber;
@@ -706,40 +661,6 @@ public sealed class ApplicationDesignService : IApplicationDesignService
         }
 
         return null;
-    }
-
-    private static Question? FindQuestionContainingOption(ApplicationVersionGraph graph, QuestionOption option)
-    {
-        foreach (var question in graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question))
-        {
-            if (question is not null && question.Options.Contains(option))
-            {
-                return question;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsOptionReferencedByAnyRule(ApplicationVersionGraph graph, QuestionOption option)
-    {
-        foreach (var question in graph.Categories.SelectMany(c => c.Elements).Select(e => e.Question))
-        {
-            if (question is null)
-            {
-                continue;
-            }
-
-            foreach (var rule in question.Rules)
-            {
-                if (rule.Options.Any(o => o.QuestionOptionId == option.Id))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private static Question? FindQuestionContainingRule(ApplicationVersionGraph graph, ScoringRule rule)
@@ -815,17 +736,6 @@ public sealed class ApplicationDesignService : IApplicationDesignService
             copies[i].VisibilityCondition = condition;
         }
         return copies;
-    }
-
-    private static void RemoveBranch(ApplicationVersionGraph graph, Category category, IReadOnlyCollection<Element> removed)
-    {
-        var questions = removed.Where(e => e.Question is not null).Select(e => e.Question!).ToArray();
-        QuestionAppBuilder.Application.Composition.CompositionCloner.RemoveElements(graph,
-            removed.Select(e => e.LogicalKey).ToHashSet());
-        PruneVisibilityConditions(graph, questions.Select(q => q.Id).ToHashSet(), questions.SelectMany(q => q.Options).Select(o => o.Id).ToHashSet(),
-            removed.Select(e => e.Id).ToHashSet(), new HashSet<int>());
-        foreach (var element in removed) { element.ParentOption = null; element.ParentOptionId = null; category.Elements.Remove(element); }
-        NormalizeElements(category);
     }
 
     private static Element CloneElement(Element source, int sortOrder)

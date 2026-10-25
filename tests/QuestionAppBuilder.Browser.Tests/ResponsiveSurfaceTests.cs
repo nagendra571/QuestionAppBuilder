@@ -51,11 +51,11 @@ public sealed class ResponsiveSurfaceTests
             await page.GotoAsync(new Uri(host.BaseAddress, $"/ConfigureApp/Applications/Detail/{id}").ToString());
             var detailDimensions = await page.EvaluateAsync<int[]>("[document.documentElement.scrollWidth, innerWidth]");
             detailDimensions[0].Should().BeLessThanOrEqualTo(detailDimensions[1], $"detail page must not spill at {width}px");
-            var removeButtons = page.Locator(".cv-cact button.cv-danger, .cv-el-remove button");
-            (await removeButtons.CountAsync()).Should().BeGreaterThan(0);
-            for (var index = 0; index < await removeButtons.CountAsync(); index++)
+            var deletionPreviewLinks = page.Locator("a.qab-icon-danger[href*='Deletions/Preview']");
+            (await deletionPreviewLinks.CountAsync()).Should().BeGreaterThan(0);
+            for (var index = 0; index < await deletionPreviewLinks.CountAsync(); index++)
             {
-                var bounds = await removeButtons.Nth(index).BoundingBoxAsync();
+                var bounds = await deletionPreviewLinks.Nth(index).BoundingBoxAsync();
                 bounds.Should().NotBeNull();
                 bounds!.X.Should().BeGreaterThanOrEqualTo(0);
                 (bounds.X + bounds.Width).Should().BeLessThanOrEqualTo(width);

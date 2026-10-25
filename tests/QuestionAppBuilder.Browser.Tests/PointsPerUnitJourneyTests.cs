@@ -114,6 +114,22 @@ public sealed class PointsPerUnitJourneyTests
         await answer.FillAsync("9");
         await designer.GetByRole(AriaRole.Button, new() { Name = "Update preview and scoring", Exact = true }).ClickAsync();
         await designer.Locator("[data-preview-result]").GetByText("Total score: 20", new() { Exact = true }).WaitForAsync();
+        var scoreReport = designer.Locator("[data-preview-scoring-inspector]");
+        await scoreReport.Locator(":scope > details > summary").ClickAsync();
+        var questionScoring = scoreReport.GetByText("Question scoring", new() { Exact = true });
+        await questionScoring.ClickAsync();
+        await scoreReport.GetByText("Requested amount: 20 points", new() { Exact = true }).ClickAsync();
+        await scoreReport.GetByText("Rule 1 · Numeric Range", new() { Exact = true }).ClickAsync();
+        var scoreText = await scoreReport.InnerTextAsync();
+        scoreText.Should().Contain("Units: 9; rate: 3; cap: 20 (reached)")
+            .And.Contain("contributed 20 points");
+        foreach (var width in new[] { 1440, 375 })
+        {
+            await designer.SetViewportSizeAsync(width, 900);
+            (await designer.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue();
+            await designer.ScreenshotAsync(new() { Path = Path.Combine(Path.GetTempPath(), $"qab-scoring-question-{width}.png"), FullPage = true });
+        }
+        await designer.SetViewportSizeAsync(1440, 900);
 
         await designer.GetByRole(AriaRole.Link, new() { Name = "Review & publish", Exact = true }).ClickAsync();
         await designer.Locator("#readiness:visible").WaitForAsync();

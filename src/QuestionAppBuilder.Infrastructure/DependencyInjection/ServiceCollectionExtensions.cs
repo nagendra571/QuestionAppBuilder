@@ -50,6 +50,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDraftService>(provider => new DraftService(provider.GetRequiredService<IDbContextFactory<QuestionAppBuilderDbContext>>(),
             provider.GetRequiredService<IDefinitionEvaluator>(), provider.GetService<IResponseEmailSender>() is not UnconfiguredResponseEmailSender,
             provider.GetRequiredService<ITrustedActorContext>()));
+        services.AddScoped<IDraftDeletionCoordinator, DraftDeletionCoordinator>();
+        services.AddScoped<IPreviewScenarioRepository, PreviewScenarioRepository>();
+        services.AddScoped<IPreviewScenarioService, PreviewScenarioService>();
         services.TryAddScoped<IRespondentContext, UnconfiguredRespondentContext>();
         services.TryAddScoped<IResponseEmailSender, UnconfiguredResponseEmailSender>();
         services.TryAddScoped<IResponseAccessLinkBuilder, UnconfiguredResponseAccessLinkBuilder>();

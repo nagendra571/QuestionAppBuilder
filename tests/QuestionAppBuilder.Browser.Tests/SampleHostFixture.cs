@@ -250,6 +250,177 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> SeedContentVisibilityPreviewApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var source = new Question { AnswerType = AnswerType.Textbox, IsRequired = true };
+        var sourceElement = new Element { Kind = ElementKind.Question, Label = "Visibility trigger", SortOrder = 1, Question = source };
+        var contentElement = new Element { Kind = ElementKind.Content, Label = "Conditional preview instructions", SortOrder = 2 };
+        var dynamicContentElement = new Element { Kind = ElementKind.Content, Label = "Dynamic preview instructions", SortOrder = 3 };
+        var firstCategory = new Category { Name = "First category", SortOrder = 1, Elements = { sourceElement, contentElement, dynamicContentElement } };
+        var condition = new VisibilityCondition { Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { SourceQuestion = source, Operator = ConditionOperator.Answered } } };
+        contentElement.VisibilityCondition = condition;
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now, DisplayName = "Content visibility preview",
+            NavigationMode = NavigationMode.Sequential,
+            CompositionJson = new CompositionDefinition
+            {
+                DynamicText = new DynamicTextDefinition
+                {
+                    Templates = [new DynamicTemplate
+                    {
+                        Slot = DynamicTextSlot.ElementLabel, OwnerKey = dynamicContentElement.LogicalKey, HideWhenUnavailable = true,
+                        Parts = [new DynamicTextPart { Kind = DynamicPartKind.Value,
+                            Source = new DynamicSource { Kind = DynamicSourceKind.Question, Key = sourceElement.LogicalKey }, Fallback = "" }]
+                    }]
+                }
+            }.ToJson(),
+            Categories = { firstCategory,
+                new Category { Name = "Second category", SortOrder = 2, Elements = { new Element { Kind = ElementKind.Question,
+                    Label = "Finish preview", SortOrder = 1, Question = new Question { AnswerType = AnswerType.Textbox, IsRequired = true } } } } },
+            VisibilityConditions = { condition }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Content visibility preview " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Content visibility type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true,
+            Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
+    public async Task<(int ApplicationId, Guid RuleId, Guid CombinedScoreRuleId)> SeedCombinedValidationPreviewApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var amount = new Question { AnswerType = AnswerType.Number, IsRequired = false };
+        var amountElement = new Element { Kind = ElementKind.Question, Label = "Requested amount", SortOrder = 1, Question = amount };
+        var category = new Category { Name = "Funding", SortOrder = 1, Elements = { amountElement } };
+        var rule = new CompositionRule
+        {
+            Name = "Minimum amount", CategoryKey = category.LogicalKey, TargetQuestionKey = amountElement.LogicalKey,
+            Kind = RulePurpose.Validation, Message = "Increase the requested amount.", ShowWhileAnswering = false,
+            Checks =
+            [
+                new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = amountElement.LogicalKey },
+                    Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 0 } },
+                new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = amountElement.LogicalKey },
+                    Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 100 } },
+                new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = amountElement.LogicalKey },
+                    Comparison = Comparison.LessThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 1000 } }
+            ]
+        };
+        var scoreRule = new CompositionRule
+        {
+            Name = "First funding award", CategoryKey = category.LogicalKey, TargetQuestionKey = amountElement.LogicalKey,
+            Kind = RulePurpose.Score, Points = 5, BandGroup = "Funding cap",
+            Checks = [new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = amountElement.LogicalKey },
+                Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 10 } }]
+        };
+        var suppressedRule = new CompositionRule
+        {
+            Name = "Second funding award", CategoryKey = category.LogicalKey, TargetQuestionKey = amountElement.LogicalKey,
+            Kind = RulePurpose.Score, Points = 3, BandGroup = " funding CAP ",
+            Checks = [new ValueCheck { Left = new ValueSource { Kind = SourceKind.Question, Key = amountElement.LogicalKey },
+                Comparison = Comparison.GreaterThanOrEqual, Right = new ValueSource { Kind = SourceKind.Constant, Value = 10 } }]
+        };
+        var composition = new CompositionDefinition { Rules = [rule, scoreRule, suppressedRule] };
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = DateTime.UtcNow,
+            DisplayName = "Combined validation preview", NavigationMode = NavigationMode.Sequential,
+            CompositionJson = composition.ToJson(), Categories = { category }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Combined validation preview " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Combined validation type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = DateTime.UtcNow, UpdatedUtc = DateTime.UtcNow, AcceptNewResponses = true,
+            AcceptSubmissions = true, Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return (application.Id, rule.Id, scoreRule.Id);
+    }
+
+    public async Task<int> SeedAllHiddenPreviewApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var source = new Question { AnswerType = AnswerType.Textbox, IsRequired = true };
+        var questionElement = new Element { Kind = ElementKind.Question, Label = "Hidden question", SortOrder = 1, Question = source };
+        var contentElement = new Element { Kind = ElementKind.Content, Label = "Hidden content", SortOrder = 2 };
+        var category = new Category { Name = "Hidden section", SortOrder = 1, Elements = { questionElement, contentElement } };
+        var condition = new VisibilityCondition { Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { SourceQuestion = source, Operator = ConditionOperator.Answered } } };
+        category.VisibilityCondition = condition;
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = DateTime.UtcNow,
+            DisplayName = "All hidden preview", NavigationMode = NavigationMode.Sequential,
+            Categories = { category }, VisibilityConditions = { condition }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "All hidden preview " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "All hidden preview type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = DateTime.UtcNow, UpdatedUtc = DateTime.UtcNow,
+            AcceptNewResponses = true, AcceptSubmissions = true, Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
+    public async Task<int> SeedDependencyInspectorApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var now = DateTime.UtcNow;
+        var question = new Question { AnswerType = AnswerType.Number, IsRequired = true };
+        var source = new Element { Kind = ElementKind.Question, Label = "Annual income", SortOrder = 1, Question = question };
+        var note = new Element { Kind = ElementKind.Content, Label = "Income note", SortOrder = 2 };
+        var category = new Category { Name = "Applicant", SortOrder = 1, Elements = { source, note } };
+        var condition = new VisibilityCondition { Junction = ConditionJunction.All,
+            Predicates = { new VisibilityPredicate { SourceQuestion = question, Operator = ConditionOperator.Answered } } };
+        note.VisibilityCondition = condition;
+        var calculationId = Guid.NewGuid(); var variableId = Guid.NewGuid();
+        var composition = new CompositionDefinition
+        {
+            Groups = [new QuestionGroup { Name = "Applicant data", CategoryKey = category.LogicalKey, Rows = [new GroupRow { QuestionKey = source.LogicalKey }] }],
+            Calculations = [new CalculatedField { Id = calculationId, Name = "Income subtotal", CategoryKey = category.LogicalKey,
+                Sources = [new ValueSource { Kind = SourceKind.Question, Key = source.LogicalKey }] }],
+            Rules = [new CompositionRule { Name = "Income review", CategoryKey = category.LogicalKey, Kind = RulePurpose.Validation,
+                Checks = [new ValueCheck { Left = new ValueSource { Kind = SourceKind.Calculation, Key = calculationId }, Comparison = Comparison.GreaterThan,
+                    Right = new ValueSource { Kind = SourceKind.Constant, Value = 0 } }] }],
+            DynamicText = new DynamicTextDefinition
+            {
+                Variables = [new DynamicVariable { Id = variableId, Name = "Income display", Sources = [new DynamicSource { Kind = DynamicSourceKind.Calculation, Key = calculationId }] }],
+                Templates = [new DynamicTemplate { Slot = DynamicTextSlot.ElementLabel, OwnerKey = note.LogicalKey,
+                    Parts = [new DynamicTextPart { Kind = DynamicPartKind.Value, Source = new DynamicSource { Kind = DynamicSourceKind.Variable, Key = variableId } }] }]
+            }
+        };
+        var version = new ApplicationVersion { VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = now,
+            DisplayName = "Dependency inspector test", NavigationMode = NavigationMode.Sequential,
+            CompositionJson = composition.ToJson(), Categories = { category }, VisibilityConditions = { condition } };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Dependency inspector " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Dependency type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = now, UpdatedUtc = now, AcceptNewResponses = true, AcceptSubmissions = true, Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
     public async Task<int> SeedCompositionApplicationAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
@@ -403,6 +574,40 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         return application.Id;
     }
 
+    public async Task<int> SeedDeletionPreviewApplicationAsync()
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        var source = new Element { Kind = ElementKind.Question, Label = "Deletion source", SortOrder = 1,
+            Question = new Question { AnswerType = AnswerType.Number, IsRequired = true } };
+        var dependent = new Element { Kind = ElementKind.Question, Label = "Review question", SortOrder = 1,
+            Question = new Question { AnswerType = AnswerType.Number, IsRequired = true } };
+        var sourceCategory = new Category { Name = "Source section", SortOrder = 1, Elements = { source } };
+        var reviewCategory = new Category { Name = "Review section", SortOrder = 2, Elements = { dependent } };
+        var composition = new CompositionDefinition
+        {
+            Calculations = [new CalculatedField { Name = "Source total", CategoryKey = reviewCategory.LogicalKey,
+                Sources = [new ValueSource { Kind = SourceKind.Question, Key = source.LogicalKey }] }]
+        };
+        var version = new ApplicationVersion
+        {
+            VersionNumber = 1, Status = VersionStatus.Draft, CreatedUtc = DateTime.UtcNow,
+            DisplayName = "Deletion preview fixture", NavigationMode = NavigationMode.Sequential,
+            ResultVisibility = ResultVisibility.Total, CompositionJson = composition.ToJson(),
+            Categories = { sourceCategory, reviewCategory }
+        };
+        var application = new QuestionAppBuilder.Domain.Entities.Application
+        {
+            Name = "Deletion preview " + Guid.NewGuid().ToString("N"),
+            ApplicationType = new ApplicationType { Name = "Deletion preview type " + Guid.NewGuid().ToString("N"), SortOrder = 1 },
+            CreatedUtc = DateTime.UtcNow, UpdatedUtc = DateTime.UtcNow, AcceptNewResponses = true,
+            AcceptSubmissions = true, Versions = { version }
+        };
+        db.Applications.Add(application);
+        await db.SaveChangesAsync();
+        return application.Id;
+    }
+
     public async Task<int> SeedPerformanceDraftApplicationAsync()
     {
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
@@ -503,6 +708,14 @@ internal sealed class SampleHostFixture : IAsyncDisposable
         var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
         await using var db = new QuestionAppBuilderDbContext(options);
         return await db.Submissions.CountAsync();
+    }
+
+    public async Task<string> GetDraftDisplayNameAsync(int applicationId)
+    {
+        var options = new DbContextOptionsBuilder<QuestionAppBuilderDbContext>().UseSqlServer(_databaseConnection).Options;
+        await using var db = new QuestionAppBuilderDbContext(options);
+        return await db.ApplicationVersions.Where(version => version.ApplicationId == applicationId && version.Status == VersionStatus.Draft)
+            .Select(version => version.DisplayName).SingleAsync();
     }
 
     public async Task<(bool AcceptNewResponses, bool AcceptSubmissions, int AuditCount, string? ActorKey)> ReadAvailabilityAsync(int applicationId)

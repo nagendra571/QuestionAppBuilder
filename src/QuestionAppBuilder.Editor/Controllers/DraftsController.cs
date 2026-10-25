@@ -45,6 +45,27 @@ public sealed class DraftsController : EditorControllerBase
         catch (NotFoundException) { return NotFound(); }
     }
 
+    [HttpGet]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> Dependencies(int applicationId, Guid elementId, string? expectedRevision, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(expectedRevision)) return BadRequest();
+        byte[] requestedRevision;
+        try { requestedRevision = Convert.FromBase64String(expectedRevision); }
+        catch (FormatException) { return BadRequest(); }
+        try
+        {
+            var snapshot = await _drafts.GetAsync(applicationId, ct);
+            if (!snapshot.Revision.AsSpan().SequenceEqual(requestedRevision))
+                return Conflict(new { message = "The saved draft changed. Save or reload before checking references." });
+            var exists = snapshot.Definition.Categories.SelectMany(category => category.Elements).Any(element => element.LogicalKey == elementId);
+            if (!exists) return NotFound();
+            var report = DefinitionDependencyInspector.Inspect(snapshot.Definition, elementId);
+            return Json(new DefinitionDependencyResponse(Convert.ToBase64String(snapshot.Revision), report));
+        }
+        catch (NotFoundException) { return NotFound(); }
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Save(int applicationId, [Bind(Prefix = "")] DraftWorkspaceInput input, CancellationToken ct)
@@ -145,3 +166,5 @@ public sealed class DraftsController : EditorControllerBase
         return graph;
     }
 }
+
+public sealed record DefinitionDependencyResponse(string Revision, DefinitionDependencyReport Report);

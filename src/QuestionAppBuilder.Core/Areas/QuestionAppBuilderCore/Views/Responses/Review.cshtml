@@ -12,8 +12,13 @@
     @foreach (var category in Model.Questionnaire.Categories)
     {
         <section class="qab-review-category"><h2>@category.Name</h2>
-            @foreach (var element in category.Elements.Where(e => e.Question is not null))
+            @foreach (var element in category.Elements.Where(e => !e.IsHidden))
             {
+                if (element.Question is null)
+                {
+                    @await Html.PartialAsync("~/Areas/QuestionAppBuilderCore/Views/Shared/_RenderElement.cshtml", element)
+                    continue;
+                }
                 var question = element.Question!;
                 var answer = question.Value;
                 var shownValue = answer?.Text ?? answer?.Number?.ToString(System.Globalization.CultureInfo.InvariantCulture);

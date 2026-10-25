@@ -113,15 +113,21 @@ Default entry points:
 | Application management | `/ConfigureApp/Applications` |
 | Application detail | `/ConfigureApp/Applications/Detail/{applicationId}` |
 | Authoring workspace | `/ConfigureApp/Drafts/{applicationId}` |
-| Question configuration | `/ConfigureApp/Composition/Index/{applicationId}` |
+| Groups, rules & dynamic text | `/ConfigureApp/Composition/Index/{applicationId}` |
 | Existing filler response | `/App/Responses/{responseId}`; category navigation may add `?category=...` |
 | Reporting | `/Reports` when the host registers the Reports surface and grants access |
 
-Use the host's displayed links for creation, starting a response, and reporting detail rather than guessing action URLs. The application detail page provides **Open authoring workspace**. The workspace currently links to Question configuration using the label **Groups & calculations**; the destination heading is **Question configuration**.
+Use the host's displayed links for creation, starting a response, and reporting detail rather than guessing action URLs. The application detail page provides **Open authoring workspace**. The authoring workspace and composition builder share a two-area navigation: **Questionnaire** and **Groups, rules & dynamic text**. The composition page keeps a **Back to application** link for application context.
 
-Workspace areas include Questionnaire, Settings, Visibility, Scoring guide, Preview, and Review & publish. Select a category/question in the outline to focus its editor. Question configuration contains **Question groups**, **Calculated fields**, **Combined rules**, and **Dynamic text**.
+Workspace task tabs include Questionnaire, Settings, Visibility, Scoring guide, Preview, and Review & publish. Select a category/question in the outline to focus its editor. **Groups, rules & dynamic text** contains **Question groups**, **Calculated fields**, **Combined rules**, and **Dynamic text**.
 
-The workspace saves edits asynchronously; wait for its successful save status before changing pages. Structural actions also use draft revision protection. Question configuration has an explicit **Save configuration** action. Save there, verify success, then reload once to verify persistence. Do not assume unsaved composition changes are stored because the ordinary workspace autosaves.
+Use workspace search to find configuration in the current application's saved draft. Search authored names/text or a referenced item's name; results distinguish direct reference matches and link to the relevant settings. This includes questions/content, categories, answer options, scoring and visibility rules, groups, calculations, combined rules, and dynamic values/templates. Search first saves pending workspace edits and rejects results if the draft or query changes while the request is loading. It does not search respondent answers, historical submissions, or other applications. Composition still requires **Save configuration** before leaving that page.
+
+Search is case-insensitive and accepts up to 200 characters. Results are limited to 50 with a total count; narrow the query when more items match. Reference matches describe direct saved configuration, not every transitive dependency or runtime outcome; use **Used by and related items** for dependency investigation. An incomplete-configuration warning means some settings could not be searched reliably, not that no references exist.
+
+Each question or content block has a lazy **Used by and related items** disclosure. Opening it first flushes workspace edits, then reads the same saved draft revision shown by the editor. The authorized `GET /ConfigureApp/Drafts/{applicationId}/Dependencies?elementId={logicalKey}&expectedRevision={base64Revision}` endpoint reads one saved snapshot, returns `409` for a stale revision, and `404` for an item outside that draft. It lists direct and transitive references such as visibility conditions, groups, calculations, combined rules, dynamic text, owned help/label templates, and follow-up relationships. A **Possible target** entry means a category-level combined rule may attach to a question when it is first visible; the inspector does not decide which question is visible at runtime. The list describes configured references, not every effect of deleting or changing an item. If another edit races the read, the disclosure discards the stale result and refreshes when reopened.
+
+The questionnaire workspace saves edits asynchronously. An ordinary primary-click on a same-origin, current-tab link within the authoring surface clears the debounce and waits for the latest save; modified clicks, downloads, external links, and new-tab links keep their native behavior. A save conflict keeps the workspace and edited values available for reconciliation; a transient network failure can be retried. Structural actions also use draft revision protection. **Groups, rules & dynamic text** has a separate **Save configuration** action and does not autosave, because incomplete composition definitions can fail validation. Its persistent helper explains this. A browser warning protects unsaved composition edits when leaving; correct validation issues, then save and verify the success status before reloading.
 
 If a conflict says the draft changed elsewhere, retain the intended edit, reload the latest draft, reconcile, and retry. Never overwrite a newer revision with a previously captured full form. Avoid editing one application from concurrent tabs or agents.
 
@@ -154,7 +160,11 @@ For options, supply clear labels and meaningful values. Rules reference option i
 
 ### Editing and organization
 
-The detail/workspace surfaces support editing, removal, ordering, and duplication of categories/elements and question settings. Repeated actions may be icons with accessible names/tooltips. Follow-up branches move/copy with their owners. Deleting a parent or option can delete its branch; inspect the affected subtree rather than treating it as a single-row removal.
+The detail/workspace surfaces support editing, removal, ordering, and duplication of categories/elements and question settings. Repeated actions may be icons with accessible names/tooltips. Follow-up branches move/copy with their owners.
+
+On application details, removing a draft category, question/content block, or option opens a deletion preview. Review the named removals, automatic changes, references needing repair, and blockers before confirming. Opening the preview or choosing Cancel makes no changes. Confirmation applies only to the exact draft revision reviewed; if another author edits or publishes it, reload and review the impact again.
+
+Deleting a parent or option can remove its full follow-up branch. Removing a visibility source or an item that owns a condition can remove that entire condition and clear it from surviving items; other category, parent, and dynamic visibility rules still apply. Category deletion also removes category-owned composition. Some surviving calculation, rule, and dynamic-text references remain and must be repaired using the linked editor sections. An option used by a question scoring rule cannot be removed until that rule is changed or removed. Incomplete impact inspection blocks confirmation. Existing published definitions and respondent answers are not deleted by this draft-only flow; run readiness checks before publishing the edited draft.
 
 Duplication is a starting point, not verification. Check copied wording, option ownership, visibility sources, external references, scoring, and dynamic templates. Internal references are remapped by supported copy operations; external dependencies still require review.
 
@@ -177,7 +187,9 @@ Example: condition “Large request” uses Requested grant amount **GreaterThan
 
 With one predicate, All and Any produce the same result. With two predicates—amount > 50000 and experience < 2—All requires both; Any requires either. Use exact boundary operators: `>` excludes 50000; `>=` includes it.
 
-Arrange visibility dependencies before dependent content/questions; let readiness validation catch invalid references or dependency order. Prefer category/question visibility for supported branching. **Independent visibility assigned to a plain content element has an inherited runtime limitation in this implementation; do not rely on it without a specific verification.** Use a conditional category or a dynamic content template's hide-until-available behavior where appropriate.
+Arrange visibility dependencies before dependent content/questions; let readiness validation catch invalid references or dependency order. Independent visibility on ordinary content elements is evaluated alongside question visibility and is respected in the live questionnaire, preview, review, and frozen submitted application. A content element in a hidden category remains hidden. Dynamic content labels that are configured to hide when a value is unavailable remain hidden even when their visibility condition passes.
+
+The **Show when** help for a content block lists the saved condition's checks and explains that both category visibility and the block's own condition apply. Dynamic text using **Hide when unavailable** can also hide that content until its inserted values are available.
 
 ### Other and nested inputs
 
@@ -220,7 +232,7 @@ For answer `n`, eligible award is `n × rate`, capped by MaximumPoints when set.
 
 Example: “Participants served,” minimum 0, whole numbers, rate 2, cap 30: 8 earns 16 points; 20 earns 30 points. If question maximum is 16, answer 20 is invalid regardless of the score cap.
 
-Per-rule maximum award is 1,000,000. Invalid, negative, fractional, hidden, or absent answers do not receive a per-unit award; there is no implicit rounding. Additive and FirstMatch still apply. A broad first fixed rule can prevent a later per-unit rule from ever running in FirstMatch mode.
+Per-rule maximum award is 1,000,000. Invalid, negative, fractional, hidden, or absent answers do not receive a per-unit award; there is no implicit rounding. Additive and FirstMatch still apply. A broad first fixed rule can prevent a later per-unit rule from contributing in FirstMatch mode. The engine evaluates later rules for its trace, but only the first matching rule contributes.
 
 ## 9. Question groups and calculated fields
 
@@ -251,6 +263,8 @@ Combined rules use the numeric sources above and comparisons `=`, `!=`, `>`, `>=
 
 Each rule has a category, optional target question, purpose, optional applicability conditions, and one or more checks. **All applicability conditions must pass** before the rule runs. Checks use **all** or **any**, as configured.
 
+In the **Combined rules** editor, each collapsed card gives a short outcome; open it for the target, applicability conditions, named source comparisons, validation timing, or scoring band behavior. The descriptions reflect configuration only; they do not evaluate the current response. Missing references and incomplete checks or point values are labeled incomplete. Blank or hidden numeric answers read as 0, while comparisons against an unavailable calculation are false.
+
 - **Validation:** checks express the state that is valid. When applicable checks fail, show the configured error message.
 - **Score:** when applicable checks pass, award the configured fixed points.
 
@@ -261,6 +275,16 @@ Attach validation to the category containing the latest dependency, or a later c
 Both validation and score rules require a visible target question to execute. A category containing only content/calculated fields has no default target; selecting “First visible question” there cannot enforce a rule or award points. Place the rule in an appropriate category containing an applicable question.
 
 The target controls error placement/applicability, not which source edit triggers reevaluation. A rule using three source answers can be evaluated after any of those answers changes; it does not only run when typing into its target.
+
+### Guided recipe: Limit a combined total
+
+In **Groups, rules & dynamic text**, open **Limit a combined total** to build a total-limit rule without configuring its calculation and comparison separately. Select two or more numeric questions, enter the maximum, choose the question that receives the error, and supply the error message and live-feedback preference. The target question determines the rule's category; selected sources must be in that category or an earlier category.
+
+Review the proposed names, sources, maximum, error placement and timing before adding the recipe. It adds one Sum calculation and one combined validation rule requiring that total to be less than or equal to the maximum. The calculated total is displayed to respondents in the target category and on review, using the proposed calculation name; it is not a hidden helper. Adding stages both items in the current editor; **Save configuration** persists them together using the existing draft revision check. Existing configuration remains available, and the generated calculation/rule can subsequently be edited in the advanced controls.
+
+Recipe inputs that have not been added are separate from the configuration. Add them or discard the recipe before saving; discarding recipe inputs does not discard other configuration edits. Changing recipe inputs invalidates the proposal and requires reviewing it again. Maximum values that cannot retain their exact value in this browser editor or exceed the supported decimal range are rejected rather than silently rounded.
+
+The recipe preserves existing evaluation behavior: unanswered or hidden numeric inputs contribute zero, and a hidden error-target question makes the rule inapplicable. Displayed totals use the existing formatting of up to two decimal places; validation compares the full numeric value. It does not make source questions required. Configure required-answer settings separately where needed, and test below, equal to, and above the maximum, including hidden/missing inputs and the chosen error target.
 
 ### Live feedback and navigation
 
@@ -420,7 +444,25 @@ Use one writer per application. Parallel research/review can be efficient; paral
 ## 15. Acceptance tests for every configured application
 
 Choose cases based on the requirement, with explicit expected outcomes. A successful save or a screenshot of the editor is not proof that the application behaves correctly.
+In the workspace's **Preview** tab, evaluate the draft and open **Hidden questions and content** to inspect items excluded from the preview. Each entry names the question/content and the controlling reason: its category condition, its own condition, an unavailable/hidden follow-up parent, an unselected parent option, or unavailable dynamic content. Configuration links open the relevant settings. The report follows actual evaluation order; when a category or parent hides an item, its later conditions are not evaluated. A displayed condition summary describes its configuration, not a truth result for every predicate.
 
+Preview saves pending workspace edits before evaluating and checks the saved revision. Editing the draft or the preview answers makes the explanation stale; evaluate again to refresh it. These diagnostics are designer-only and do not alter published definitions, respondent answers, scores, or frozen submitted views. A custom evaluator without visibility trace data reports explanations unavailable rather than guessed reasons.
+Open **Failed combined validation rules** in preview to inspect the combined rules that failed during that evaluation. The inspector shows the rule requirement, values used by the checks that actually ran, input effects propagated through calculations, and the target question/configured message. All/Any checks short-circuit; skipped checks are identified rather than evaluated again for diagnostics. Missing or hidden numeric inputs keep the platform's existing zero behavior, option selections read as one or zero, and an unavailable calculated value makes a comparison fail.
+
+The inspector separates configured live-message timing from the preview's diagnostic view, which includes all evaluated failures. A question displays its first field error, so another error can occupy the target's visible message slot. The rule link opens that exact rule in **Combined rules**; opening it does not save a change. These diagnostic results refresh with preview and are not stored in submitted snapshots. No failed rules in this evaluation does not mean that every rule ran or that definition readiness passed.
+
+Open **Scoring explanations** to inspect named question rules and combined scoring rules alongside the preview total. Question rules show their actual eligibility and contribution, including the rule that wins under FirstMatch. Later matching rules can be evaluated without contributing; a matching zero-point rule still wins. Per-unit explanations show the number used, rate, cap and actual award without changing missing-answer or whole-number requirements. Combined scoring explains target applicability, conditions and checks that actually ran, and the earlier matching rule in the same category/band when an award is suppressed. Skipped checks are not presented as failed checks.
+
+Use each rule's edit link to inspect its configuration. Question points include question rules only; combined awards contribute to category and overall totals. A custom scorer without diagnostics reports explanations unavailable rather than inferring its decisions from the default evaluator. Configuration failures can make combined diagnostics unavailable while valid question awards remain visible. Editing configuration or preview answers invalidates scoring explanations with the other preview reports; evaluate again to refresh them. These details are not stored in historical submissions.
+### Reusable preview scenarios
+
+Use **Reusable preview scenarios** in Preview to retain synthetic inputs with a name and explicit expected outcomes. Choose expected valid/invalid answers, expected total points, or both. Enter the expectation from the requirement; saving a scenario does not automatically accept today's result as correct. Scenarios are shared with other designers of the application and survive creation of a new draft from a published version.
+
+Save the current preview answers, then run one scenario or all saved scenarios against the current saved draft. Runs perform complete-answer validation, including required answers; ordinary interactive preview can be less strict while you are entering answers. A result passes only when each specified expectation matches. Definition errors, deleted/replaced inputs, changed answer types, or unsupported saved data produce **Needs repair**, even when the expected answer result is invalid. These cases never silently drop missing inputs or pass because configuration is broken.
+
+Loading answers replaces the entire current preview answer set. **Edit name/expectation** preserves the saved inputs, even when the interactive preview contains different answers. To change an input set, load and modify it, clear the scenario form to start a new case, and save a replacement before deleting the old case. Cases with broken references cannot be partially loaded; save a replacement from the current preview, then retire the broken case. Running cases does not load them into the interactive preview, create respondent responses/submissions, publish a definition, or change the saved cases. Case updates/deletions use their own concurrency token; saving also checks the current draft revision. After an edit, save and run again; prior results do not certify the new revision.
+
+The first version supports validity and total-score expectations, not visibility assertions or expected error messages. File inputs cannot be saved except as empty inputs, which can test a missing required upload. Calculations retain current engine semantics and date-dependent values use evaluation time; scenarios do not freeze the clock. Use scenarios as focused regression checks alongside the acceptance cases below, not as proof that every requirement is covered.
 | Area | Minimum useful cases |
 |---|---|
 | Persistence | Save, reload, confirm settings and counts; confirm new items were not duplicated. |
@@ -486,7 +528,7 @@ Selecting Other reveals both. Selecting Nonprofit hides them and removes their a
 
 | Symptom | Check |
 |---|---|
-| Cannot find Question configuration | The workspace link is currently labeled Groups & calculations; use the route in section 5. |
+| Cannot find groups, rules, or dynamic text | Use the **Groups, rules & dynamic text** area link or route in section 5. |
 | Dynamic value is not visible | Add a template and attach it to a supported slot; a variable is not an element. |
 | Template displays literal braces/code | Use structured literal/value parts; no free-form expression interpreter exists. |
 | New setting is absent in filler | Save, publish, start a new response; verify host has current binaries/migrations. |
@@ -496,7 +538,7 @@ Selecting Other reveals both. Selecting Nonprofit hides them and removes their a
 | A score is higher than expected | Inspect Additive overlaps, ungrouped combined bands, and simultaneous ordinary/combined awards. |
 | Per-unit rule never contributes | Check FirstMatch order, range eligibility, whole/nonnegative configuration, and cap/maximum. |
 | Date formatter rejects source | Use Date, not Textbox; select an exact supported format. |
-| Conditional content stays visible | Check the independent content-visibility limitation; use a verified supported alternative. |
+| Conditional content appears unexpectedly | Check its own visibility condition, parent category/branch, and any dynamic label configured to hide when unavailable. Runtime and preview review use current saved answers; a submitted application uses the visibility frozen when it was submitted. |
 | Save reports conflict | Reload and reconcile current revision; do not replay stale full-form payloads. |
 | Copy/delete breaks readiness | Inspect referenced questions/options/calculations/templates and repair dangling external refs. |
 

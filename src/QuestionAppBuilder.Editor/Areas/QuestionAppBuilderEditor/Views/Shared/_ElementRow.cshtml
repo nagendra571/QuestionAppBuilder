@@ -40,11 +40,8 @@
             {
                 <div class="cv-row-actions" role="group" aria-label="Actions for @element.Label">
                     <a class="qab-icon-action" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="element-@element.Id" aria-label="Edit @itemKind: @element.Label" title="Edit @itemKind: @element.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
-                    <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove" data-confirm="@(branchCount > 0 ? $"Remove this question and its {branchCount} follow-up question(s)?" : null)">
-                        <input type="hidden" name="applicationId" value="@applicationId" />
-                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                        <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
-                    </form>
+                    <a class="qab-icon-action qab-icon-danger cv-el-remove" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"
+                       asp-controller="Deletions" asp-action="Preview" asp-route-applicationId="@applicationId" asp-route-kind="Element" asp-route-targetId="@element.Id" asp-route-expectedRevision="@revisionValue"><partial name="_ActionIcon" model='@("remove")' /></a>
                 </div>
             }
         </div>
@@ -68,11 +65,8 @@ else if (element.Question is not null)
             {
                 <div class="cv-row-actions" role="group" aria-label="Actions for @element.Label">
                     <a class="qab-icon-action" asp-controller="Drafts" asp-action="Index" asp-route-applicationId="@applicationId" asp-fragment="element-@element.Id" aria-label="Edit @itemKind: @element.Label" title="Edit @itemKind: @element.Label"><partial name="_ActionIcon" model='@("edit")' /></a>
-                    <form method="post" asp-controller="Elements" asp-action="Remove" asp-route-id="@element.Id" class="cv-el-remove" data-confirm="@(branchCount > 0 ? $"Remove this question and its {branchCount} follow-up question(s)?" : null)">
-                        <input type="hidden" name="applicationId" value="@applicationId" />
-                        <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                        <button type="submit" class="qab-icon-action qab-icon-danger" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"><partial name="_ActionIcon" model='@("remove")' /></button>
-                    </form>
+                    <a class="qab-icon-action qab-icon-danger cv-el-remove" aria-label="Remove @itemKind: @element.Label" title="Remove @itemKind: @element.Label"
+                       asp-controller="Deletions" asp-action="Preview" asp-route-applicationId="@applicationId" asp-route-kind="Element" asp-route-targetId="@element.Id" asp-route-expectedRevision="@revisionValue"><partial name="_ActionIcon" model='@("remove")' /></a>
                 </div>
             }
         </div>

@@ -16,7 +16,7 @@ else
     var predicateIndex = 0;
     foreach (var condition in conditions)
     {
-        <fieldset class="aw-subpanel">
+        <fieldset class="aw-subpanel" id="condition-@condition.Id">
             <legend>Condition @condition.Id</legend>
             <input type="hidden" name="Conditions[@conditionIndex].Id" value="@condition.Id" />
             <label class="aw-field">Match mode<select name="Conditions[@conditionIndex].Junction">@foreach (var junction in Enum.GetValues<ConditionJunction>()) { <option value="@junction" selected="@(junction == condition.Junction)">@junction</option> }</select></label>

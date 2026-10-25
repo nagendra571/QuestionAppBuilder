@@ -30,25 +30,45 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         var answerIssues = new List<DefinitionIssue>();
         var visibleCategories = new HashSet<int>();
         var visibleQuestions = new HashSet<int>();
+        var visibleElements = new HashSet<int>();
+        var hiddenElementReasons = new List<HiddenElementReason>();
 
         foreach (var category in orderedCategories)
         {
             var categoryVisible = category.VisibilityConditionId is null
                 || EvaluateCondition(category.VisibilityConditionId.Value, conditions, questions, answers, visibleQuestions);
-            if (!categoryVisible) continue;
+            if (!categoryVisible)
+            {
+                foreach (var element in FollowUpStructure.Ordered(category.Elements))
+                    hiddenElementReasons.Add(new HiddenElementReason(element.Id, category.Id, "category-condition", category.VisibilityConditionId));
+                continue;
+            }
             visibleCategories.Add(category.Id);
 
             foreach (var element in FollowUpStructure.Ordered(category.Elements))
             {
                 var question = element.Question;
-                if (question is null) continue;
                 var parent = FollowUpStructure.Parent(element, category.Elements);
                 var parentVisible = element.ParentOptionId is null || parent?.Question is { } parentQuestion
                     && visibleQuestions.Contains(parentQuestion.Id)
                     && answers.GetValueOrDefault(parentQuestion.Id)?.SelectedOptionIds?.Contains(element.ParentOptionId.Value) == true;
-                var isVisible = parentVisible && (element.VisibilityConditionId is null
-                    || EvaluateCondition(element.VisibilityConditionId.Value, conditions, questions, answers, visibleQuestions));
-                if (isVisible) visibleQuestions.Add(question.Id);
+                if (!parentVisible)
+                {
+                    var reason = parent?.Question is null ? "parent-unavailable"
+                        : !visibleQuestions.Contains(parent.Question.Id) ? "parent-hidden" : "parent-option-unselected";
+                    hiddenElementReasons.Add(new HiddenElementReason(element.Id, category.Id, reason,
+                        ParentElementId: parent?.Id, ParentOptionId: element.ParentOptionId));
+                    continue;
+                }
+                if (element.VisibilityConditionId is int conditionId
+                    && !EvaluateCondition(conditionId, conditions, questions, answers, visibleQuestions))
+                {
+                    hiddenElementReasons.Add(new HiddenElementReason(element.Id, category.Id, "element-condition", conditionId,
+                        parent?.Id, element.ParentOptionId));
+                    continue;
+                }
+                visibleElements.Add(element.Id);
+                if (question is not null) visibleQuestions.Add(question.Id);
             }
         }
 
@@ -72,7 +92,15 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         var composition = QuestionAppBuilder.Application.Composition.CompositionEngine.Evaluate(graph, answers, visibleQuestions, visibleCategories);
         var evaluatedAtUtc = _timeProvider.GetUtcNow();
         var dynamicText = QuestionAppBuilder.Application.Composition.DynamicTextEngine.Evaluate(
-            graph, answers, visibleQuestions, visibleCategories, composition, evaluatedAtUtc);
+            graph, answers, visibleQuestions, visibleCategories, composition, evaluatedAtUtc, visibleElements);
+        var dynamicallyHiddenLabels = dynamicText.Texts.Where(text => text.Slot == QuestionAppBuilder.Domain.Composition.DynamicTextSlot.ElementLabel
+            && text.IsHidden).Select(text => text.OwnerKey).ToHashSet();
+        foreach (var (category, element) in orderedCategories.SelectMany(category => category.Elements.Select(element => (category, element)))
+            .Where(pair => pair.element.Kind == ElementKind.Content && visibleElements.Contains(pair.element.Id)))
+        {
+            if (dynamicallyHiddenLabels.Contains(element.LogicalKey))
+                hiddenElementReasons.Add(new HiddenElementReason(element.Id, category.Id, "dynamic-content-unavailable"));
+        }
         composition = composition with
         {
             DynamicText = dynamicText,
@@ -83,7 +111,13 @@ public sealed class DefinitionEvaluator : IDefinitionEvaluator
         return new EvaluationResult(visibleCategories, visibleQuestions,
             definitionIssues.Concat(composition.DefinitionErrors.Where(m => !dynamicText.DefinitionErrors.Contains(m))
                 .Select(m => new DefinitionIssue("invalid-composition", null, m)))
-                .Concat(dynamicText.DefinitionErrors.Select(m => new DefinitionIssue("invalid-dynamic-text", null, m))).ToArray(), answerIssues, score) { Composition = composition };
+                .Concat(dynamicText.DefinitionErrors.Select(m => new DefinitionIssue("invalid-dynamic-text", null, m))).ToArray(), answerIssues, score)
+        {
+            Composition = composition,
+            VisibleElementIds = visibleElements,
+            HiddenElementReasons = hiddenElementReasons,
+            FailedValidationRules = composition.FailedValidationRules
+        };
     }
 
     private static IReadOnlyList<DefinitionIssue> ValidateDefinition(

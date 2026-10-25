@@ -35,6 +35,7 @@ public class QuestionAppBuilderDbContext : DbContext
     public DbSet<SubmissionQuestionState> SubmissionQuestionStates => Set<SubmissionQuestionState>();
     public DbSet<SubmissionRuleTrace> SubmissionRuleTraces => Set<SubmissionRuleTrace>();
     public DbSet<ResponseAccessToken> ResponseAccessTokens => Set<ResponseAccessToken>();
+    public DbSet<PreviewScenario> PreviewScenarios => Set<PreviewScenario>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +48,10 @@ public class QuestionAppBuilderDbContext : DbContext
                 .IsConcurrencyToken();
             modelBuilder.Entity<ResponseDraft>()
                 .Property(response => response.RowVersion)
+                .ValueGeneratedNever()
+                .IsConcurrencyToken();
+            modelBuilder.Entity<PreviewScenario>()
+                .Property(scenario => scenario.RowVersion)
                 .ValueGeneratedNever()
                 .IsConcurrencyToken();
         }

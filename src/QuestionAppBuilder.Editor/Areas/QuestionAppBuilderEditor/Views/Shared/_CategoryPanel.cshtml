@@ -50,11 +50,8 @@
                         <button type="submit" class="cv-btn">Save</button>
                     </form>
                 </details>
-                <form method="post" asp-controller="Categories" asp-action="Remove" asp-route-id="@category.Id" data-confirm="@(category.Elements.Any(e => e.ParentOptionId is not null) ? "Remove this category, including its questions and nested follow-ups?" : null)">
-                    <input type="hidden" name="applicationId" value="@applicationId" />
-                    <input type="hidden" name="expectedRevision" value="@revisionValue" />
-                    <button type="submit" class="qab-icon-action qab-icon-danger cv-danger" aria-label="Remove category: @category.Name" title="Remove category: @category.Name"><partial name="_ActionIcon" model='@("remove")' /></button>
-                </form>
+                <a class="qab-icon-action qab-icon-danger cv-danger" aria-label="Remove category: @category.Name" title="Remove category: @category.Name"
+                   asp-controller="Deletions" asp-action="Preview" asp-route-applicationId="@applicationId" asp-route-kind="Category" asp-route-targetId="@category.Id" asp-route-expectedRevision="@revisionValue"><partial name="_ActionIcon" model='@("remove")' /></a>
             </div>
         }
     </header>
